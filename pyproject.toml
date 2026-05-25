@@ -1,0 +1,16 @@
+[build-system]
+    requires = ["setuptools>=64", "setuptools-scm"]
+    build-backend = "setuptools.build_meta"
+
+[project]
+    name = "idftool"
+    dynamic = ["version"]
+    dependencies = ["esptool", "esp-idf-defs"]
+
+[project.scripts]
+    idftool = "idftool.__main__:_main"
+
+[tool.setuptools]
+    packages = ["idftool"]
+
+[tool.setuptools_scm]
