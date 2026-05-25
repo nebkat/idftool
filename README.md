@@ -26,9 +26,39 @@ especially when dealing with multiple devices/partition tables.
   partition binaries into a single ZIP; optionally flashing a partition
   table. `write-bundle` reflashes the lot in one command.
 
-> Pre-built binaries are published on the
-> [Releases](https://github.com/nebkat/idftool/releases) page.
-> See `CONTRIBUTING.md` for building from source.
+## Installation
+
+### Binary (recommended)
+
+Download the pre-built binary for your platform from the
+[Releases](https://github.com/nebkat/idftool/releases) page — no Python required.
+
+Each release includes two variants:
+
+- **`-dir`** — a folder of files. Starts instantly. **Recommended.**
+- **single file** — one self-contained executable. Slower to start as it extracts
+  itself on each run.
+
+**macOS / Linux**: download the `-dir` `.tar.gz`, extract it, place the `idftool/`
+folder somewhere permanent, and symlink the executable onto your `PATH`:
+```bash
+ln -s /path/to/idftool/idftool ~/.local/bin/idftool
+```
+
+**Windows**: download the `-dir` `.zip`, extract the `idftool\` folder somewhere
+permanent, and add that folder to your `PATH`.
+
+### pipx
+
+If you have Python installed, [pipx](https://pipx.pypa.io) installs idftool into
+an isolated environment and puts it on your `PATH` automatically:
+
+```bash
+pipx install idftool
+```
+
+pipx itself can be installed via `brew install pipx` (macOS),
+`pip install pipx` (any platform), or `winget install python.pipx` (Windows).
 
 ## At a glance
 
