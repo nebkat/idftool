@@ -4,11 +4,21 @@
 
 [project]
     name = "idftool"
+    description = "Utility for flashing, provisioning, and interacting with Espressif SOCs running ESP-IDF"
+    readme = "README.md"
+    license = "Apache-2.0"
+    requires-python = ">=3.10"
     dynamic = ["version"]
-    dependencies = ["esptool", "esp-idf-defs"]
+    dependencies = [
+        "esptool~=5.2.0",
+        "esp-idf-defs~=0.1.0",
+    ]
 
 [project.scripts]
     idftool = "idftool.__main__:_main"
+
+[project.urls]
+    Source = "https://github.com/nebkat/idftool"
 
 [tool.setuptools]
     packages = ["idftool"]
