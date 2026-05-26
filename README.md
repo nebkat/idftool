@@ -125,6 +125,37 @@ decimal (`4096`) or hex (`0x1000`).
 
 ## Command reference
 
+| Command | Description |
+|---------|-------------|
+| **Discovery** | |
+| [`devices`](#devices) | List serial ports with hardware IDs |
+| [`list`](#list) | Print the partition table |
+| **Partition I/O** | |
+| [`read`](#read) | Read a partition (or slice) into a file |
+| [`write`](#write) | Write one or more files to named partitions |
+| [`erase`](#erase) | Erase a partition (or slice) |
+| [`view`](#view) | Pretty-print a partition's contents |
+| **Firmware** | |
+| [`ota`](#ota) | Push an app to the next OTA slot and switch to it |
+| [`factory`](#factory) | Flash an app to the factory partition |
+| **Boot selection** | |
+| [`get-boot`](#get-boot) | Show the currently-active OTA slot |
+| [`set-boot`](#set-boot) | Force the next boot to a specific OTA partition |
+| [`clear-boot`](#clear-boot) | Erase otadata and let the bootloader fall back |
+| **Images** | |
+| [`create-image`](#create-image) | Merge partition binaries into a single flash image |
+| [`dump-image`](#dump-image) | Dump the entire flash to an image file |
+| [`write-image`](#write-image-alias-reflash) | Write a full flash image to the device |
+| **Bundles** | |
+| [`create-bundle`](#create-bundle) | Pack partition images into a ZIP bundle |
+| [`dump-bundle`](#dump-bundle) | Pack every partition from the device into a ZIP |
+| [`write-bundle`](#write-bundle) | Flash every binary in a bundle ZIP |
+| **NVS** | |
+| [`create-nvs`](#create-nvs) | Generate an NVS partition image from a CSV file |
+| [`write-nvs`](#write-nvs) | Generate an NVS image from CSV and flash it |
+| **Misc** | |
+| [`enter-bootloader`](#enter-bootloader) | Drop the chip into ROM bootloader mode |
+
 ### Discovery
 
 #### `devices`
