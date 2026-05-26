@@ -11,6 +11,8 @@ from serial import SerialException
 from serial.tools import list_ports
 from serial.tools.list_ports_common import ListPortInfo
 
+from idftool.traceback import install as install_excepthook, print_exception
+
 from esp_idf_defs import ImageMetadata, ChipId
 from esp_idf_defs.otadata import OtaDataParameters, OtaDataSelectEntry
 from esp_idf_defs.partitions import PARTITION_TABLE_SIZE, PARTITION_TABLE_OFFSET, PartitionTable, print_partition_table, \
@@ -859,6 +861,7 @@ def main(args):
     if esp and not args.no_reset: esp.hard_reset()
 
 def _main():
+    install_excepthook()
     parser = argparse.ArgumentParser()
 
     parser.add_argument('-p', '--port', help='Serial port device')
@@ -986,7 +989,13 @@ def _main():
         args.command = 'write-image'
     if args.command == 'enter-bootloader' and not args.port:
         parser.error("enter-bootloader requires -p/--port")
-    main(args)
+    try:
+        main(args)
+    except KeyboardInterrupt:
+        sys.exit(130)
+    except BaseException as e:
+        print_exception(e)
+        sys.exit(1)
 
 if __name__ == "__main__":
     _main()
