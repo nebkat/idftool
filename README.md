@@ -287,6 +287,37 @@ to match) instead of reading the table from flash.
 idftool write-bundle release.zip
 ```
 
+### NVS
+
+idftool can generate a binary NVS (Non-Volatile Storage) partition image
+from a CSV file, using the same format as ESP-IDF's
+[`nvs_partition_gen.py`](https://docs.espressif.com/projects/esp-idf/en/latest/api-reference/storage/nvs_partition_gen.html).
+
+Example CSV:
+```csv
+key,type,encoding,value
+storage,namespace,,
+device_name,data,string,My Device
+device_id,data,u32,12345
+api_key,data,string,abc123def456
+```
+
+#### `create-nvs`
+Generate an NVS partition image from a CSV file, offline. Requires either
+`--size` (explicit partition size) or `--partition` (look up the size from
+the partition table — needs `--partition-table-file` or a device).
+```text
+idftool create-nvs nvs.csv -o nvs.bin --size 0x6000
+idftool --partition-table-file partitions.csv create-nvs nvs.csv -o nvs.bin --partition nvs
+```
+
+#### `write-nvs`
+Generate an NVS partition image from a CSV file and flash it to the named
+partition on the device.
+```text
+idftool write-nvs nvs nvs.csv
+```
+
 ### Misc
 
 #### `enter-bootloader`

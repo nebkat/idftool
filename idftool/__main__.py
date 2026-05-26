@@ -523,6 +523,48 @@ def command_factory(esp: ESPLoader, partition_table: PartitionTable, app_binary_
         print("Erasing 'otadata' partition...")
         esp.erase_region(offset=otadata_partition.offset, size=otadata_partition.size)
 
+def generate_nvs_image(csv_file: str, size: int) -> bytes:
+    import tempfile
+    from esp_idf_nvs_partition_gen import nvs_partition_gen
+
+    with tempfile.NamedTemporaryFile(suffix='.bin', delete=False) as tmp:
+        tmp_path = tmp.name
+    try:
+        nvs_args = argparse.Namespace(
+            input=csv_file,
+            output=os.path.basename(tmp_path),
+            outdir=os.path.dirname(tmp_path),
+            size=f"{size:#x}",
+            version=2,
+        )
+        nvs_partition_gen.generate(nvs_args)
+        with open(tmp_path, 'rb') as f:
+            return f.read()
+    finally:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+
+def command_create_nvs(csv_file: str, size: int, output_file: str):
+    print(f"Generating NVS image from '{csv_file}' (size={size:#x})...")
+    image = generate_nvs_image(csv_file, size)
+    with open(output_file, 'wb') as f:
+        f.write(image)
+    print(f"Wrote {len(image):#x} bytes to '{output_file}'")
+
+def command_write_nvs(
+        esp: ESPLoader,
+        partition_table: PartitionTable,
+        partition_table_entry: PartitionDefinition,
+        bootloader_entry: Optional[PartitionDefinition],
+        csv_file: str,
+        partition_name: str
+):
+    partition = get_partition(partition_table, partition_table_entry, bootloader_entry, partition_name)
+    print(f"Generating NVS image from '{csv_file}' for partition '{partition.name}' (size={partition.size:#x})...")
+    image = generate_nvs_image(csv_file, partition.size)
+    print(f"Writing NVS image to partition '{partition.name}' (offset={partition.offset:#x}, size={partition.size:#x})")
+    write_flash(esp=esp, addr_data=[(partition.offset, image)], flash_size='detect')
+
 def command_app_info(app_binary_file: str):
     app_binary = open(app_binary_file, 'rb').read()
     try:
@@ -640,8 +682,13 @@ def main(args):
         command_enter_bootloader(port=args.port, baud=args.baud)
         return
 
+    # create-nvs with explicit --size needs neither device nor partition table
+    if args.command == 'create-nvs' and args.size is not None:
+        command_create_nvs(args.csv_file, args.size, args.output)
+        return
+
     # Connect to ESP device if required
-    requires_esp = args.command not in ['list', 'create-image', 'create-bundle'] or not args.partition_table_file
+    requires_esp = args.command not in ['list', 'create-image', 'create-bundle', 'create-nvs'] or not args.partition_table_file
     esp = get_esp(port=args.port, baud=args.baud) if requires_esp else None
     if not args.primary_bootloader_offset and esp:
         args.primary_bootloader_offset = esp.BOOTLOADER_FLASH_OFFSET
@@ -794,6 +841,18 @@ def main(args):
         command_factory(esp=esp, partition_table=partition_table, app_binary_file=args.app_binary_file)
     elif args.command == 'write-image':
         command_write_image(esp=esp, bootloader_entry=bootloader_entry, image_file_path=args.image_file)
+    elif args.command == 'create-nvs':
+        partition = get_partition(partition_table, partition_table_entry, bootloader_entry, args.partition)
+        command_create_nvs(args.csv_file, partition.size, args.output)
+    elif args.command == 'write-nvs':
+        command_write_nvs(
+            esp=esp,
+            partition_table=partition_table,
+            partition_table_entry=partition_table_entry,
+            bootloader_entry=bootloader_entry,
+            csv_file=args.csv_file,
+            partition_name=args.partition
+        )
     else:
         print(f"Unknown command: {args.command}", file=sys.stderr)
 
@@ -887,6 +946,19 @@ def _main():
     # Write bundle subcommand
     write_bundle_parser = subparsers.add_parser('write-bundle', help='Write a ZIP bundle of partition binaries')
     write_bundle_parser.add_argument('input_file', help='Input ZIP filename')
+
+    # Create NVS subcommand
+    create_nvs_parser = subparsers.add_parser('create-nvs', help='Generate NVS partition image from CSV')
+    create_nvs_parser.add_argument('csv_file', help='Input NVS CSV file')
+    create_nvs_parser.add_argument('-o', '--output', required=True, help='Output binary filename (.bin)')
+    create_nvs_size_group = create_nvs_parser.add_mutually_exclusive_group(required=True)
+    create_nvs_size_group.add_argument('--size', type=auto_int, help='Partition size in bytes (e.g. 0x6000)')
+    create_nvs_size_group.add_argument('--partition', help='Partition name to read size from partition table')
+
+    # Write NVS subcommand
+    write_nvs_parser = subparsers.add_parser('write-nvs', help='Generate NVS partition image from CSV and write to device')
+    write_nvs_parser.add_argument('partition', help='NVS partition name')
+    write_nvs_parser.add_argument('csv_file', help='Input NVS CSV file')
 
     # Factory subcommand
     factory_parser = subparsers.add_parser('factory', help='Perform factory flash and clear boot partition')

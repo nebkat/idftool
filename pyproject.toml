@@ -12,6 +12,7 @@
     dependencies = [
         "esptool~=5.2.0",
         "esp-idf-defs~=0.1.0",
+        "esp-idf-nvs-partition-gen~=0.2.0",
     ]
 
 [project.scripts]
