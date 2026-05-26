@@ -81,46 +81,6 @@ $ idftool set-boot ota_1
 Setting boot partition to 'ota_1'...
 ```
 
-## Global options
-
-These flags apply to every subcommand and go **before** the command name:
-
-| Flag | Purpose |
-|------|---------|
-| `-p`, `--port PATH` | Serial port device. If omitted, idftool auto-picks one. |
-| `-b`, `--baud N` | Serial baud rate (defaults to esptool's ROM baud, 115200). |
-| `--no-reset` | Skip the hard reset that normally happens after a command. |
-| `--partition-table-file PATH` | Use a CSV or binary partition table from disk instead of reading it off the device. |
-| `--partition-table-offset OFFSET` | Where to expect the partition table in flash (default `0x8000`). |
-| `--partition-table-size SIZE` | Size of the partition table region (default `0x1000`). |
-| `--primary-bootloader-offset OFFSET` | Primary bootloader offset, or a chip name like `esp32s3` to pick a default. Only needed when addressing the `bootloader` partition by name in **offline** mode (`--partition-table-file` with no device); auto-detected from a connected chip otherwise. |
-| `--recovery-bootloader-offset OFFSET` | Recovery bootloader offset; same scope as `--primary-bootloader-offset`. |
-
-The commands `list`, `merge-bin`, and `create-bundle` will work **without**
-a device when you supply `--partition-table-file`; everything else needs a
-connected ESP.
-
-## Partition addressing
-
-Wherever a command takes a `partition` argument you can pass:
-
-- A **name** from the partition table (`nvs`, `ota_0`, `storage`, …).
-- A **numeric address** that matches an existing partition's start
-  offset exactly — equivalent to looking the partition up by name, just
-  keyed on its address.
-- An **offset into a partition**: `name[offset]`. Negative values count
-  from the end. Sets the starting point for the operation. Accepted by
-  `write` and `merge-bin`.
-- A **slice of a partition**: `name[start:stop]`. Negative values count
-  from the end, and a `+N` stop is a length relative to `start`.
-  Accepted by `read`, `erase`, and `view`. Examples:
-  - `nvs[0:0x100]` — first 256 bytes of `nvs`
-  - `storage[-0x1000:]` — last 4 KiB of `storage`
-  - `ota_0[0x1000:+0x800]` — 2 KiB starting 4 KiB into `ota_0`
-
-All numeric values in addresses, offsets, and sizes accept either
-decimal (`4096`) or hex (`0x1000`).
-
 ---
 
 ## Command reference
@@ -362,3 +322,45 @@ isn't fully settled) are retried silently.
 idftool -p /dev/cu.usbmodem1101 enter-bootloader
 ```
 Requires `-p`/`--port`.
+
+--
+
+## Global options
+
+These flags apply to every subcommand and go **before** the command name:
+
+| Flag | Purpose |
+|------|---------|
+| `-p`, `--port PATH` | Serial port device. If omitted, idftool auto-picks one. |
+| `-b`, `--baud N` | Serial baud rate (defaults to esptool's ROM baud, 115200). |
+| `--no-reset` | Skip the hard reset that normally happens after a command. |
+| `--partition-table-file PATH` | Use a CSV or binary partition table from disk instead of reading it off the device. |
+| `--partition-table-offset OFFSET` | Where to expect the partition table in flash (default `0x8000`). |
+| `--partition-table-size SIZE` | Size of the partition table region (default `0x1000`). |
+| `--primary-bootloader-offset OFFSET` | Primary bootloader offset, or a chip name like `esp32s3` to pick a default. Only needed when addressing the `bootloader` partition by name in **offline** mode (`--partition-table-file` with no device); auto-detected from a connected chip otherwise. |
+| `--recovery-bootloader-offset OFFSET` | Recovery bootloader offset; same scope as `--primary-bootloader-offset`. |
+
+The commands `list`, `merge-bin`, and `create-bundle` will work **without**
+a device when you supply `--partition-table-file`; everything else needs a
+connected ESP.
+
+## Partition addressing
+
+Wherever a command takes a `partition` argument you can pass:
+
+- A **name** from the partition table (`nvs`, `ota_0`, `storage`, …).
+- A **numeric address** that matches an existing partition's start
+  offset exactly — equivalent to looking the partition up by name, just
+  keyed on its address.
+- An **offset into a partition**: `name[offset]`. Negative values count
+  from the end. Sets the starting point for the operation. Accepted by
+  `write` and `merge-bin`.
+- A **slice of a partition**: `name[start:stop]`. Negative values count
+  from the end, and a `+N` stop is a length relative to `start`.
+  Accepted by `read`, `erase`, and `view`. Examples:
+  - `nvs[0:0x100]` — first 256 bytes of `nvs`
+  - `storage[-0x1000:]` — last 4 KiB of `storage`
+  - `ota_0[0x1000:+0x800]` — 2 KiB starting 4 KiB into `ota_0`
+
+All numeric values in addresses, offsets, and sizes accept either
+decimal (`4096`) or hex (`0x1000`).
