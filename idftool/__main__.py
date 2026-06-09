@@ -14,7 +14,7 @@ from serial.tools.list_ports_common import ListPortInfo
 from idftool.traceback import install as install_excepthook, print_exception
 
 from esp_idf_defs import ImageMetadata, ChipId
-from esp_idf_defs.otadata import OtaDataParameters, OtaDataSelectEntry
+from esp_idf_defs.otadata import OtaDataParameters, OtaDataSelectEntry, OtaImageState
 from esp_idf_defs.partitions import PARTITION_TABLE_SIZE, PARTITION_TABLE_OFFSET, PartitionTable, print_partition_table, \
     PartitionDefinition, BOOTLOADER_TYPE, SUBTYPES, PARTITION_TABLE_TYPE, APP_TYPE, NUM_PARTITION_SUBTYPE_APP_OTA, \
     DATA_TYPE
@@ -451,7 +451,7 @@ def command_get_boot(esp: ESPLoader, partition_table: PartitionTable):
     if otadata.slot is None:
         print("OTA slot not set")
     else:
-        print(f"OTA slot 'ota_{otadata.slot}' (seq={otadata.otadata.seq}, state={otadata.otadata.ota_state})")
+        print(f"OTA slot 'ota_{otadata.slot}' (seq={otadata.otadata.seq}, state={otadata.otadata.ota_state.name})")
 
 def command_set_boot(esp: ESPLoader, partition_table: PartitionTable, label: str):
     otadata_partition, otadata = read_otadata(esp, partition_table)
@@ -465,6 +465,7 @@ def command_set_boot(esp: ESPLoader, partition_table: PartitionTable, label: str
 
     print(f"Setting boot partition to '{partition.name}'...")
     otadata = otadata.incremented_and_swapped(ota_slot)
+    otadata.otadata.ota_state = OtaImageState.VALID
     write_otadata(esp, otadata_partition, otadata)
 
 def command_clear_boot(esp: ESPLoader, partition_table: PartitionTable):
