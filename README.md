@@ -106,10 +106,12 @@ Setting boot partition to 'ota_1'...
 | [`create-image`](#create-image) | Merge partition binaries into a single flash image |
 | [`dump-image`](#dump-image) | Dump the entire flash to an image file |
 | [`write-image`](#write-image-alias-reflash) | Write a full flash image to the device |
+| [`print-image`](#print-image) | Print partition table and app info from a flash image file |
 | **Bundles** | |
 | [`create-bundle`](#create-bundle) | Pack partition images into a ZIP bundle |
 | [`dump-bundle`](#dump-bundle) | Pack every partition from the device into a ZIP |
 | [`write-bundle`](#write-bundle) | Flash every binary in a bundle ZIP |
+| [`print-bundle`](#print-bundle) | Print partition table and app info from a bundle ZIP |
 | **NVS** | |
 | [`create-nvs`](#create-nvs) | Generate an NVS partition image from a CSV file |
 | [`write-nvs`](#write-nvs) | Generate an NVS image from CSV and flash it |
@@ -245,6 +247,15 @@ counterpart of `dump-image`.
 idftool write-image build/full-flash.img
 ```
 
+#### `print-image`
+Inspect a flash image file without touching a device: prints the
+partition table embedded in the image and, for each app partition that
+contains a valid app, the project name, version, IDF version, compile
+time, ELF SHA256, and target chip.
+```text
+idftool print-image build/full-flash.img
+```
+
 ### Bundles
 
 A bundle is a plain ZIP file containing one `*.bin` per partition (named
@@ -276,6 +287,15 @@ Flash every binary in a bundle ZIP. If the bundle contains
 to match) instead of reading the table from flash.
 ```text
 idftool write-bundle release.zip
+```
+
+#### `print-bundle`
+Inspect a bundle ZIP without touching a device: prints the partition
+table from the embedded `partition_table.csv` and, for each app
+partition whose `.bin` is present in the bundle, the project name,
+version, IDF version, compile time, ELF SHA256, and target chip.
+```text
+idftool print-bundle release.zip
 ```
 
 ### NVS

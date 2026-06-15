@@ -3,7 +3,7 @@ import os.path
 import re
 import sys
 import time
-from typing import Optional, Literal
+from typing import Callable, Optional, Literal
 from zipfile import ZipFile
 
 from esptool import ESPLoader, CHIP_DEFS, flash_size_bytes
@@ -575,19 +575,7 @@ def command_app_info(app_binary_file: str):
     except ValueError as e:
         raise RuntimeError(f"Invalid application binary: {e}")
 
-    desc = image_metadata.app_description
-    header = image_metadata.header
-
-    print(f"Project name:     {desc.project_name}")
-    print(f"Version:          {desc.version}")
-    print(f"IDF version:      {desc.idf_version}")
-    print(f"Secure version:   {desc.secure_version}")
-    if desc.compiled:
-        print(f"Compiled:         {desc.compiled}")
-    print(f"ELF SHA256:       {desc.elf_sha256.hex()}")
-    max_rev = header.max_chip_rev_full if header.max_chip_rev_full != 0xFFFF else None
-    rev_range = f"rev {header.min_chip_rev_full} to {max_rev}" if max_rev else f"rev {header.min_chip_rev_full}+"
-    print(f"Chip:             {header.chip_id.name} ({rev_range})")
+    print_app_info(image_metadata.app_description, image_metadata.header)
 
 def command_write_image(esp: ESPLoader, bootloader_entry: PartitionDefinition, image_file_path: str):
     image_file = open(image_file_path, 'rb')
@@ -618,6 +606,130 @@ def command_write_image(esp: ESPLoader, bootloader_entry: PartitionDefinition, i
         addr_data=[(esp.BOOTLOADER_FLASH_OFFSET, image_data)],
         flash_size='detect',
     )
+
+def print_app_info(desc, header, indent: str = ""):
+    print(f"{indent}Project name:     {desc.project_name}")
+    print(f"{indent}Version:          {desc.version}")
+    print(f"{indent}IDF version:      {desc.idf_version}")
+    print(f"{indent}Secure version:   {desc.secure_version}")
+    if desc.compiled:
+        print(f"{indent}Compiled:         {desc.compiled}")
+    print(f"{indent}ELF SHA256:       {desc.elf_sha256.hex()}")
+    max_rev = header.max_chip_rev_full if header.max_chip_rev_full != 0xFFFF else None
+    rev_range = f"rev {header.min_chip_rev_full} to {max_rev}" if max_rev else f"rev {header.min_chip_rev_full}+"
+    print(f"{indent}Chip:             {header.chip_id.name} ({rev_range})")
+
+def print_partition_table_and_apps(
+        partition_table: PartitionTable,
+        read: Callable[[int, int], bytes],
+):
+    print_partition_table(partition_table, read)
+
+    for part in partition_table:
+        if part.type != APP_TYPE:
+            continue
+        app_binary = read(part.offset, part.size)
+        try:
+            image_metadata = ImageMetadata.from_bytes(app_binary, app_required=True)
+        except (RuntimeError, ValueError):
+            continue
+        print()
+        print(f"Partition '{part.name}' (offset={part.offset:#x}):")
+        print_app_info(image_metadata.app_description, image_metadata.header, indent="  ")
+
+def command_print_image(image_file_path: str, partition_table_offset: int, partition_table_size: int):
+    image_size = os.path.getsize(image_file_path)
+    with open(image_file_path, 'rb') as f:
+        f.seek(partition_table_offset)
+        partition_table_binary = f.read(partition_table_size)
+        try:
+            partition_table = PartitionTable.from_binary(partition_table_binary)
+        except (RuntimeError, ValueError) as e:
+            raise RuntimeError(f"Could not parse partition table at offset {partition_table_offset:#x}") from e
+
+        def read(offset: int, length: int) -> bytes:
+            if offset >= image_size:
+                return b"\xff" * length
+            f.seek(offset)
+            data = f.read(length)
+            if len(data) < length:
+                data += b"\xff" * (length - len(data))
+            return data
+
+        print(f"Image: {image_file_path} ({image_size:#x} bytes)")
+        print()
+        print_partition_table_and_apps(partition_table, read)
+
+def _extract_csv_bootloader_offsets(csv_text: str) -> tuple[Optional[int], Optional[int]]:
+    primary = recovery = None
+    for line in csv_text.splitlines():
+        line = line.strip()
+        if not line or line.startswith('#'):
+            continue
+        parts = [p.strip() for p in line.split(',')]
+        if len(parts) < 4 or parts[1] != 'bootloader':
+            continue
+        try:
+            offset = int(parts[3], 0)
+        except ValueError:
+            continue
+        if parts[2] == 'primary' and primary is None:
+            primary = offset
+        elif parts[2] == 'recovery' and recovery is None:
+            recovery = offset
+    return primary, recovery
+
+def command_print_bundle(
+        bundle_file_path: str,
+        partition_table_offset: int,
+        primary_bootloader_offset: Optional[int],
+        recovery_bootloader_offset: Optional[int],
+):
+    bundle_size = os.path.getsize(bundle_file_path)
+    with ZipFile(bundle_file_path, 'r') as zf:
+        names = zf.namelist()
+        if 'partition_table.csv' not in names:
+            raise RuntimeError(f"Bundle {bundle_file_path} does not contain a partition_table.csv")
+        csv_text = zf.read('partition_table.csv').decode('utf-8')
+
+        # idftool-generated bundles encode bootloader offsets in the CSV; PartitionTable.from_csv
+        # ignores the literal for bootloader rows and requires an explicit offset, so fall back to
+        # what the CSV says when the user didn't pass one.
+        if primary_bootloader_offset is None or recovery_bootloader_offset is None:
+            csv_primary, csv_recovery = _extract_csv_bootloader_offsets(csv_text)
+            if primary_bootloader_offset is None:
+                primary_bootloader_offset = csv_primary
+            if recovery_bootloader_offset is None:
+                recovery_bootloader_offset = csv_recovery
+
+        partition_table = PartitionTable.from_csv(
+            csv_text,
+            partition_table_offset=partition_table_offset,
+            primary_bootloader_offset=primary_bootloader_offset,
+            recovery_bootloader_offset=recovery_bootloader_offset,
+        )
+
+        partition_data = {
+            name[:-4]: zf.read(name)
+            for name in names if name.endswith('.bin')
+        }
+
+        def read(offset: int, length: int) -> bytes:
+            for part in partition_table:
+                if part.offset <= offset < part.offset + part.size:
+                    local = offset - part.offset
+                    data = partition_data.get(part.name, b"")
+                    chunk = data[local:local + length]
+                    if len(chunk) < length:
+                        chunk += b"\xff" * (length - len(chunk))
+                    return chunk
+            return b"\xff" * length
+
+        included = sorted(partition_data.keys())
+        print(f"Bundle: {bundle_file_path} ({bundle_size:#x} bytes)")
+        print(f"Partitions included: {', '.join(included) if included else '(none)'}")
+        print()
+        print_partition_table_and_apps(partition_table, read)
 
 def command_dump_image(esp: ESPLoader, output_file: Optional[str]):
     flash_size = flash_size_bytes(detect_flash_size(esp))
@@ -690,6 +802,25 @@ def main(args):
         command_create_nvs(args.csv_file, args.size, args.output)
         return
 
+    # print-image inspects a local image file and needs neither device nor external partition table
+    if args.command == 'print-image':
+        command_print_image(
+            image_file_path=args.image_file,
+            partition_table_offset=args.partition_table_offset,
+            partition_table_size=args.partition_table_size,
+        )
+        return
+
+    # print-bundle inspects a local bundle ZIP and needs neither device nor external partition table
+    if args.command == 'print-bundle':
+        command_print_bundle(
+            bundle_file_path=args.bundle_file,
+            partition_table_offset=args.partition_table_offset,
+            primary_bootloader_offset=args.primary_bootloader_offset,
+            recovery_bootloader_offset=args.recovery_bootloader_offset,
+        )
+        return
+
     # Connect to ESP device if required
     requires_esp = args.command not in ['list', 'create-image', 'create-bundle', 'create-nvs'] or not args.partition_table_file
     esp = get_esp(port=args.port, baud=args.baud) if requires_esp else None
@@ -741,7 +872,7 @@ def main(args):
             pass
 
     # Print partition table
-    print_partition_table(partition_table, esp, otadata=otadata_params)
+    print_partition_table(partition_table, esp.read_flash if esp else None, otadata=otadata_params)
 
     if esp:
         flash_size_str = detect_flash_size(esp)
@@ -932,6 +1063,10 @@ def _main():
     write_image_parser = subparsers.add_parser('write-image', aliases=['reflash'], help='Write a full flash image to the device')
     write_image_parser.add_argument('image_file', help='Input file containing flash image')
 
+    # Print Image subcommand
+    print_image_parser = subparsers.add_parser('print-image', help='Print partition table and app info from a flash image file')
+    print_image_parser.add_argument('image_file', help='Input file containing flash image')
+
     # Create bundle subcommand
     create_bundle_parser = subparsers.add_parser('create-bundle', help='Create a ZIP bundle of partition binaries')
     create_bundle_parser.add_argument('-o', '--output', help='Output ZIP filename', dest='output_file', required=True)
@@ -950,6 +1085,10 @@ def _main():
     # Write bundle subcommand
     write_bundle_parser = subparsers.add_parser('write-bundle', help='Write a ZIP bundle of partition binaries')
     write_bundle_parser.add_argument('input_file', help='Input ZIP filename')
+
+    # Print Bundle subcommand
+    print_bundle_parser = subparsers.add_parser('print-bundle', help='Print partition table and app info from a partition bundle ZIP')
+    print_bundle_parser.add_argument('bundle_file', help='Input ZIP bundle file')
 
     # Create NVS subcommand
     create_nvs_parser = subparsers.add_parser('create-nvs', help='Generate NVS partition image from CSV')
