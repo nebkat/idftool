@@ -112,6 +112,11 @@ Setting boot partition to 'ota_1'...
 | [`dump-bundle`](#dump-bundle) | Pack every partition from the device into a ZIP |
 | [`write-bundle`](#write-bundle) | Flash every binary in a bundle ZIP |
 | [`print-bundle`](#print-bundle) | Print partition table and app info from a bundle ZIP |
+| **Partition table** | |
+| [`convert-table`](#convert-table) | Convert a partition table file between CSV and binary |
+| [`print-table`](#print-table) | Print a partition table from a CSV or binary file, or the device |
+| [`dump-table`](#dump-table) | Read the partition table from the device into a file |
+| [`write-table`](#write-table) | Flash a partition table from a CSV or binary file |
 | **NVS** | |
 | [`create-nvs`](#create-nvs) | Generate an NVS partition image from a CSV file |
 | [`write-nvs`](#write-nvs) | Generate an NVS image from CSV and flash it |
@@ -296,6 +301,63 @@ partition whose `.bin` is present in the bundle, the project name,
 version, IDF version, compile time, ELF SHA256, and target chip.
 ```text
 idftool print-bundle release.zip
+```
+
+### Partition table
+
+These commands work directly on a partition table as a file — the table
+is the subject, passed as a positional argument. This is distinct from the
+global `--partition-table-file` option, which overrides the layout *other*
+commands use to address partitions by name. Input format (CSV or binary)
+is auto-detected; output format is inferred from the file extension
+(`.csv`/`.bin`) or set with `--format`.
+
+When the input is a CSV that includes a bootloader row, pass
+`--primary-bootloader-offset` (an offset or a chip name, e.g. `esp32s3`)
+so the offset can be resolved.
+
+#### `convert-table`
+Convert a partition table between CSV and binary, offline. Handles both
+directions; the binary output includes the MD5 checksum and padding, so it
+is ready to flash or embed in an image.
+```text
+idftool convert-table partitions.csv partitions.bin
+idftool convert-table partitions.bin partitions.csv
+idftool --primary-bootloader-offset esp32s3 convert-table partitions.csv partitions.bin
+```
+
+#### `print-table`
+Pretty-print a partition table. Given a CSV or binary file it runs offline;
+with no file it reads the table from the device (or from
+`--partition-table-file`).
+```text
+idftool print-table partitions.bin        # from a file, offline
+idftool print-table                        # from the device
+idftool --partition-table-file partitions.csv print-table
+```
+
+#### `dump-table`
+Read the partition table from the connected device and save it. Defaults to
+CSV with an auto-generated filename; pass an output file or `--format` to
+choose otherwise.
+```text
+idftool dump-table                       # auto-named .csv
+idftool dump-table backup.bin
+idftool dump-table backup.csv --format csv
+```
+
+#### `write-table`
+Flash a partition table from a CSV or binary file to the device. The file is
+required, so this never reads the device's current table and writes it back
+to itself — use `dump-table` to pull the current table. The table is verified
+before flashing (override with `--force`).
+
+Only the partition map (at the partition table offset) is replaced; existing
+partition **data** on flash is not moved, resized, or erased, so a table that
+no longer matches the flash contents can make the device unbootable.
+```text
+idftool write-table partitions.csv
+idftool write-table partitions.bin --force
 ```
 
 ### NVS

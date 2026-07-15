@@ -259,6 +259,49 @@ def require_partitions(partition_table: PartitionTable, source: str) -> Partitio
         raise RuntimeError(f"Partition table from {source} is empty (no partitions defined)")
     return partition_table
 
+def load_partition_table_file(
+        path: str,
+        partition_table_offset: int,
+        primary_bootloader_offset: Optional[int],
+        recovery_bootloader_offset: Optional[int],
+) -> PartitionTable:
+    """Load a partition table from a CSV or binary file (format auto-detected)."""
+    if os.path.getsize(path) == 0:
+        raise RuntimeError(f"Partition table file '{path}' is empty")
+    with open(path, 'rb') as f:
+        partition_table, _ = PartitionTable.from_file(
+            f,
+            partition_table_offset=partition_table_offset,
+            primary_bootloader_offset=primary_bootloader_offset,
+            recovery_bootloader_offset=recovery_bootloader_offset,
+        )
+    return require_partitions(partition_table, f"file '{path}'")
+
+def resolve_partition_table_format(output_file: Optional[str], explicit: Optional[str]) -> Literal['csv', 'bin']:
+    """Pick the output format from an explicit flag, else the output file extension (default csv)."""
+    if explicit:
+        return explicit
+    if output_file:
+        ext = os.path.splitext(output_file)[1].lower()
+        if ext == '.csv':
+            return 'csv'
+        if ext in ('.bin', '.img'):
+            return 'bin'
+        raise RuntimeError(
+            f"Cannot infer partition table format from '{output_file}'; "
+            f"pass --format csv|bin or use a .csv/.bin extension")
+    return 'csv'
+
+def write_partition_table_file(partition_table: PartitionTable, output_file: str, output_format: Literal['csv', 'bin']):
+    """Serialise a partition table to CSV or binary and write it to output_file."""
+    if output_format == 'csv':
+        data = partition_table.to_csv().encode('utf-8')
+    else:
+        data = partition_table.to_binary()
+    with open(output_file, 'wb') as f:
+        f.write(data)
+    print(f"Wrote {output_format} partition table ({len(data):#x} bytes) to {output_file}")
+
 def validate_app_binary(esp: ESPLoader, app_binary: bytes) -> tuple[bytes, ImageMetadata]:
     try:
         image_metadata = ImageMetadata.from_bytes(app_binary, app_required=True)
@@ -773,6 +816,80 @@ def command_print_bundle(
         print()
         print_partition_table_and_apps(partition_table, read)
 
+def command_print_table(
+        table_file_path: str,
+        partition_table_offset: int,
+        primary_bootloader_offset: Optional[int],
+        recovery_bootloader_offset: Optional[int],
+):
+    partition_table = load_partition_table_file(
+        table_file_path, partition_table_offset, primary_bootloader_offset, recovery_bootloader_offset)
+    print(f"Partition table: {table_file_path}")
+    print()
+    print_partition_table(partition_table)
+
+def command_convert_table(
+        input_file: str,
+        output_file: str,
+        output_format: Optional[str],
+        partition_table_offset: int,
+        primary_bootloader_offset: Optional[int],
+        recovery_bootloader_offset: Optional[int],
+):
+    partition_table = load_partition_table_file(
+        input_file, partition_table_offset, primary_bootloader_offset, recovery_bootloader_offset)
+    output_format = resolve_partition_table_format(output_file, output_format)
+    write_partition_table_file(partition_table, output_file, output_format)
+
+def command_dump_table(
+        esp: ESPLoader,
+        partition_table: PartitionTable,
+        output_file: Optional[str],
+        output_format: Optional[str],
+):
+    if not output_file:
+        chip = esp.CHIP_NAME.lower().replace(' ', '-')
+        try:
+            mac = esp.read_mac("BASE_MAC")
+            serial = ''.join(f"{b:02x}" for b in mac)
+        except Exception:
+            serial = "unknown"
+        timestamp = time.strftime("%Y%m%d-%H%M%S")
+        extension = 'bin' if output_format == 'bin' else 'csv'
+        output_file = f"{chip}-{serial}-{timestamp}-partition-table.{extension}"
+    output_format = resolve_partition_table_format(output_file, output_format)
+    write_partition_table_file(partition_table, output_file, output_format)
+
+def command_write_table(
+        esp: ESPLoader,
+        table_file_path: str,
+        partition_table_offset: int,
+        primary_bootloader_offset: Optional[int],
+        recovery_bootloader_offset: Optional[int],
+        force: bool = False,
+):
+    partition_table = load_partition_table_file(
+        table_file_path, partition_table_offset, primary_bootloader_offset, recovery_bootloader_offset)
+
+    try:
+        partition_table.verify(partition_table_offset=partition_table_offset)
+    except RuntimeError as e:
+        if not force:
+            raise RuntimeError(
+                f"Partition table failed verification: {e}. Re-run with --force to flash it anyway.") from e
+        print(f"Warning: partition table failed verification: {e} (continuing due to --force)")
+
+    partition_table.verify_size_fits(flash_size_bytes(detect_flash_size(esp)))
+
+    binary = partition_table.to_binary()
+    print_partition_table(partition_table)
+    print()
+    print(f"Writing partition table ({len(binary):#x} bytes) to offset {partition_table_offset:#x}...")
+    print("Note: this replaces only the partition map; existing partition data on flash is not moved, "
+          "resized, or erased. A table that no longer matches the flash contents can make the device unbootable.")
+    write_flash(esp=esp, addr_data=[(partition_table_offset, binary)], flash_size='detect')
+    print("Partition table written")
+
 def command_dump_image(esp: ESPLoader, output_file: Optional[str]):
     flash_size = flash_size_bytes(detect_flash_size(esp))
 
@@ -863,11 +980,49 @@ def main(args):
         )
         return
 
+    # print-table and convert-table operate purely on a local partition table file. print-table
+    # with no file falls through to the shared loader, printing the device's table (or the one
+    # given via --partition-table-file).
+    if args.command == 'print-table' and args.table_file:
+        command_print_table(
+            table_file_path=args.table_file,
+            partition_table_offset=args.partition_table_offset,
+            primary_bootloader_offset=args.primary_bootloader_offset,
+            recovery_bootloader_offset=args.recovery_bootloader_offset,
+        )
+        return
+
+    if args.command == 'convert-table':
+        command_convert_table(
+            input_file=args.input_file,
+            output_file=args.output_file,
+            output_format=args.format,
+            partition_table_offset=args.partition_table_offset,
+            primary_bootloader_offset=args.primary_bootloader_offset,
+            recovery_bootloader_offset=args.recovery_bootloader_offset,
+        )
+        return
+
     # Connect to ESP device if required
-    requires_esp = args.command not in ['list', 'create-image', 'create-bundle', 'create-nvs'] or not args.partition_table_file
+    requires_esp = args.command not in ['list', 'create-image', 'create-bundle', 'create-nvs', 'print-table'] or not args.partition_table_file
     esp = get_esp(port=args.port, baud=args.baud) if requires_esp else None
     if not args.primary_bootloader_offset and esp:
         args.primary_bootloader_offset = esp.BOOTLOADER_FLASH_OFFSET
+
+    # write-table flashes a partition table from its own positional file, bypassing the shared
+    # loader so it never reads the device's current table and writes it straight back to itself.
+    if args.command == 'write-table':
+        command_write_table(
+            esp=esp,
+            table_file_path=args.table_file,
+            partition_table_offset=args.partition_table_offset,
+            primary_bootloader_offset=args.primary_bootloader_offset,
+            recovery_bootloader_offset=args.recovery_bootloader_offset,
+            force=args.force,
+        )
+        if esp and not args.no_reset:
+            esp.hard_reset()
+        return
 
     if args.command == 'dump-image':
         command_dump_image(esp=esp, output_file=args.output_file)
@@ -946,6 +1101,9 @@ def main(args):
 
     if args.command == 'list':
         pass
+    elif args.command == 'print-table':
+        # The shared path above already loaded and printed the table.
+        pass
     elif args.command == 'read':
         command_read(
             esp=esp,
@@ -1002,6 +1160,13 @@ def main(args):
         )
     elif args.command == 'dump-bundle':
         command_dump_bundle(esp=esp, partition_table=partition_table, output_file=args.output_file)
+    elif args.command == 'dump-table':
+        command_dump_table(
+            esp=esp,
+            partition_table=partition_table,
+            output_file=args.output_file,
+            output_format=args.format,
+        )
     elif args.command == 'write-bundle':
         command_write_bundle(
             esp=esp,
@@ -1136,6 +1301,26 @@ def _main():
     # Print Bundle subcommand
     print_bundle_parser = subparsers.add_parser('print-bundle', help='Print partition table and app info from a partition bundle ZIP')
     print_bundle_parser.add_argument('bundle_file', help='Input ZIP bundle file')
+
+    # Print Table subcommand
+    print_table_parser = subparsers.add_parser('print-table', help='Print a partition table from a CSV or binary file, or from the device')
+    print_table_parser.add_argument('table_file', nargs='?', help='Partition table CSV or binary file (default: read from the device, or --partition-table-file)')
+
+    # Convert Table subcommand
+    convert_table_parser = subparsers.add_parser('convert-table', help='Convert a partition table file between CSV and binary')
+    convert_table_parser.add_argument('input_file', help='Input partition table CSV or binary file')
+    convert_table_parser.add_argument('output_file', help='Output partition table file (.csv or .bin)')
+    convert_table_parser.add_argument('-f', '--format', choices=['csv', 'bin'], help='Output format (default: inferred from output extension)')
+
+    # Dump Table subcommand
+    dump_table_parser = subparsers.add_parser('dump-table', help='Dump the partition table from the device to a file')
+    dump_table_parser.add_argument('output_file', nargs='?', help='Output file (default: {chip}-{mac}-{timestamp}-partition-table.csv)')
+    dump_table_parser.add_argument('-f', '--format', choices=['csv', 'bin'], help='Output format (default: inferred from output extension, else csv)')
+
+    # Write Table subcommand
+    write_table_parser = subparsers.add_parser('write-table', help='Write a partition table from a CSV or binary file to the device')
+    write_table_parser.add_argument('table_file', help='Partition table CSV or binary file to flash')
+    write_table_parser.add_argument('--force', action='store_true', help='Flash even if the partition table fails verification')
 
     # Create NVS subcommand
     create_nvs_parser = subparsers.add_parser('create-nvs', help='Generate NVS partition image from CSV')

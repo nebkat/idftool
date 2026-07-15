@@ -6,6 +6,26 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- Partition table file commands that make the table itself the subject
+  (a positional file), keeping the global `--partition-table-file`
+  option for its existing role of overriding the layout of other
+  commands:
+  - `convert-table <in> <out>` — convert a partition table between CSV
+    and binary, offline. Format is auto-detected on input and inferred
+    from the output extension (`.csv`/`.bin`) or `--format`.
+  - `print-table [file]` — pretty-print a partition table from a CSV or
+    binary file (offline), or from the device when no file is given.
+  - `dump-table [output]` — read the partition table from the device and
+    save it as CSV or binary (default filename
+    `{chip}-{mac}-{timestamp}-partition-table.csv`).
+  - `write-table <file>` — flash a partition table from a CSV or binary
+    file to the device. Requires an explicit file (so it can never read
+    the device's current table and write it back to itself), verifies
+    the table before flashing (override with `--force`), and warns that
+    only the map is replaced — existing partition data is not moved or
+    erased.
+
 ### Fixed
 - Working with empty or truncated input files now reports a clear error
   instead of a confusing parser failure (e.g. "Partition table is
