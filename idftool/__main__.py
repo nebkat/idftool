@@ -1004,7 +1004,7 @@ def main(args):
         return
 
     # Connect to ESP device if required
-    requires_esp = args.command not in ['list', 'create-image', 'create-bundle', 'create-nvs', 'print-table'] or not args.partition_table_file
+    requires_esp = args.command not in ['create-image', 'create-bundle', 'create-nvs', 'print-table'] or not args.partition_table_file
     esp = get_esp(port=args.port, baud=args.baud) if requires_esp else None
     if not args.primary_bootloader_offset and esp:
         args.primary_bootloader_offset = esp.BOOTLOADER_FLASH_OFFSET
@@ -1099,9 +1099,7 @@ def main(args):
         ) if args.primary_bootloader_offset is not None else None
     )
 
-    if args.command == 'list':
-        pass
-    elif args.command == 'print-table':
+    if args.command == 'print-table':
         # The shared path above already loaded and printed the table.
         pass
     elif args.command == 'read':
@@ -1224,12 +1222,6 @@ def _main():
     # Devices subcommand
     devices_parser = subparsers.add_parser('devices', help='Device list')
 
-    # List subcommand
-    list_parser = subparsers.add_parser('list', help='List partitions')
-    list_parser.add_argument('--partition-type', help='Filter by partition type')
-    list_parser.add_argument('--partition-subtype', help='Filter by partition subtype')
-    list_parser.add_argument('--partition-name', help='Filter by partition name')
-
     # Read subcommand
     read_parser = subparsers.add_parser('read', help='Read partition')
     read_parser.add_argument('partition', help='Name of the partition to read')
@@ -1303,7 +1295,7 @@ def _main():
     print_bundle_parser.add_argument('bundle_file', help='Input ZIP bundle file')
 
     # Print Table subcommand
-    print_table_parser = subparsers.add_parser('print-table', help='Print a partition table from a CSV or binary file, or from the device')
+    print_table_parser = subparsers.add_parser('print-table', aliases=['list'], help='Print a partition table from a CSV or binary file, or from the device')
     print_table_parser.add_argument('table_file', nargs='?', help='Partition table CSV or binary file (default: read from the device, or --partition-table-file)')
 
     # Convert Table subcommand
@@ -1359,6 +1351,8 @@ def _main():
     args = parser.parse_args()
     if args.command == 'reflash':
         args.command = 'write-image'
+    if args.command == 'list':
+        args.command = 'print-table'
     if args.command == 'enter-bootloader' and not args.port:
         parser.error("enter-bootloader requires -p/--port")
     try:

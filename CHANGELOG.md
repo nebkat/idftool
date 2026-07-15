@@ -26,6 +26,12 @@ this project adheres to [Semantic Versioning](https://semver.org/).
     only the map is replaced — existing partition data is not moved or
     erased.
 
+### Changed
+- `list` is now an alias of `print-table` (both print the device's
+  partition table identically). Its `--partition-type`,
+  `--partition-subtype`, and `--partition-name` flags — which were never
+  implemented — have been removed.
+
 ### Fixed
 - Working with empty or truncated input files now reports a clear error
   instead of a confusing parser failure (e.g. "Partition table is

@@ -89,7 +89,7 @@ Setting boot partition to 'ota_1'...
 |---------|-------------|
 | **Discovery** | |
 | [`devices`](#devices) | List serial ports with hardware IDs |
-| [`list`](#list) | Print the partition table |
+| [`list`](#print-table) | Print the partition table (alias of `print-table`) |
 | **Partition I/O** | |
 | [`read`](#read) | Read a partition (or slice) into a file |
 | [`write`](#write) | Write one or more files to named partitions |
@@ -130,17 +130,6 @@ List the serial ports the host can see, with their descriptions and USB
 hardware IDs.
 ```text
 idftool devices
-```
-
-#### `list`
-Print the device's partition table. With a connected ESP, idftool also
-reads the application descriptor of every app partition (project name,
-version) and marks the currently-active OTA slot with a trailing `*`. The
-selected otadata copy is shown next to the otadata partition's subtype
-(`ota (A)`, `ota (B)`, or `ota (invalid)` when otadata is erased).
-```text
-idftool list
-idftool --partition-table-file partitions.csv list   # offline
 ```
 
 ### Partition I/O
@@ -329,10 +318,17 @@ idftool --primary-bootloader-offset esp32s3 convert-table partitions.csv partiti
 #### `print-table`
 Pretty-print a partition table. Given a CSV or binary file it runs offline;
 with no file it reads the table from the device (or from
-`--partition-table-file`).
+`--partition-table-file`). With a connected ESP, idftool also reads the
+application descriptor of every app partition (project name, version) and
+marks the currently-active OTA slot with a trailing `*`; the selected otadata
+copy is shown next to the otadata partition's subtype (`ota (A)`, `ota (B)`,
+or `ota (invalid)` when otadata is erased).
+
+Aliased as `list`.
 ```text
 idftool print-table partitions.bin        # from a file, offline
 idftool print-table                        # from the device
+idftool list                               # same thing
 idftool --partition-table-file partitions.csv print-table
 ```
 
