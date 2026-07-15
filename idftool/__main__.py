@@ -4,7 +4,7 @@ import re
 import sys
 import time
 from typing import Callable, Optional, Literal
-from zipfile import ZipFile
+from zipfile import BadZipFile, ZipFile
 
 from esptool import ESPLoader, CHIP_DEFS, flash_size_bytes
 from serial import SerialException
@@ -239,6 +239,26 @@ def write_otadata(esp: ESPLoader, partition: PartitionDefinition, otadata: OtaDa
     esp.flash_block(data=otadata.otadata.to_bytes(), seq=0)
     esp.flash_finish()
 
+def check_image_file(path: str, partition_table_offset: int) -> int:
+    """Validate an image file is non-empty and large enough to contain a partition table.
+
+    Returns the image size in bytes.
+    """
+    image_size = os.path.getsize(path)
+    if image_size == 0:
+        raise RuntimeError(f"Image file '{path}' is empty")
+    if image_size <= partition_table_offset:
+        raise RuntimeError(
+            f"Image file '{path}' ({image_size:#x} bytes) is smaller than the partition table "
+            f"offset {partition_table_offset:#x}; it does not appear to contain a partition table")
+    return image_size
+
+def require_partitions(partition_table: PartitionTable, source: str) -> PartitionTable:
+    """Raise a clear error if a parsed partition table contains no partitions."""
+    if len(partition_table) == 0:
+        raise RuntimeError(f"Partition table from {source} is empty (no partitions defined)")
+    return partition_table
+
 def validate_app_binary(esp: ESPLoader, app_binary: bytes) -> tuple[bytes, ImageMetadata]:
     try:
         image_metadata = ImageMetadata.from_bytes(app_binary, app_required=True)
@@ -256,6 +276,8 @@ def validate_app_binary(esp: ESPLoader, app_binary: bytes) -> tuple[bytes, Image
 
 def load_app_binary(esp: ESPLoader, app_binary_file: str, partition: PartitionDefinition) -> tuple[bytes, ImageMetadata]:
     app_binary_size = os.path.getsize(app_binary_file)
+    if app_binary_size == 0:
+        raise RuntimeError(f"Application binary '{app_binary_file}' is empty")
     if app_binary_size > partition.size:
         raise RuntimeError(
             f"Application binary size '{app_binary_size}' is greater than partition size {partition.size}")
@@ -404,7 +426,13 @@ def command_create_bundle(
             print(f"Adding partition table CSV to bundle")
 
 def check_write_bundle_has_partition_table(file: str) -> bool:
-    with ZipFile(file, 'r') as zf:
+    if os.path.getsize(file) == 0:
+        raise RuntimeError(f"Bundle '{file}' is empty")
+    try:
+        bundle_zip = ZipFile(file, 'r')
+    except BadZipFile as e:
+        raise RuntimeError(f"Bundle '{file}' is not a valid ZIP archive") from e
+    with bundle_zip as zf:
         return any(m == 'partition_table.csv' for m in zf.namelist())
 
 def command_write_bundle(
@@ -569,6 +597,8 @@ def command_write_nvs(
     write_flash(esp=esp, addr_data=[(partition.offset, image)], flash_size='detect')
 
 def command_app_info(app_binary_file: str):
+    if os.path.getsize(app_binary_file) == 0:
+        raise RuntimeError(f"Application binary '{app_binary_file}' is empty")
     app_binary = open(app_binary_file, 'rb').read()
     try:
         image_metadata = ImageMetadata.from_bytes(app_binary, app_required=True)
@@ -578,6 +608,8 @@ def command_app_info(app_binary_file: str):
     print_app_info(image_metadata.app_description, image_metadata.header)
 
 def command_write_image(esp: ESPLoader, bootloader_entry: PartitionDefinition, image_file_path: str):
+    if os.path.getsize(image_file_path) == 0:
+        raise RuntimeError(f"Image file '{image_file_path}' is empty")
     image_file = open(image_file_path, 'rb')
     image_file.seek(bootloader_entry.offset)
     bootloader_binary = image_file.read(bootloader_entry.size)
@@ -638,7 +670,7 @@ def print_partition_table_and_apps(
         print_app_info(image_metadata.app_description, image_metadata.header, indent="  ")
 
 def command_print_image(image_file_path: str, partition_table_offset: int, partition_table_size: int):
-    image_size = os.path.getsize(image_file_path)
+    image_size = check_image_file(image_file_path, partition_table_offset)
     with open(image_file_path, 'rb') as f:
         f.seek(partition_table_offset)
         partition_table_binary = f.read(partition_table_size)
@@ -646,6 +678,7 @@ def command_print_image(image_file_path: str, partition_table_offset: int, parti
             partition_table = PartitionTable.from_binary(partition_table_binary)
         except (RuntimeError, ValueError) as e:
             raise RuntimeError(f"Could not parse partition table at offset {partition_table_offset:#x}") from e
+        require_partitions(partition_table, f"image at offset {partition_table_offset:#x}")
 
         def read(offset: int, length: int) -> bytes:
             if offset >= image_size:
@@ -686,11 +719,19 @@ def command_print_bundle(
         recovery_bootloader_offset: Optional[int],
 ):
     bundle_size = os.path.getsize(bundle_file_path)
-    with ZipFile(bundle_file_path, 'r') as zf:
+    if bundle_size == 0:
+        raise RuntimeError(f"Bundle '{bundle_file_path}' is empty")
+    try:
+        bundle_zip = ZipFile(bundle_file_path, 'r')
+    except BadZipFile as e:
+        raise RuntimeError(f"Bundle '{bundle_file_path}' is not a valid ZIP archive") from e
+    with bundle_zip as zf:
         names = zf.namelist()
         if 'partition_table.csv' not in names:
             raise RuntimeError(f"Bundle {bundle_file_path} does not contain a partition_table.csv")
         csv_text = zf.read('partition_table.csv').decode('utf-8')
+        if not csv_text.strip():
+            raise RuntimeError(f"Bundle '{bundle_file_path}' contains an empty partition_table.csv")
 
         # idftool-generated bundles encode bootloader offsets in the CSV; PartitionTable.from_csv
         # ignores the literal for bootloader rows and requires an explicit offset, so fall back to
@@ -708,6 +749,7 @@ def command_print_bundle(
             primary_bootloader_offset=primary_bootloader_offset,
             recovery_bootloader_offset=recovery_bootloader_offset,
         )
+        require_partitions(partition_table, f"bundle '{bundle_file_path}'")
 
         partition_data = {
             name[:-4]: zf.read(name)
@@ -833,11 +875,14 @@ def main(args):
 
     # Load partition table
     if args.command == 'write-image':
+        check_image_file(args.image_file, args.partition_table_offset)
         with open(args.image_file, 'rb') as f:
             f.seek(args.partition_table_offset)
             partition_table_binary = f.read(args.partition_table_size)
             partition_table = PartitionTable.from_binary(partition_table_binary)
     elif args.partition_table_file:
+        if os.path.getsize(args.partition_table_file) == 0:
+            raise RuntimeError(f"Partition table file '{args.partition_table_file}' is empty")
         with open(args.partition_table_file, 'rb') as f:
             partition_table = PartitionTable.from_file(
                 f,
@@ -862,6 +907,8 @@ def main(args):
             partition_table = PartitionTable.from_binary(partition_table_binary)
         except RuntimeError as e:
             raise RuntimeError("Partition table could not be loaded") from e
+
+    require_partitions(partition_table, "the loaded source")
 
     # Read otadata so the printed table can mark the active app partition
     otadata_params: OtaDataParameters | None = None

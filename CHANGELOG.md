@@ -4,6 +4,19 @@ All notable changes to this project are documented here. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- Working with empty or truncated input files now reports a clear error
+  instead of a confusing parser failure (e.g. "Partition table is
+  missing an end-of-table marker" for a zero-byte image). Empty images,
+  app binaries, and bundle ZIPs are rejected up front, as are images too
+  small to reach the partition table offset and corrupt (non-ZIP)
+  bundles.
+- A parsed-but-empty partition table (all-`0xFF` binary region,
+  comment-only CSV, etc.) is now rejected across all parse paths rather
+  than silently yielding a table with no partitions.
+
 ## [v0.2.2] — 2026-06-15
 
 ### Added
