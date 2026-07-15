@@ -17,7 +17,7 @@ from esp_idf_defs import ImageMetadata, ChipId
 from esp_idf_defs.otadata import OtaDataParameters, OtaDataSelectEntry, OtaImageState
 from esp_idf_defs.partitions import PARTITION_TABLE_SIZE, PARTITION_TABLE_OFFSET, PartitionTable, print_partition_table, \
     PartitionDefinition, BOOTLOADER_TYPE, SUBTYPES, PARTITION_TABLE_TYPE, APP_TYPE, NUM_PARTITION_SUBTYPE_APP_OTA, \
-    DATA_TYPE
+    DATA_TYPE, get_encoding
 from esptool.cmds import detect_chip, read_flash, write_flash, erase_region, merge_bin, erase_flash, detect_flash_size
 
 PARTITION_SLICE_REGEX = re.compile(r"^(?P<partition>.+?)(?:\[(?:(?P<start>[-+]?(?:0x)?[0-9A-Fa-f]+)?(?::(?P<stop>[-+]?(?:0x)?[0-9A-Fa-f]+)?)?)?])?$")
@@ -269,8 +269,24 @@ def load_partition_table_file(
     if os.path.getsize(path) == 0:
         raise RuntimeError(f"Partition table file '{path}' is empty")
     with open(path, 'rb') as f:
-        partition_table, _ = PartitionTable.from_file(
-            f,
+        data = f.read()
+
+    if data[:2] == PartitionDefinition.MAGIC_BYTES:
+        partition_table = PartitionTable.from_binary(data)
+    else:
+        csv_text = data.decode(get_encoding(data))
+        # A CSV with bootloader rows can't be parsed without the bootloader offsets. idftool writes
+        # those offsets into the CSV as literal bootloader rows, so recover them from the file itself
+        # when the user didn't pass them — this lets a dumped table round-trip without re-specifying
+        # --primary-bootloader-offset. (print-bundle does the same for bundle CSVs.)
+        if primary_bootloader_offset is None or recovery_bootloader_offset is None:
+            csv_primary, csv_recovery = _extract_csv_bootloader_offsets(csv_text)
+            if primary_bootloader_offset is None:
+                primary_bootloader_offset = csv_primary
+            if recovery_bootloader_offset is None:
+                recovery_bootloader_offset = csv_recovery
+        partition_table = PartitionTable.from_csv(
+            csv_text,
             partition_table_offset=partition_table_offset,
             primary_bootloader_offset=primary_bootloader_offset,
             recovery_bootloader_offset=recovery_bootloader_offset,
@@ -1036,15 +1052,12 @@ def main(args):
             partition_table_binary = f.read(args.partition_table_size)
             partition_table = PartitionTable.from_binary(partition_table_binary)
     elif args.partition_table_file:
-        if os.path.getsize(args.partition_table_file) == 0:
-            raise RuntimeError(f"Partition table file '{args.partition_table_file}' is empty")
-        with open(args.partition_table_file, 'rb') as f:
-            partition_table = PartitionTable.from_file(
-                f,
-                partition_table_offset=args.partition_table_offset,
-                primary_bootloader_offset=args.primary_bootloader_offset,
-                recovery_bootloader_offset=args.recovery_bootloader_offset
-            )[0]
+        partition_table = load_partition_table_file(
+            args.partition_table_file,
+            partition_table_offset=args.partition_table_offset,
+            primary_bootloader_offset=args.primary_bootloader_offset,
+            recovery_bootloader_offset=args.recovery_bootloader_offset,
+        )
     elif args.command == 'write-bundle' and check_write_bundle_has_partition_table(args.input_file):
         with ZipFile(args.input_file, 'r') as tar:
             partition_table_file = tar.read('partition_table.csv')

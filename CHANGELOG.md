@@ -42,6 +42,12 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 - A parsed-but-empty partition table (all-`0xFF` binary region,
   comment-only CSV, etc.) is now rejected across all parse paths rather
   than silently yielding a table with no partitions.
+- Loading a partition table CSV that contains bootloader rows (such as one
+  produced by `dump-table`) no longer requires re-specifying
+  `--primary-bootloader-offset`: the offset embedded in the CSV is
+  recovered from the file, so dumped tables round-trip through
+  `print-table`, `convert-table`, `write-table`, and `--partition-table-file`
+  without extra arguments. The flag still works as an explicit override.
 
 ## [v0.2.2] — 2026-06-15
 
