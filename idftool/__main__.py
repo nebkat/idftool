@@ -285,12 +285,26 @@ def load_partition_table_file(
                 primary_bootloader_offset = csv_primary
             if recovery_bootloader_offset is None:
                 recovery_bootloader_offset = csv_recovery
-        partition_table = PartitionTable.from_csv(
-            csv_text,
-            partition_table_offset=partition_table_offset,
-            primary_bootloader_offset=primary_bootloader_offset,
-            recovery_bootloader_offset=recovery_bootloader_offset,
-        )
+        try:
+            partition_table = PartitionTable.from_csv(
+                csv_text,
+                partition_table_offset=partition_table_offset,
+                primary_bootloader_offset=primary_bootloader_offset,
+                recovery_bootloader_offset=recovery_bootloader_offset,
+            )
+        except RuntimeError as e:
+            msg = str(e)
+            if 'bootloader offset is not provided' in msg.lower():
+                which = 'recovery' if 'recovery' in msg.lower() else 'primary'
+                flag = ('--primary-bootloader-offset (an address or a chip name, e.g. esp32s3)'
+                        if which == 'primary' else '--recovery-bootloader-offset')
+                line = re.search(r'line (\d+)', msg)
+                where = f" (line {line.group(1)})" if line else ""
+                raise RuntimeError(
+                    f"The {which} bootloader entry in '{path}'{where} has no offset. "
+                    f"Add the offset to the CSV, or pass {flag}."
+                ) from None
+            raise
     return require_partitions(partition_table, f"file '{path}'")
 
 def resolve_partition_table_format(output_file: Optional[str], explicit: Optional[str]) -> Literal['csv', 'bin']:
@@ -1022,7 +1036,7 @@ def main(args):
     # Connect to ESP device if required
     requires_esp = args.command not in ['create-image', 'create-bundle', 'create-nvs', 'print-table'] or not args.partition_table_file
     esp = get_esp(port=args.port, baud=args.baud) if requires_esp else None
-    if not args.primary_bootloader_offset and esp:
+    if args.primary_bootloader_offset is None and esp:
         args.primary_bootloader_offset = esp.BOOTLOADER_FLASH_OFFSET
 
     # write-table flashes a partition table from its own positional file, bypassing the shared
