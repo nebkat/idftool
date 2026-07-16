@@ -6,6 +6,8 @@ import time
 from typing import Callable, Optional, Literal
 from zipfile import BadZipFile, ZipFile
 
+import click
+
 from esptool import ESPLoader, CHIP_DEFS, flash_size_bytes
 from serial import SerialException
 from serial.tools import list_ports
@@ -80,16 +82,36 @@ def _get_port_list() -> list[ListPortInfo]:
     sorted_port_info = sorted(ports, key=key_func)
     return sorted_port_info
 
-def parse_bootloader_offset(x):
-    try:
-        return int(x, 0)
-    except ValueError:
-        if CHIP_DEFS[x] is None:
-            raise argparse.ArgumentTypeError(f"Invalid bootloader offset or chip name: {x}")
-        return CHIP_DEFS[x].BOOTLOADER_FLASH_OFFSET
+class BasedIntParamType(click.ParamType):
+    """Integer accepting any base via a 0x/0o/0b prefix (like int(x, 0))."""
+    name = "integer"
 
-def auto_int(x):
-    return int(x, 0)
+    def convert(self, value, param, ctx):
+        if isinstance(value, int):
+            return value
+        try:
+            return int(value, 0)
+        except ValueError:
+            self.fail(f"{value!r} is not a valid integer", param, ctx)
+
+class BootloaderOffsetParamType(click.ParamType):
+    """A flash offset, or a chip name (e.g. esp32s3) resolved to its bootloader offset."""
+    name = "offset|chip"
+
+    def convert(self, value, param, ctx):
+        if isinstance(value, int):
+            return value
+        try:
+            return int(value, 0)
+        except ValueError:
+            pass
+        chip = CHIP_DEFS.get(value)
+        if chip is None:
+            self.fail(f"Invalid bootloader offset or chip name: {value}", param, ctx)
+        return chip.BOOTLOADER_FLASH_OFFSET
+
+BASED_INT = BasedIntParamType()
+BOOTLOADER_OFFSET = BootloaderOffsetParamType()
 
 def get_esp(port: str | None, baud: int) -> ESPLoader:
     esp: ESPLoader | None = None
@@ -975,420 +997,435 @@ def command_enter_bootloader(port: str, baud: int, poll_interval: float = 0.05):
             time.sleep(poll_interval)
     print(f"In download mode: {esp.CHIP_NAME} ({port})")
 
-def main(args):
-    if args.command == 'devices':
-        devices = _get_port_list()
-        for d in devices:
-            print(f"{d.device} || {d.description} || {d.hwid}")
-        return
+class State:
+    """Holds the global options and the (lazily-established) device connection."""
 
-    if args.command == 'enter-bootloader':
-        command_enter_bootloader(port=args.port, baud=args.baud)
-        return
+    def __init__(self, *, port, baud, no_reset, partition_table_file, partition_table_offset,
+                 partition_table_size, primary_bootloader_offset, recovery_bootloader_offset):
+        self.port = port
+        self.baud = baud
+        self.no_reset = no_reset
+        self.partition_table_file = partition_table_file
+        self.partition_table_offset = partition_table_offset
+        self.partition_table_size = partition_table_size
+        self.primary_bootloader_offset = primary_bootloader_offset
+        self.recovery_bootloader_offset = recovery_bootloader_offset
+        self.esp: Optional[ESPLoader] = None
+        self.reset_after = True
 
-    # create-nvs with explicit --size needs neither device nor partition table
-    if args.command == 'create-nvs' and args.size is not None:
-        command_create_nvs(args.csv_file, args.size, args.output)
-        return
+    def connect(self) -> ESPLoader:
+        if self.esp is None:
+            self.esp = get_esp(port=self.port, baud=self.baud)
+            # Fall back to the connected chip's bootloader offset only when the user didn't set one
+            # explicitly, keeping the precedence: explicit CLI > chip default > value present in CSV.
+            if self.primary_bootloader_offset is None:
+                self.primary_bootloader_offset = self.esp.BOOTLOADER_FLASH_OFFSET
+        return self.esp
 
-    # print-image inspects a local image file and needs neither device nor external partition table
-    if args.command == 'print-image':
-        command_print_image(
-            image_file_path=args.image_file,
-            partition_table_offset=args.partition_table_offset,
-            partition_table_size=args.partition_table_size,
-        )
-        return
-
-    # print-bundle inspects a local bundle ZIP and needs neither device nor external partition table
-    if args.command == 'print-bundle':
-        command_print_bundle(
-            bundle_file_path=args.bundle_file,
-            partition_table_offset=args.partition_table_offset,
-            primary_bootloader_offset=args.primary_bootloader_offset,
-            recovery_bootloader_offset=args.recovery_bootloader_offset,
-        )
-        return
-
-    # print-table and convert-table operate purely on a local partition table file. print-table
-    # with no file falls through to the shared loader, printing the device's table (or the one
-    # given via --partition-table-file).
-    if args.command == 'print-table' and args.table_file:
-        command_print_table(
-            table_file_path=args.table_file,
-            partition_table_offset=args.partition_table_offset,
-            primary_bootloader_offset=args.primary_bootloader_offset,
-            recovery_bootloader_offset=args.recovery_bootloader_offset,
-        )
-        return
-
-    if args.command == 'convert-table':
-        command_convert_table(
-            input_file=args.input_file,
-            output_file=args.output_file,
-            output_format=args.format,
-            partition_table_offset=args.partition_table_offset,
-            primary_bootloader_offset=args.primary_bootloader_offset,
-            recovery_bootloader_offset=args.recovery_bootloader_offset,
-        )
-        return
-
-    # Connect to ESP device if required
-    requires_esp = args.command not in ['create-image', 'create-bundle', 'create-nvs', 'print-table'] or not args.partition_table_file
-    esp = get_esp(port=args.port, baud=args.baud) if requires_esp else None
-    if args.primary_bootloader_offset is None and esp:
-        args.primary_bootloader_offset = esp.BOOTLOADER_FLASH_OFFSET
-
-    # write-table flashes a partition table from its own positional file, bypassing the shared
-    # loader so it never reads the device's current table and writes it straight back to itself.
-    if args.command == 'write-table':
-        command_write_table(
-            esp=esp,
-            table_file_path=args.table_file,
-            partition_table_offset=args.partition_table_offset,
-            primary_bootloader_offset=args.primary_bootloader_offset,
-            recovery_bootloader_offset=args.recovery_bootloader_offset,
-            force=args.force,
-        )
-        if esp and not args.no_reset:
-            esp.hard_reset()
-        return
-
-    if args.command == 'dump-image':
-        command_dump_image(esp=esp, output_file=args.output_file)
-        return
-
-    # Load partition table
-    if args.command == 'write-image':
-        check_image_file(args.image_file, args.partition_table_offset)
-        with open(args.image_file, 'rb') as f:
-            f.seek(args.partition_table_offset)
-            partition_table_binary = f.read(args.partition_table_size)
-            partition_table = PartitionTable.from_binary(partition_table_binary)
-    elif args.partition_table_file:
-        partition_table = load_partition_table_file(
-            args.partition_table_file,
-            partition_table_offset=args.partition_table_offset,
-            primary_bootloader_offset=args.primary_bootloader_offset,
-            recovery_bootloader_offset=args.recovery_bootloader_offset,
-        )
-    elif args.command == 'write-bundle' and check_write_bundle_has_partition_table(args.input_file):
-        with ZipFile(args.input_file, 'r') as tar:
-            partition_table_file = tar.read('partition_table.csv')
-            if not partition_table_file:
-                raise RuntimeError("Partition table could not be loaded from bundle")
-            partition_table = PartitionTable.from_csv(
-                partition_table_file.decode('utf-8'),
-                partition_table_offset=args.partition_table_offset,
-                primary_bootloader_offset=args.primary_bootloader_offset,
-                recovery_bootloader_offset=args.recovery_bootloader_offset
+    def _load_partition_table(self, image_file, bundle_file) -> PartitionTable:
+        # Load from the most specific source available, matching the original precedence:
+        # image file > --partition-table-file > bundle CSV > the connected device.
+        if image_file is not None:
+            check_image_file(image_file, self.partition_table_offset)
+            with open(image_file, 'rb') as f:
+                f.seek(self.partition_table_offset)
+                partition_table = PartitionTable.from_binary(f.read(self.partition_table_size))
+        elif self.partition_table_file:
+            partition_table = load_partition_table_file(
+                self.partition_table_file,
+                partition_table_offset=self.partition_table_offset,
+                primary_bootloader_offset=self.primary_bootloader_offset,
+                recovery_bootloader_offset=self.recovery_bootloader_offset,
             )
-    else:
-        try:
-            partition_table_binary = esp.read_flash(offset=args.partition_table_offset, length=args.partition_table_size)
-            partition_table = PartitionTable.from_binary(partition_table_binary)
-        except RuntimeError as e:
-            raise RuntimeError("Partition table could not be loaded") from e
+        elif bundle_file is not None and check_write_bundle_has_partition_table(bundle_file):
+            with ZipFile(bundle_file, 'r') as tar:
+                partition_table_csv = tar.read('partition_table.csv')
+                if not partition_table_csv:
+                    raise RuntimeError("Partition table could not be loaded from bundle")
+                partition_table = PartitionTable.from_csv(
+                    partition_table_csv.decode('utf-8'),
+                    partition_table_offset=self.partition_table_offset,
+                    primary_bootloader_offset=self.primary_bootloader_offset,
+                    recovery_bootloader_offset=self.recovery_bootloader_offset,
+                )
+        else:
+            try:
+                binary = self.esp.read_flash(offset=self.partition_table_offset, length=self.partition_table_size)
+                partition_table = PartitionTable.from_binary(binary)
+            except RuntimeError as e:
+                raise RuntimeError("Partition table could not be loaded") from e
+        return require_partitions(partition_table, "the loaded source")
 
-    require_partitions(partition_table, "the loaded source")
+    def setup(self, *, needs_device=True, image_file=None, bundle_file=None):
+        """Connect if required, load and print the partition table, and build the virtual
+        partition-table/bootloader entries the command handlers expect.
 
-    # Read otadata so the printed table can mark the active app partition
-    otadata_params: OtaDataParameters | None = None
-    if esp:
-        try:
-            _, otadata_params = read_otadata(esp, partition_table)
-        except ValueError:
-            pass
-
-    # Print partition table
-    print_partition_table(partition_table, esp.read_flash if esp else None, otadata=otadata_params)
-
-    if esp:
-        flash_size_str = detect_flash_size(esp)
-        flash_size = flash_size_bytes(flash_size_str)
-        partition_table.verify_size_fits(flash_size)
-
-    # Add virtual partition table entry if not present
-    partition_table_entry = next(
-        (e for e in partition_table if e.type == PARTITION_TABLE_TYPE and e.subtype == SUBTYPES[e.type]['primary']),
-        PartitionDefinition.default_partition_table(
-            offset=args.partition_table_offset,
-            size=args.partition_table_size
+        Returns ``(esp, partition_table, partition_table_entry, bootloader_entry)`` where ``esp``
+        is ``None`` for commands that ran entirely from a file.
+        """
+        table_from_file = (
+            image_file is not None
+            or bool(self.partition_table_file)
+            or (bundle_file is not None and check_write_bundle_has_partition_table(bundle_file))
         )
+        if needs_device or not table_from_file:
+            self.connect()
+        esp = self.esp
+
+        partition_table = self._load_partition_table(image_file, bundle_file)
+
+        # Read otadata so the printed table can mark the active app partition
+        otadata_params: Optional[OtaDataParameters] = None
+        if esp:
+            try:
+                _, otadata_params = read_otadata(esp, partition_table)
+            except ValueError:
+                pass
+
+        print_partition_table(partition_table, esp.read_flash if esp else None, otadata=otadata_params)
+
+        if esp:
+            partition_table.verify_size_fits(flash_size_bytes(detect_flash_size(esp)))
+
+        # Add a virtual partition table entry if not present
+        partition_table_entry = next(
+            (e for e in partition_table if e.type == PARTITION_TABLE_TYPE and e.subtype == SUBTYPES[e.type]['primary']),
+            PartitionDefinition.default_partition_table(
+                offset=self.partition_table_offset,
+                size=self.partition_table_size,
+            )
+        )
+
+        # Add a virtual bootloader partition if not present and a bootloader offset is known
+        bootloader_entry = next(
+            (e for e in partition_table if e.type == BOOTLOADER_TYPE and e.subtype == SUBTYPES[e.type]['primary']),
+            PartitionDefinition.default_bootloader(
+                offset=self.primary_bootloader_offset,
+                size=self.partition_table_offset - self.primary_bootloader_offset,
+            ) if self.primary_bootloader_offset is not None else None
+        )
+
+        return esp, partition_table, partition_table_entry, bootloader_entry
+
+
+class AliasedGroup(click.Group):
+    """click.Group that resolves command aliases and reports the canonical name in help/usage."""
+    aliases = {'reflash': 'write-image', 'list': 'print-table'}
+
+    def get_command(self, ctx, cmd_name):
+        return super().get_command(ctx, self.aliases.get(cmd_name, cmd_name))
+
+    def resolve_command(self, ctx, args):
+        _, cmd, args = super().resolve_command(ctx, args)
+        return cmd.name, cmd, args
+
+
+pass_state = click.make_pass_decorator(State)
+
+CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
+
+
+@click.group(cls=AliasedGroup, context_settings=CONTEXT_SETTINGS)
+@click.option('-p', '--port', default=None, help='Serial port device')
+@click.option('-b', '--baud', type=int, default=ESPLoader.ESP_ROM_BAUD, show_default=True, help='Serial port baud rate')
+@click.option('--no-reset', is_flag=True, help='Do not reset the chip after operations')
+@click.option('--partition-table-file', default=None,
+              help='Path to a partition table CSV or binary file to use instead of reading from the device')
+@click.option('--partition-table-offset', type=BASED_INT, default=PARTITION_TABLE_OFFSET, show_default=True,
+              help='Partition table offset (where to read the table from flash, or place it when loading from CSV)')
+@click.option('--partition-table-size', type=BASED_INT, default=PARTITION_TABLE_SIZE, show_default=True,
+              help='Partition table size')
+@click.option('--primary-bootloader-offset', type=BOOTLOADER_OFFSET, default=None,
+              help='Primary bootloader offset or chip type e.g. esp32s3 (used when loading a table from CSV)')
+@click.option('--recovery-bootloader-offset', type=BASED_INT, default=None,
+              help='Recovery bootloader offset (used when loading a table from CSV)')
+@click.pass_context
+def cli(ctx, port, baud, no_reset, partition_table_file, partition_table_offset,
+        partition_table_size, primary_bootloader_offset, recovery_bootloader_offset):
+    """Utility for flashing, provisioning, and interacting with Espressif SOCs running ESP-IDF."""
+    ctx.obj = State(
+        port=port,
+        baud=baud,
+        no_reset=no_reset,
+        partition_table_file=partition_table_file,
+        partition_table_offset=partition_table_offset,
+        partition_table_size=partition_table_size,
+        primary_bootloader_offset=primary_bootloader_offset,
+        recovery_bootloader_offset=recovery_bootloader_offset,
     )
 
-    # Add virtual bootloader partition if not present and bootloader offsets are provided
-    bootloader_entry = next(
-        (e for e in partition_table if e.type == BOOTLOADER_TYPE and e.subtype == SUBTYPES[e.type]['primary']),
-        PartitionDefinition.default_bootloader(
-            offset=args.primary_bootloader_offset,
-            size=args.partition_table_offset - args.primary_bootloader_offset
-        ) if args.primary_bootloader_offset is not None else None
-    )
 
-    if args.command == 'print-table':
-        # The shared path above already loaded and printed the table.
-        pass
-    elif args.command == 'read':
-        command_read(
-            esp=esp,
-            partition_table=partition_table,
-            partition_table_entry=partition_table_entry,
-            bootloader_entry=bootloader_entry,
-            label=args.partition,
-            output_file=args.output_file
-        )
-    elif args.command == 'write':
-        command_write(
-            esp=esp,
-            partition_table=partition_table,
-            partition_table_entry=partition_table_entry,
-            bootloader_entry=bootloader_entry,
-            files=args.files
-        )
-    elif args.command == 'erase':
-        command_erase(
-            esp=esp,
-            partition_table=partition_table,
-            partition_table_entry=partition_table_entry,
-            bootloader_entry=bootloader_entry,
-            label=args.partition
-        )
-    elif args.command == 'view':
-        command_view(
-            esp=esp,
-            partition_table=partition_table,
-            partition_table_entry=partition_table_entry,
-            bootloader_entry=bootloader_entry,
-            label=args.partition,
-            output=args.output,
-            width=args.width
-        )
-    elif args.command == 'create-image':
-        command_create_image(
-            partition_table=partition_table,
-            partition_table_entry=partition_table_entry,
-            bootloader_entry=bootloader_entry,
-            files=args.files,
-            flash_partition_table=args.flash_partition_table,
-            output_format=args.format,
-            output_file=args.output_file
-        )
-    elif args.command == 'create-bundle':
-        command_create_bundle(
-            partition_table=partition_table,
-            partition_table_entry=partition_table_entry,
-            bootloader_entry=bootloader_entry,
-            files=args.files,
-            flash_partition_table=args.flash_partition_table,
-            output_file=args.output_file
-        )
-    elif args.command == 'dump-bundle':
-        command_dump_bundle(esp=esp, partition_table=partition_table, output_file=args.output_file)
-    elif args.command == 'dump-table':
-        command_dump_table(
-            esp=esp,
-            partition_table=partition_table,
-            output_file=args.output_file,
-            output_format=args.format,
-        )
-    elif args.command == 'write-bundle':
-        command_write_bundle(
-            esp=esp,
-            partition_table=partition_table,
-            partition_table_entry=partition_table_entry,
-            bootloader_entry=bootloader_entry,
-            input_file=args.input_file
-        )
-    elif args.command == 'get-boot':
-        command_get_boot(esp=esp, partition_table=partition_table)
-    elif args.command == 'set-boot':
-        command_set_boot(esp=esp, partition_table=partition_table, label=args.partition)
-    elif args.command == 'clear-boot':
-        command_clear_boot(esp=esp, partition_table=partition_table)
-    elif args.command == 'ota':
-        command_ota(esp=esp, partition_table=partition_table, app_binary_file=args.app_binary_file)
-    elif args.command == 'factory':
-        command_factory(esp=esp, partition_table=partition_table, app_binary_file=args.app_binary_file)
-    elif args.command == 'write-image':
-        command_write_image(esp=esp, bootloader_entry=bootloader_entry, image_file_path=args.image_file)
-    elif args.command == 'create-nvs':
-        partition = get_partition(partition_table, partition_table_entry, bootloader_entry, args.partition)
-        command_create_nvs(args.csv_file, partition.size, args.output)
-    elif args.command == 'write-nvs':
-        command_write_nvs(
-            esp=esp,
-            partition_table=partition_table,
-            partition_table_entry=partition_table_entry,
-            bootloader_entry=bootloader_entry,
-            csv_file=args.csv_file,
-            partition_name=args.partition
-        )
-    else:
-        print(f"Unknown command: {args.command}", file=sys.stderr)
+@cli.result_callback()
+@click.pass_context
+def _reset_after_command(ctx, result, **kwargs):
+    # Reset only after a command completes successfully (matches the original behaviour: a command
+    # that raises never resets). Offline commands never connect, so state.esp stays None.
+    state: Optional[State] = ctx.obj
+    if state is not None and state.esp is not None and not state.no_reset and state.reset_after:
+        state.esp.hard_reset()
 
-    if esp and not args.no_reset: esp.hard_reset()
+
+@cli.command('devices', help='List serial ports with hardware IDs')
+def cmd_devices():
+    for d in _get_port_list():
+        print(f"{d.device} || {d.description} || {d.hwid}")
+
+
+@cli.command('read', help='Read a partition (or slice) into a file')
+@click.argument('partition')
+@click.argument('output_file')
+@pass_state
+def cmd_read(state, partition, output_file):
+    esp, partition_table, partition_table_entry, bootloader_entry = state.setup()
+    command_read(esp=esp, partition_table=partition_table, partition_table_entry=partition_table_entry,
+                 bootloader_entry=bootloader_entry, label=partition, output_file=output_file)
+
+
+@cli.command('write', help='Write one or more files to named partitions')
+@click.argument('files', nargs=-1, required=True, metavar='PARTITION FILENAME ...')
+@pass_state
+def cmd_write(state, files):
+    esp, partition_table, partition_table_entry, bootloader_entry = state.setup()
+    command_write(esp=esp, partition_table=partition_table, partition_table_entry=partition_table_entry,
+                  bootloader_entry=bootloader_entry, files=list(files))
+
+
+@cli.command('erase', help='Erase a partition (or slice)')
+@click.argument('partition')
+@pass_state
+def cmd_erase(state, partition):
+    esp, partition_table, partition_table_entry, bootloader_entry = state.setup()
+    command_erase(esp=esp, partition_table=partition_table, partition_table_entry=partition_table_entry,
+                  bootloader_entry=bootloader_entry, label=partition)
+
+
+@cli.command('view', help="Pretty-print a partition's contents")
+@click.argument('partition')
+@click.option('-w', '--width', type=int, default=16, show_default=True, help='Width of the hexdump')
+@click.option('--hex', 'output', flag_value='hex', default=True, help='Output as a hex dump')
+@click.option('-s', '--string', 'output', flag_value='str', help='Output as a string')
+@pass_state
+def cmd_view(state, partition, width, output):
+    esp, partition_table, partition_table_entry, bootloader_entry = state.setup()
+    command_view(esp=esp, partition_table=partition_table, partition_table_entry=partition_table_entry,
+                 bootloader_entry=bootloader_entry, label=partition, output=output, width=width)
+
+
+@cli.command('create-image', help='Merge partition binaries into a single flash image')
+@click.option('-o', '--output', 'output_file', required=True, help='Output filename')
+@click.option('-f', '--format', 'output_format', type=click.Choice(['raw', 'uf2', 'hex']),
+              default='raw', show_default=True, help='Output format')
+@click.option('--flash-partition-table', is_flag=True, help='Include the partition table in the image')
+@click.argument('files', nargs=-1, required=True, metavar='PARTITION FILENAME ...')
+@pass_state
+def cmd_create_image(state, output_file, output_format, flash_partition_table, files):
+    _, partition_table, partition_table_entry, bootloader_entry = state.setup(needs_device=False)
+    command_create_image(partition_table=partition_table, partition_table_entry=partition_table_entry,
+                         bootloader_entry=bootloader_entry, files=list(files),
+                         flash_partition_table=flash_partition_table, output_format=output_format,
+                         output_file=output_file)
+
+
+@cli.command('dump-image', help='Dump the entire flash to an image file')
+@click.argument('output_file', required=False)
+@pass_state
+def cmd_dump_image(state, output_file):
+    state.reset_after = False
+    esp = state.connect()
+    command_dump_image(esp=esp, output_file=output_file)
+
+
+@cli.command('write-image', help='Write a full flash image to the device')
+@click.argument('image_file')
+@pass_state
+def cmd_write_image(state, image_file):
+    esp, _, _, bootloader_entry = state.setup(image_file=image_file)
+    command_write_image(esp=esp, bootloader_entry=bootloader_entry, image_file_path=image_file)
+
+
+@cli.command('print-image', help='Print partition table and app info from a flash image file')
+@click.argument('image_file')
+@pass_state
+def cmd_print_image(state, image_file):
+    command_print_image(image_file_path=image_file, partition_table_offset=state.partition_table_offset,
+                        partition_table_size=state.partition_table_size)
+
+
+@cli.command('create-bundle', help='Pack partition images into a ZIP bundle')
+@click.option('-o', '--output', 'output_file', required=True, help='Output ZIP filename')
+@click.option('--flash-partition-table', is_flag=True, help='Include the partition table in the bundle')
+@click.argument('files', nargs=-1, required=True, metavar='PARTITION FILENAME ...')
+@pass_state
+def cmd_create_bundle(state, output_file, flash_partition_table, files):
+    _, partition_table, partition_table_entry, bootloader_entry = state.setup(needs_device=False)
+    command_create_bundle(partition_table=partition_table, partition_table_entry=partition_table_entry,
+                          bootloader_entry=bootloader_entry, files=list(files),
+                          flash_partition_table=flash_partition_table, output_file=output_file)
+
+
+@cli.command('dump-bundle', help='Pack every partition from the device into a ZIP')
+@click.argument('output_file', required=False)
+@pass_state
+def cmd_dump_bundle(state, output_file):
+    esp, partition_table, _, _ = state.setup()
+    command_dump_bundle(esp=esp, partition_table=partition_table, output_file=output_file)
+
+
+@cli.command('write-bundle', help='Flash every binary in a bundle ZIP')
+@click.argument('input_file')
+@pass_state
+def cmd_write_bundle(state, input_file):
+    esp, partition_table, partition_table_entry, bootloader_entry = state.setup(bundle_file=input_file)
+    command_write_bundle(esp=esp, partition_table=partition_table, partition_table_entry=partition_table_entry,
+                         bootloader_entry=bootloader_entry, input_file=input_file)
+
+
+@cli.command('print-bundle', help='Print partition table and app info from a bundle ZIP')
+@click.argument('bundle_file')
+@pass_state
+def cmd_print_bundle(state, bundle_file):
+    command_print_bundle(bundle_file_path=bundle_file, partition_table_offset=state.partition_table_offset,
+                         primary_bootloader_offset=state.primary_bootloader_offset,
+                         recovery_bootloader_offset=state.recovery_bootloader_offset)
+
+
+@cli.command('print-table', help='Print a partition table from a CSV or binary file, or from the device')
+@click.argument('table_file', required=False)
+@pass_state
+def cmd_print_table(state, table_file):
+    if table_file:
+        command_print_table(table_file_path=table_file, partition_table_offset=state.partition_table_offset,
+                            primary_bootloader_offset=state.primary_bootloader_offset,
+                            recovery_bootloader_offset=state.recovery_bootloader_offset)
+        return
+    # No file: fall through to the shared loader, whose printout is the output (like the device table)
+    state.setup(needs_device=False)
+
+
+@cli.command('convert-table', help='Convert a partition table file between CSV and binary')
+@click.argument('input_file')
+@click.argument('output_file')
+@click.option('-f', '--format', 'output_format', type=click.Choice(['csv', 'bin']), default=None,
+              help='Output format (default: inferred from the output extension)')
+@pass_state
+def cmd_convert_table(state, input_file, output_file, output_format):
+    command_convert_table(input_file=input_file, output_file=output_file, output_format=output_format,
+                          partition_table_offset=state.partition_table_offset,
+                          primary_bootloader_offset=state.primary_bootloader_offset,
+                          recovery_bootloader_offset=state.recovery_bootloader_offset)
+
+
+@cli.command('dump-table', help='Read the partition table from the device into a file')
+@click.argument('output_file', required=False)
+@click.option('-f', '--format', 'output_format', type=click.Choice(['csv', 'bin']), default=None,
+              help='Output format (default: inferred from the output extension, else csv)')
+@pass_state
+def cmd_dump_table(state, output_file, output_format):
+    esp, partition_table, _, _ = state.setup()
+    command_dump_table(esp=esp, partition_table=partition_table, output_file=output_file,
+                       output_format=output_format)
+
+
+@cli.command('write-table', help='Flash a partition table from a CSV or binary file to the device')
+@click.argument('table_file')
+@click.option('--force', is_flag=True, help='Flash even if the partition table fails verification')
+@pass_state
+def cmd_write_table(state, table_file, force):
+    esp = state.connect()
+    command_write_table(esp=esp, table_file_path=table_file, partition_table_offset=state.partition_table_offset,
+                        primary_bootloader_offset=state.primary_bootloader_offset,
+                        recovery_bootloader_offset=state.recovery_bootloader_offset, force=force)
+
+
+@cli.command('create-nvs', help='Generate an NVS partition image from a CSV file')
+@click.argument('csv_file')
+@click.option('-o', '--output', 'output_file', required=True, help='Output binary filename (.bin)')
+@click.option('--size', type=BASED_INT, default=None, help='Partition size in bytes (e.g. 0x6000)')
+@click.option('--partition', default=None, help='Partition name to read the size from the partition table')
+@pass_state
+def cmd_create_nvs(state, csv_file, output_file, size, partition):
+    if (size is None) == (partition is None):
+        raise click.UsageError("Provide exactly one of --size or --partition")
+    if size is not None:
+        command_create_nvs(csv_file, size, output_file)
+        return
+    _, partition_table, partition_table_entry, bootloader_entry = state.setup(needs_device=False)
+    part = get_partition(partition_table, partition_table_entry, bootloader_entry, partition)
+    command_create_nvs(csv_file, part.size, output_file)
+
+
+@cli.command('write-nvs', help='Generate an NVS image from CSV and flash it')
+@click.argument('partition')
+@click.argument('csv_file')
+@pass_state
+def cmd_write_nvs(state, partition, csv_file):
+    esp, partition_table, partition_table_entry, bootloader_entry = state.setup()
+    command_write_nvs(esp=esp, partition_table=partition_table, partition_table_entry=partition_table_entry,
+                      bootloader_entry=bootloader_entry, csv_file=csv_file, partition_name=partition)
+
+
+@cli.command('factory', help='Flash an app to the factory partition')
+@click.argument('app_binary_file')
+@pass_state
+def cmd_factory(state, app_binary_file):
+    esp, partition_table, _, _ = state.setup()
+    command_factory(esp=esp, partition_table=partition_table, app_binary_file=app_binary_file)
+
+
+@cli.command('ota', help='Push an app to the next OTA slot and switch to it')
+@click.argument('app_binary_file')
+@pass_state
+def cmd_ota(state, app_binary_file):
+    esp, partition_table, _, _ = state.setup()
+    command_ota(esp=esp, partition_table=partition_table, app_binary_file=app_binary_file)
+
+
+@cli.command('get-boot', help='Show the currently-active OTA slot')
+@pass_state
+def cmd_get_boot(state):
+    esp, partition_table, _, _ = state.setup()
+    command_get_boot(esp=esp, partition_table=partition_table)
+
+
+@cli.command('set-boot', help='Force the next boot to a specific OTA partition')
+@click.argument('partition')
+@pass_state
+def cmd_set_boot(state, partition):
+    esp, partition_table, _, _ = state.setup()
+    command_set_boot(esp=esp, partition_table=partition_table, label=partition)
+
+
+@cli.command('clear-boot', help='Erase otadata and let the bootloader fall back')
+@pass_state
+def cmd_clear_boot(state):
+    esp, partition_table, _, _ = state.setup()
+    command_clear_boot(esp=esp, partition_table=partition_table)
+
+
+@cli.command('enter-bootloader', help='Fast-poll the serial port and drop the chip into ROM bootloader '
+                                      'mode as soon as it appears, then exit without resetting')
+@pass_state
+def cmd_enter_bootloader(state):
+    if not state.port:
+        raise click.UsageError("enter-bootloader requires -p/--port")
+    command_enter_bootloader(port=state.port, baud=state.baud)
+
 
 def _main():
     install_excepthook()
-    parser = argparse.ArgumentParser()
-
-    parser.add_argument('-p', '--port', help='Serial port device')
-    parser.add_argument('-b', '--baud', type=int, help='Serial port baud rate', default=ESPLoader.ESP_ROM_BAUD)
-    parser.add_argument('--no-reset', action='store_true', help='Do not reset the chip after operations')
-
-    parser.add_argument('--partition-table-file', help='Path to partition table CSV or binary file to use instead of reading from device')
-    parser.add_argument('--partition-table-offset', type=auto_int, help='Partition table offset (where to read partition table from flash, or where to place when loading partition table from CSV)', default=PARTITION_TABLE_OFFSET)
-    parser.add_argument('--partition-table-size', type=auto_int, help='Partition table size', default=PARTITION_TABLE_SIZE)
-    parser.add_argument('--primary-bootloader-offset', type=parse_bootloader_offset, help='Primary bootloader offset or chip type e.g. esp32s3 (used when loading partition table from CSV)')
-    parser.add_argument('--recovery-bootloader-offset', type=auto_int, help='Recovery bootloader offset (used when loading partition table from CSV)')
-
-    # Create subparsers
-    subparsers = parser.add_subparsers(dest='command', help='Available commands', required=True)
-
-    # Devices subcommand
-    devices_parser = subparsers.add_parser('devices', help='Device list')
-
-    # Read subcommand
-    read_parser = subparsers.add_parser('read', help='Read partition')
-    read_parser.add_argument('partition', help='Name of the partition to read')
-    read_parser.add_argument('output_file', help='Output file to save the partition data')
-
-    # Write subcommand
-    write_parser = subparsers.add_parser('write', help='Write partitions')
-    write_parser.add_argument(
-        'files',
-        nargs='+',
-        metavar=('PARTITION', 'FILENAME'),
-        help='Partition and filename pairs'
-    )
-
-    # Erase subcommand
-    erase_parser = subparsers.add_parser('erase', help='Erase partition')
-    erase_parser.add_argument('partition', help='Name of the partition to erase')
-
-    # View subcommand
-    view_parser = subparsers.add_parser('view', help='View partition')
-    view_parser.add_argument('partition', help='Name of the partition to view')
-    view_parser.add_argument('-w', '--width', type=int, help='Width of the hexdump', default=16)
-    view_parser.add_argument('--hex', action='store_const', const='hex', dest='output', help='Output as hex dump', default='hex')
-    view_parser.add_argument('-s', '--string', action='store_const', const='str', dest='output', help='Output as string')
-
-    # Create Image subcommand
-    create_image_parser = subparsers.add_parser('create-image', help='Merge partition binaries into a single flash image')
-    create_image_parser.add_argument('-o', '--output', help='Output filename', dest='output_file', required=True)
-    create_image_parser.add_argument('-f', '--format', help='Output format', choices=['raw', 'uf2', 'hex'], default='raw')
-    create_image_parser.add_argument('--flash-partition-table', action='store_true', help='Include partition table in the image')
-    create_image_parser.add_argument(
-        'files',
-        nargs='+',
-        metavar='PARTITION FILENAME',
-        help='Partition and filename pairs'
-    )
-
-    # Dump Image subcommand
-    dump_image_parser = subparsers.add_parser('dump-image', help='Dump the entire flash to an image file')
-    dump_image_parser.add_argument('output_file', nargs='?', help='Output filename (default: {chip}-{mac}-{timestamp}.img)')
-
-    # Write Image subcommand (alias: reflash)
-    write_image_parser = subparsers.add_parser('write-image', aliases=['reflash'], help='Write a full flash image to the device')
-    write_image_parser.add_argument('image_file', help='Input file containing flash image')
-
-    # Print Image subcommand
-    print_image_parser = subparsers.add_parser('print-image', help='Print partition table and app info from a flash image file')
-    print_image_parser.add_argument('image_file', help='Input file containing flash image')
-
-    # Create bundle subcommand
-    create_bundle_parser = subparsers.add_parser('create-bundle', help='Create a ZIP bundle of partition binaries')
-    create_bundle_parser.add_argument('-o', '--output', help='Output ZIP filename', dest='output_file', required=True)
-    create_bundle_parser.add_argument('--flash-partition-table', action='store_true', help='Include partition table in the bundle')
-    create_bundle_parser.add_argument(
-        'files',
-        nargs='+',
-        metavar='PARTITION FILENAME',
-        help='Partition and filename pairs'
-    )
-
-    # Dump Bundle subcommand
-    dump_bundle_parser = subparsers.add_parser('dump-bundle', help='Dump all partitions to a ZIP bundle')
-    dump_bundle_parser.add_argument('output_file', nargs='?', help='Output ZIP filename (default: {chip}-{mac}-{timestamp}.zip)')
-
-    # Write bundle subcommand
-    write_bundle_parser = subparsers.add_parser('write-bundle', help='Write a ZIP bundle of partition binaries')
-    write_bundle_parser.add_argument('input_file', help='Input ZIP filename')
-
-    # Print Bundle subcommand
-    print_bundle_parser = subparsers.add_parser('print-bundle', help='Print partition table and app info from a partition bundle ZIP')
-    print_bundle_parser.add_argument('bundle_file', help='Input ZIP bundle file')
-
-    # Print Table subcommand
-    print_table_parser = subparsers.add_parser('print-table', aliases=['list'], help='Print a partition table from a CSV or binary file, or from the device')
-    print_table_parser.add_argument('table_file', nargs='?', help='Partition table CSV or binary file (default: read from the device, or --partition-table-file)')
-
-    # Convert Table subcommand
-    convert_table_parser = subparsers.add_parser('convert-table', help='Convert a partition table file between CSV and binary')
-    convert_table_parser.add_argument('input_file', help='Input partition table CSV or binary file')
-    convert_table_parser.add_argument('output_file', help='Output partition table file (.csv or .bin)')
-    convert_table_parser.add_argument('-f', '--format', choices=['csv', 'bin'], help='Output format (default: inferred from output extension)')
-
-    # Dump Table subcommand
-    dump_table_parser = subparsers.add_parser('dump-table', help='Dump the partition table from the device to a file')
-    dump_table_parser.add_argument('output_file', nargs='?', help='Output file (default: {chip}-{mac}-{timestamp}-partition-table.csv)')
-    dump_table_parser.add_argument('-f', '--format', choices=['csv', 'bin'], help='Output format (default: inferred from output extension, else csv)')
-
-    # Write Table subcommand
-    write_table_parser = subparsers.add_parser('write-table', help='Write a partition table from a CSV or binary file to the device')
-    write_table_parser.add_argument('table_file', help='Partition table CSV or binary file to flash')
-    write_table_parser.add_argument('--force', action='store_true', help='Flash even if the partition table fails verification')
-
-    # Create NVS subcommand
-    create_nvs_parser = subparsers.add_parser('create-nvs', help='Generate NVS partition image from CSV')
-    create_nvs_parser.add_argument('csv_file', help='Input NVS CSV file')
-    create_nvs_parser.add_argument('-o', '--output', required=True, help='Output binary filename (.bin)')
-    create_nvs_size_group = create_nvs_parser.add_mutually_exclusive_group(required=True)
-    create_nvs_size_group.add_argument('--size', type=auto_int, help='Partition size in bytes (e.g. 0x6000)')
-    create_nvs_size_group.add_argument('--partition', help='Partition name to read size from partition table')
-
-    # Write NVS subcommand
-    write_nvs_parser = subparsers.add_parser('write-nvs', help='Generate NVS partition image from CSV and write to device')
-    write_nvs_parser.add_argument('partition', help='NVS partition name')
-    write_nvs_parser.add_argument('csv_file', help='Input NVS CSV file')
-
-    # Factory subcommand
-    factory_parser = subparsers.add_parser('factory', help='Perform factory flash and clear boot partition')
-    factory_parser.add_argument('app_binary_file', help='Input file containing app binary')
-
-    # Ota subcommand
-    ota_parser = subparsers.add_parser('ota', help='Perform OTA')
-    ota_parser.add_argument('app_binary_file', help='Input file containing app binary')
-
-    # Get Boot subcommand
-    get_boot_parser = subparsers.add_parser('get-boot', help='Get boot partition')
-
-    # Set Boot subcommand
-    set_boot_parser = subparsers.add_parser('set-boot', help='Set boot partition')
-    set_boot_parser.add_argument('partition', help='Name of the partition to set as boot')
-
-    # Clear Boot subcommand
-    clear_boot_parser = subparsers.add_parser('clear-boot', help='Clear boot partition')
-
-    # Enter Bootloader subcommand
-    enter_bootloader_parser = subparsers.add_parser('enter-bootloader', help='Fast-poll the serial port and enter the ROM bootloader as soon as the device appears, then exit without resetting')
-
-    args = parser.parse_args()
-    if args.command == 'reflash':
-        args.command = 'write-image'
-    if args.command == 'list':
-        args.command = 'print-table'
-    if args.command == 'enter-bootloader' and not args.port:
-        parser.error("enter-bootloader requires -p/--port")
     try:
-        main(args)
+        cli.main(args=sys.argv[1:], standalone_mode=False)
+    except click.exceptions.Abort:
+        sys.exit(130)
+    except click.ClickException as e:
+        e.show()
+        sys.exit(e.exit_code)
     except KeyboardInterrupt:
         sys.exit(130)
     except BaseException as e:
         print_exception(e)
         sys.exit(1)
+
 
 if __name__ == "__main__":
     _main()
