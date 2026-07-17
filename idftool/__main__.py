@@ -1,8 +1,10 @@
 import argparse
 import os.path
 import re
+import struct
 import sys
 import time
+import zlib
 from dataclasses import dataclass
 from typing import Callable, Optional, Literal
 from zipfile import BadZipFile, ZipFile
@@ -404,6 +406,55 @@ def check_write_bundle_has_partition_table(file: str) -> bool:
         raise RuntimeError(f"Bundle '{file}' is not a valid ZIP archive") from e
     with bundle_zip as zf:
         return any(m == 'partition_table.csv' for m in zf.namelist())
+
+NVS_PAGE_SIZE = 0x1000  # NVS partitions are laid out as 4 KiB pages
+
+
+def looks_like_nvs_binary(data: bytes) -> bool:
+    """Return True if `data` parses as an NVS partition image.
+
+    An NVS partition is a sequence of 4 KiB pages. A page is either entirely
+    erased (all 0xFF) or carries a 32-byte header whose last 4 bytes are the
+    CRC32 of header bytes [4:28] (seeded with 0xFFFFFFFF), with a version byte
+    of 0xFF (V1) or 0xFE (V2). The header CRC is a strong signature: matching
+    it on a non-erased page means the file really is an NVS image, not CSV.
+    """
+    if not data or len(data) % NVS_PAGE_SIZE != 0:
+        return False
+
+    blank_page = b'\xff' * NVS_PAGE_SIZE
+    non_blank_pages = 0
+    for offset in range(0, len(data), NVS_PAGE_SIZE):
+        page = data[offset:offset + NVS_PAGE_SIZE]
+        if page == blank_page:
+            continue
+        header = page[:32]
+        version = header[8]
+        if version not in (0xFF, 0xFE):
+            return False
+        stored_crc = struct.unpack('<I', header[28:32])[0]
+        calc_crc = zlib.crc32(header[4:28], 0xFFFFFFFF) & 0xFFFFFFFF
+        if stored_crc != calc_crc:
+            return False
+        non_blank_pages += 1
+
+    # A valid NVS image has at least one initialised (non-blank) page.
+    return non_blank_pages > 0
+
+
+def fit_nvs_binary(data: bytes, size: int) -> bytes:
+    """Validate a pre-built NVS binary against a partition size and pad it out.
+
+    The image must fit the partition; if it is smaller it is padded with 0xFF
+    (erased flash) so the whole partition is written cleanly.
+    """
+    if len(data) > size:
+        raise RuntimeError(
+            f"NVS binary size {len(data):#x} exceeds partition size {size:#x}")
+    if len(data) < size:
+        data = data + b'\xff' * (size - len(data))
+    return data
+
 
 def generate_nvs_image(csv_file: str, size: int) -> bytes:
     import tempfile
@@ -1096,8 +1147,13 @@ def cmd_create_nvs(state, csv_file, output_file, size, partition):
         size = get_partition(
             loaded.partition_table, loaded.partition_table_entry, loaded.bootloader_entry, partition).size
 
-    print(f"Generating NVS image from '{csv_file}' (size={size:#x})...")
-    image = generate_nvs_image(csv_file, size)
+    data = open(csv_file, 'rb').read()
+    if looks_like_nvs_binary(data):
+        print(f"Using NVS binary '{csv_file}' (size={size:#x})...")
+        image = fit_nvs_binary(data, size)
+    else:
+        print(f"Generating NVS image from '{csv_file}' (size={size:#x})...")
+        image = generate_nvs_image(csv_file, size)
     with open(output_file, 'wb') as f:
         f.write(image)
     print(f"Wrote {len(image):#x} bytes to '{output_file}'")
@@ -1111,8 +1167,13 @@ def cmd_write_nvs(state, partition, csv_file):
     loaded = state.setup()
     partition = get_partition(
         loaded.partition_table, loaded.partition_table_entry, loaded.bootloader_entry, partition)
-    print(f"Generating NVS image from '{csv_file}' for partition '{partition.name}' (size={partition.size:#x})...")
-    image = generate_nvs_image(csv_file, partition.size)
+    data = open(csv_file, 'rb').read()
+    if looks_like_nvs_binary(data):
+        print(f"Using NVS binary '{csv_file}' for partition '{partition.name}' (size={partition.size:#x})...")
+        image = fit_nvs_binary(data, partition.size)
+    else:
+        print(f"Generating NVS image from '{csv_file}' for partition '{partition.name}' (size={partition.size:#x})...")
+        image = generate_nvs_image(csv_file, partition.size)
     print(f"Writing NVS image to partition '{partition.name}' (offset={partition.offset:#x}, size={partition.size:#x})")
     write_flash(esp=loaded.esp, addr_data=[(partition.offset, image)], flash_size='detect')
 
