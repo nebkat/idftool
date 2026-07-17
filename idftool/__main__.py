@@ -1254,6 +1254,10 @@ def _main():
         sys.exit(e.exit_code)
     except KeyboardInterrupt:
         sys.exit(130)
+    except SystemExit:
+        # click/rich-click already handled it (e.g. --help, no-args help, usage errors that
+        # sys.exit directly); just let it carry its exit code out.
+        raise
     except BaseException as e:
         print_exception(e)
         sys.exit(1)
