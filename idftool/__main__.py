@@ -943,7 +943,7 @@ def cmd_write_bundle(state, input_file):
                 partition_table, loaded.partition_table_entry, loaded.bootloader_entry, partition_name)
             data = zf.read(member)
             if len(data) > partition.size:
-                raise ValueError(f"Input file {member.name} size {len(data):#x} exceeds partition {partition.name} size {partition.size:#x}")
+                raise ValueError(f"Bundle entry {member} size {len(data):#x} exceeds partition {partition.name} size {partition.size:#x}")
 
             if partition.type == APP_TYPE:
                 validate_app_binary(esp, data)
