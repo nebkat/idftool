@@ -4,14 +4,28 @@ All notable changes to this project are documented here. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [v0.5.0] — 2026-07-17
 
 ### Changed
-- The CLI is now built on [click](https://click.palletsprojects.com/)
-  instead of argparse, bringing the command structure and `--help` output
-  closer to esptool's. Command names, arguments, options, aliases
-  (`reflash`, `list`), and behaviour are unchanged; only the help/usage
-  and error-message formatting differ.
+- The CLI is rebuilt on [click](https://click.palletsprojects.com/) and
+  [rich-click](https://github.com/ewels/rich-click) (like esptool): `--help`,
+  usage, and errors now render in boxed panels, and commands are grouped into
+  labelled sections. Command names, arguments, options, aliases (`reflash`,
+  `list`), and behaviour are unchanged — only the help/usage and error
+  formatting differ.
+
+### Added
+- `create-table` as an alias for `convert-table`.
+- `create-nvs` and `write-nvs` now accept a pre-built NVS binary image as
+  input (auto-detected), not only a CSV — it is validated against the
+  partition size and padded to it, instead of failing when parsed as CSV.
+- A test suite: an offline suite (no hardware) plus a real-device suite that
+  cycles every command against a connected ESP, with fixtures built from a
+  small ESP-IDF app (`make test-offline` / `make test-device`).
+
+### Fixed
+- `write-bundle` now reports a clear error when a bundle entry is larger than
+  its target partition, instead of crashing with an `AttributeError`.
 
 ## [v0.3.0] — 2026-07-15
 
@@ -36,11 +50,6 @@ this project adheres to [Semantic Versioning](https://semver.org/).
     erased.
 
 ### Changed
-- The CLI is now built on [click](https://click.palletsprojects.com/)
-  instead of argparse, bringing the command structure and `--help` output
-  closer to esptool's. Command names, arguments, options, aliases
-  (`reflash`, `list`), and behaviour are unchanged; only the help/usage
-  and error-message formatting differ.
 - `list` is now an alias of `print-table` (both print the device's
   partition table identically). Its `--partition-type`,
   `--partition-subtype`, and `--partition-name` flags — which were never
@@ -101,6 +110,7 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 ### Added
 - Initial release.
 
+[v0.5.0]: https://github.com/nebkat/idftool/releases/tag/v0.5.0
 [v0.3.0]: https://github.com/nebkat/idftool/releases/tag/v0.3.0
 [v0.2.2]: https://github.com/nebkat/idftool/releases/tag/v0.2.2
 [v0.2.1]: https://github.com/nebkat/idftool/releases/tag/v0.2.1
