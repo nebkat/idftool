@@ -139,22 +139,26 @@ def get_partition(
         bootloader_entry: Optional[PartitionDefinition],
         label: str
 ) -> PartitionDefinition:
+    # A numeric label addresses a partition by its exact start offset.
     try:
-        try:
-            address = int(label, 0)
-            return next(
-                (p for p in partition_table if p.offset == address),
-            )
-        except ValueError:
-            pass
-        return partition_table[label]
+        address = int(label, 0)
     except ValueError:
-        if label == partition_table_entry.name:
-            return partition_table_entry
-        elif bootloader_entry and label == bootloader_entry.name:
-            return bootloader_entry
-        else:
-            raise
+        address = None
+    if address is not None:
+        match = next((p for p in partition_table if p.offset == address), None)
+        if match is None:
+            raise ValueError(f"No partition at offset {address:#x}")
+        return match
+    # Otherwise it's a name: real partitions first, then the virtual bootloader/table entries.
+    try:
+        return partition_table[label]
+    except (KeyError, ValueError):
+        pass
+    if label == partition_table_entry.name:
+        return partition_table_entry
+    if bootloader_entry and label == bootloader_entry.name:
+        return bootloader_entry
+    raise ValueError(f"No partition named '{label}'")
 
 def get_partition_slice(
         partition_table: PartitionTable,
@@ -853,9 +857,9 @@ def cmd_write_image(state, image_file):
     esp = loaded.esp
     if os.path.getsize(image_file) == 0:
         raise RuntimeError(f"Image file '{image_file}' is empty")
-    f = open(image_file, 'rb')
-    f.seek(loaded.bootloader_entry.offset)
-    bootloader_binary = f.read(loaded.bootloader_entry.size)
+    with open(image_file, 'rb') as f:
+        f.seek(loaded.bootloader_entry.offset)
+        bootloader_binary = f.read(loaded.bootloader_entry.size)
     try:
         bootloader_image_metadata = ImageMetadata.from_bytes(bootloader_binary)
     except (RuntimeError, ValueError) as e:
@@ -1316,8 +1320,8 @@ def _main():
     except KeyboardInterrupt:
         sys.exit(130)
     except SystemExit:
-        # click/rich-click already handled it (e.g. --help, no-args help, usage errors that
-        # sys.exit directly); just let it carry its exit code out.
+        # A command may sys.exit() from inside a library (e.g. the NVS partition generator on a bad
+        # CSV); let it carry its own exit code out rather than boxing it as a traceback.
         raise
     except BaseException as e:
         print_exception(e)

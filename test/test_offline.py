@@ -91,6 +91,16 @@ def test_print_image(run_offline, assets):
     assert "idftool_test" in out  # the app descriptor was parsed
 
 
+def test_partition_by_offset_no_match_is_clear(run_offline, tmp_path):
+    # A numeric partition address matching nothing should give a clear error, not crash with a
+    # StopIteration. Reachable offline via `create-nvs --partition <numeric>`.
+    out = run_offline(
+        f"--partition-table-file {SAMPLES / 'partitions.csv'} create-nvs {SAMPLES / 'nvs.csv'} "
+        f"-o {tmp_path / 'out.bin'} --partition 0x999999", expect_error=True)
+    assert "No partition at offset" in out
+    assert "StopIteration" not in out
+
+
 def test_create_and_print_bundle(run_offline, assets, tmp_path):
     bundle = tmp_path / "bundle.zip"
     run_offline(f"--partition-table-file {assets / 'partitions.csv'} create-bundle "
