@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Callable, Optional, Literal
 from zipfile import BadZipFile, ZipFile
 
-import click
+import rich_click as click
 
 from esptool import ESPLoader, CHIP_DEFS, flash_size_bytes
 from serial import SerialException
@@ -593,45 +593,32 @@ class State:
         return Loaded(esp, partition_table, partition_table_entry, bootloader_entry)
 
 
-class AliasedGroup(click.Group):
-    """click.Group that resolves command aliases and shows them alongside the canonical name."""
-    aliases = {'reflash': 'write-image', 'list': 'print-table'}
-
-    def get_command(self, ctx, cmd_name):
-        return super().get_command(ctx, self.aliases.get(cmd_name, cmd_name))
-
-    def resolve_command(self, ctx, args):
-        _, cmd, args = super().resolve_command(ctx, args)
-        return cmd.name, cmd, args
-
-    def format_commands(self, ctx, formatter):
-        # Like click's default, but append "(alias: ...)" to any command that has aliases so they
-        # stay discoverable in --help (get_command resolves them, but they aren't listed otherwise).
-        alias_map: dict[str, list[str]] = {}
-        for alias, target in self.aliases.items():
-            alias_map.setdefault(target, []).append(alias)
-
-        rows = []
-        for name in self.list_commands(ctx):
-            cmd = self.get_command(ctx, name)
-            if cmd is None or cmd.hidden:
-                continue
-            label = name if name not in alias_map else f"{name} (alias: {', '.join(sorted(alias_map[name]))})"
-            rows.append((label, cmd))
-        if not rows:
-            return
-
-        limit = formatter.width - 6 - max(len(label) for label, _ in rows)
-        with formatter.section('Commands'):
-            formatter.write_dl([(label, cmd.get_short_help_str(limit)) for label, cmd in rows])
-
-
 pass_state = click.make_pass_decorator(State)
 
 CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
 
+# esptool-style help: rich-click already renders options/commands in boxed panels; group the
+# commands into labelled panels (matching the README) instead of one long list. Command aliases
+# (reflash, list) are declared natively via `aliases=` on the commands and shown by rich-click.
+# Show the alias in the same column as the name ("name_with_aliases") rather than a separate
+# column, which otherwise squeezes the name column down to an ellipsis.
+click.rich_click.COMMANDS_TABLE_COLUMN_TYPES = ['name_with_aliases', 'help']
+click.rich_click.COMMAND_GROUPS = {
+    '*': [
+        {'name': 'Discovery', 'commands': ['devices', 'print-table']},
+        {'name': 'Partition I/O', 'commands': ['read', 'write', 'erase', 'view']},
+        {'name': 'Firmware', 'commands': ['ota', 'factory']},
+        {'name': 'Boot selection', 'commands': ['get-boot', 'set-boot', 'clear-boot']},
+        {'name': 'Images', 'commands': ['create-image', 'dump-image', 'write-image', 'print-image']},
+        {'name': 'Bundles', 'commands': ['create-bundle', 'dump-bundle', 'write-bundle', 'print-bundle']},
+        {'name': 'Partition table', 'commands': ['convert-table', 'dump-table', 'write-table']},
+        {'name': 'NVS', 'commands': ['create-nvs', 'write-nvs']},
+        {'name': 'Misc', 'commands': ['enter-bootloader']},
+    ],
+}
 
-@click.group(cls=AliasedGroup, context_settings=CONTEXT_SETTINGS)
+
+@click.group(context_settings=CONTEXT_SETTINGS)
 @click.option('-p', '--port', default=None, help='Serial port device')
 @click.option('-b', '--baud', type=int, default=ESPLoader.ESP_ROM_BAUD, show_default=True, help='Serial port baud rate')
 @click.option('--no-reset', is_flag=True, help='Do not reset the chip after operations')
@@ -807,7 +794,7 @@ def cmd_dump_image(state, output_file):
     read_flash(esp, address=0, size=flash_size, output=output_file)
 
 
-@cli.command('write-image', help='Write a full flash image to the device')
+@cli.command('write-image', aliases=['reflash'], help='Write a full flash image to the device')
 @click.argument('image_file')
 @pass_state
 def cmd_write_image(state, image_file):
@@ -1013,7 +1000,7 @@ def cmd_print_bundle(state, bundle_file):
         print_partition_table_and_apps(partition_table, read)
 
 
-@cli.command('print-table', help='Print a partition table from a CSV or binary file, or from the device')
+@cli.command('print-table', aliases=['list'], help='Print a partition table from a CSV or binary file, or from the device')
 @click.argument('table_file', required=False)
 @pass_state
 def cmd_print_table(state, table_file):
