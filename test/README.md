@@ -12,16 +12,17 @@ Device tests are marked `device` and **skipped automatically** unless `--port` i
 
 ## Offline tests
 
-Exercise the file/CSV/help/error paths with no device. Fast; safe to run anywhere. Sample inputs
-live in `samples/`.
+Exercise the file/CSV/help/error paths with no device — fast and safe to run anywhere. Sample
+inputs live in `samples/`. `print-image` and `print-bundle` are covered here too (they only read a
+file), against the built fixtures, so they don't depend on a slow device dump.
 
 ## Device tests
 
 > **These erase and rewrite the connected device's flash.**
 
-They provision a known state (`write-image` of a bootloader + partition table + app image) and then cycle every command:
-partition table read/write, raw partition read/write/erase, NVS, factory/OTA/boot selection,
-bundle round-trip, and full-image round-trip.
+They provision a known state (`write-image` of a bootloader + partition table + app image) and then
+cycle every command: partition table read/write, raw partition read/write/erase, NVS,
+factory/OTA/boot selection, and the bundle / full-image round-trips.
 
 They need binary **fixtures** in `fixtures/<chip>/`, built once from the tiny ESP-IDF app in
 `project/`:
@@ -29,7 +30,14 @@ They need binary **fixtures** in `fixtures/<chip>/`, built once from the tiny ES
 ```sh
 . $IDF_PATH/export.sh
 test/project/build_fixtures.sh esp32s3
-pytest test/test_device.py --port /dev/cu.usbmodem101 --chip esp32s3
+make test-device PORT=/dev/cu.usbmodem101 CHIP=esp32s3        # fast core
+make test-device-full PORT=/dev/cu.usbmodem101 CHIP=esp32s3   # + slow full-flash round-trips
 ```
 
-Skip the slow full-flash tests with `-m "not slow"`.
+`make test-device` runs the quick per-command tests. The **slow** full-flash tests (`dump-image`
+of the whole flash, and the bundle round-trip) are opt-in via `test-device-full` (or dropping the
+`-m "not slow"` filter) — they move megabytes and take many minutes.
+
+**Baud note:** the suite uses esptool's default (115200), which is reliable everywhere. Higher rates
+speed up UART boards but corrupt sustained transfers on USB-Serial-JTAG chips — pass `--baud` only
+if you know your board tolerates it.

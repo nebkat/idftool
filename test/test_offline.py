@@ -46,6 +46,28 @@ def test_create_nvs_requires_size_or_partition(run_offline, tmp_path):
     assert "size" in out.lower() and "partition" in out.lower()
 
 
+def test_create_nvs_accepts_prebuilt_binary(run_offline, tmp_path):
+    # A pre-built NVS binary should be passed through (and padded to size), not
+    # re-parsed as CSV — which used to fail with a UnicodeDecodeError.
+    built = tmp_path / "built.bin"
+    run_offline(f"create-nvs {SAMPLES / 'nvs.csv'} -o {built} --size 0x4000")
+    passthrough = tmp_path / "passthrough.bin"
+    out = run_offline(f"create-nvs {built} -o {passthrough} --size 0x6000")
+    assert "NVS binary" in out
+    assert passthrough.exists() and len(passthrough.read_bytes()) == 0x6000
+    # First 0x4000 bytes are the original image; the tail is erased flash padding.
+    assert passthrough.read_bytes()[:0x4000] == built.read_bytes()
+    assert passthrough.read_bytes()[0x4000:] == b"\xff" * 0x2000
+
+
+def test_create_nvs_rejects_oversized_binary(run_offline, tmp_path):
+    built = tmp_path / "built.bin"
+    run_offline(f"create-nvs {SAMPLES / 'nvs.csv'} -o {built} --size 0x6000")
+    out = run_offline(f"create-nvs {built} -o {tmp_path / 'out.bin'} --size 0x4000",
+                      expect_error=True)
+    assert "exceeds partition size" in out
+
+
 def test_missing_bootloader_offset_is_clear(run_offline):
     # A CSV with a bootloader row and no offset, and no --primary-bootloader-offset, should give a
     # clear, actionable error (not the library's cryptic one).
@@ -58,3 +80,21 @@ def test_bootloader_offset_from_chip_name(run_offline):
     out = run_offline(
         f"--primary-bootloader-offset esp32s3 print-table {SAMPLES / 'bootloader-template.csv'}")
     assert "bootloader" in out
+
+
+# print-image / print-bundle are file operations (no device), so they're covered here against the
+# built fixtures rather than requiring a slow full-flash device dump.
+
+def test_print_image(run_offline, assets):
+    out = run_offline(f"print-image {assets / 'flash-image.bin'}")
+    assert "factory" in out
+    assert "idftool_test" in out  # the app descriptor was parsed
+
+
+def test_create_and_print_bundle(run_offline, assets, tmp_path):
+    bundle = tmp_path / "bundle.zip"
+    run_offline(f"--partition-table-file {assets / 'partitions.csv'} create-bundle "
+                f"-o {bundle} --flash-partition-table factory {assets / 'app-v1.bin'}")
+    out = run_offline(f"print-bundle {bundle}")
+    assert "factory" in out
+    assert "idftool_test" in out

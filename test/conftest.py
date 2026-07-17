@@ -15,6 +15,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from esptool import ESPLoader
 
 TEST_DIR = Path(__file__).parent
 FIXTURES = TEST_DIR / "fixtures"
@@ -26,7 +27,7 @@ def pytest_addoption(parser):
                      help="Serial port of a connected ESP device (enables the device tests)")
     parser.addoption("--chip", action="store", default="esp32s3",
                      help="Chip type the fixtures were built for (default: esp32s3)")
-    parser.addoption("--baud", action="store", default="460800", help="Baud rate")
+    parser.addoption("--baud", action="store", default=ESPLoader.ESP_ROM_BAUD, help="Baud rate")
 
 
 def pytest_configure(config):
@@ -45,7 +46,7 @@ def pytest_collection_modifyitems(config, items):
 
 
 def _make_runner(port, baud):
-    def run(args, expect_error=False, timeout=180):
+    def run(args, expect_error=False, timeout=900):
         """Run the idftool CLI as a subprocess; return combined stdout+stderr.
 
         `args` is a string ("read nvs out.bin") or a list. Device commands get --port/--baud

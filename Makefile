@@ -1,4 +1,4 @@
-.PHONY: build build-onefile test test-offline test-device install install-onefile uninstall clean
+.PHONY: build build-onefile test test-offline test-device test-device-full install install-onefile uninstall clean
 
 VENV         := .venv
 PYINSTALLER  := $(VENV)/bin/pyinstaller
@@ -24,10 +24,17 @@ test-offline: $(VENV)
 	$(VENV)/bin/pip install -q -e ".[test]"
 	$(VENV)/bin/pytest test/test_offline.py
 
-# Real-device test suite. Requires a connected board and built fixtures
-# (test/project/build_fixtures.sh). WILL ERASE THE DEVICE'S FLASH.
+# Real-device test suite (fast core: the quick per-command tests). Requires a connected board and
+# built fixtures (test/project/build_fixtures.sh). WILL ERASE THE DEVICE'S FLASH.
 test-device: $(VENV)
 	@test -n "$(PORT)" || { echo "Usage: make test-device PORT=/dev/... [CHIP=$(CHIP)]"; exit 2; }
+	$(VENV)/bin/pip install -q -e ".[test]"
+	$(VENV)/bin/pytest test/test_device.py --port $(PORT) --chip $(CHIP) -m "not slow"
+
+# Full device suite, including the slow full-flash dump-image / bundle round-trips. These move
+# megabytes and take many minutes (a full 16 MB dump-image is ~25 min on USB-Serial-JTAG boards).
+test-device-full: $(VENV)
+	@test -n "$(PORT)" || { echo "Usage: make test-device-full PORT=/dev/... [CHIP=$(CHIP)]"; exit 2; }
 	$(VENV)/bin/pip install -q -e ".[test]"
 	$(VENV)/bin/pytest test/test_device.py --port $(PORT) --chip $(CHIP)
 

@@ -125,12 +125,14 @@ def test_bundle_roundtrip(idf, device, tmp_path):
 # --- full flash image -----------------------------------------------------------------------
 
 @pytest.mark.slow
-def test_image_roundtrip(idf, device, tmp_path):
+def test_dump_and_print_image(idf, device, tmp_path):
+    # write-image is already exercised by the `device` provisioning fixture (and reflash is its
+    # alias), so this just dumps the whole flash and inspects it — a full 16 MB reflash on top would
+    # be redundant and very slow.
     image = tmp_path / "full.img"
     idf(f"dump-image {image}")              # reads the whole flash (slow)
     out = idf(f"print-image {image}")
     assert "factory" in out
-    idf(f"reflash {image}")                 # alias of write-image; writes it back
 
 
 # --- misc -----------------------------------------------------------------------------------
