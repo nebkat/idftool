@@ -63,3 +63,5 @@ pip-selfcheck.json
 
 # idea folder
 .idea
+# macOS
+.DS_Store

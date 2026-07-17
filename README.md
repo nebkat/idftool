@@ -308,7 +308,7 @@ so the offset can be resolved.
 #### `convert-table`
 Convert a partition table between CSV and binary, offline. Handles both
 directions; the binary output includes the MD5 checksum and padding, so it
-is ready to flash or embed in an image.
+is ready to flash or embed in an image. Aliased as `create-table`.
 ```text
 idftool convert-table partitions.csv partitions.bin
 idftool convert-table partitions.bin partitions.csv
@@ -418,9 +418,9 @@ These flags apply to every subcommand and go **before** the command name:
 | `--primary-bootloader-offset OFFSET` | Primary bootloader offset, or a chip name like `esp32s3` to pick a default. Only needed when addressing the `bootloader` partition by name in **offline** mode (`--partition-table-file` with no device); auto-detected from a connected chip otherwise. |
 | `--recovery-bootloader-offset OFFSET` | Recovery bootloader offset; same scope as `--primary-bootloader-offset`. |
 
-The commands `list`, `merge-bin`, and `create-bundle` will work **without**
-a device when you supply `--partition-table-file`; everything else needs a
-connected ESP.
+The commands `list`, `create-image`, `create-bundle`, and `create-nvs` will
+work **without** a device when you supply `--partition-table-file`; everything
+else needs a connected ESP.
 
 ## Partition addressing
 
@@ -432,7 +432,7 @@ Wherever a command takes a `partition` argument you can pass:
   keyed on its address.
 - An **offset into a partition**: `name[offset]`. Negative values count
   from the end. Sets the starting point for the operation. Accepted by
-  `write` and `merge-bin`.
+  `write` and `create-image`.
 - A **slice of a partition**: `name[start:stop]`. Negative values count
   from the end, and a `+N` stop is a length relative to `start`.
   Accepted by `read`, `erase`, and `view`. Examples:
