@@ -1016,7 +1016,7 @@ def cmd_print_table(state, table_file):
     state.setup(needs_device=False)
 
 
-@cli.command('convert-table', help='Convert a partition table file between CSV and binary')
+@cli.command('convert-table', aliases=['create-table'], help='Convert a partition table file between CSV and binary')
 @click.argument('input_file')
 @click.argument('output_file')
 @click.option('-f', '--format', 'output_format', type=click.Choice(['csv', 'bin']), default=None,

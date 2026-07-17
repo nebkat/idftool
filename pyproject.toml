@@ -17,6 +17,9 @@
         "esp-idf-nvs-partition-gen~=0.2.0",
     ]
 
+[project.optional-dependencies]
+    test = ["pytest>=8"]
+
 [project.scripts]
     idftool = "idftool.__main__:_main"
 
@@ -27,3 +30,10 @@
     packages = ["idftool"]
 
 [tool.setuptools_scm]
+
+[tool.pytest.ini_options]
+    testpaths = ["test"]
+    markers = [
+        "device: requires a real ESP connected via --port (skipped otherwise)",
+        "slow: slow device test (full-flash dump / reflash)",
+    ]

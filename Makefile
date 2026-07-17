@@ -1,10 +1,14 @@
-.PHONY: build build-onefile test install install-onefile uninstall clean
+.PHONY: build build-onefile test test-offline test-device install install-onefile uninstall clean
 
 VENV         := .venv
 PYINSTALLER  := $(VENV)/bin/pyinstaller
 PREFIX       := $(HOME)/.local
 BINDIR       := $(PREFIX)/bin
 SHAREDIR     := $(PREFIX)/share/idftool
+
+# Device test config: `make test-device PORT=/dev/cu.usbmodem101 CHIP=esp32s3`
+PORT         :=
+CHIP         := esp32s3
 
 build: $(VENV)
 	$(PYINSTALLER) --noconfirm --distpath ./dist-onedir --workpath ./build-onedir idftool-onedir.spec
@@ -14,6 +18,18 @@ build-onefile: $(VENV)
 
 test: build
 	./dist-onedir/idftool/idftool --help >/dev/null
+
+# Offline test suite (no hardware).
+test-offline: $(VENV)
+	$(VENV)/bin/pip install -q -e ".[test]"
+	$(VENV)/bin/pytest test/test_offline.py
+
+# Real-device test suite. Requires a connected board and built fixtures
+# (test/project/build_fixtures.sh). WILL ERASE THE DEVICE'S FLASH.
+test-device: $(VENV)
+	@test -n "$(PORT)" || { echo "Usage: make test-device PORT=/dev/... [CHIP=$(CHIP)]"; exit 2; }
+	$(VENV)/bin/pip install -q -e ".[test]"
+	$(VENV)/bin/pytest test/test_device.py --port $(PORT) --chip $(CHIP)
 
 install: build
 	mkdir -p $(BINDIR)
