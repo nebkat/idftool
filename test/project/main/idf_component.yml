@@ -1,0 +1,5 @@
+# Pin this fixture app to ESP-IDF 6.0.x so the generated test fixtures are reproducible and the
+# app-descriptor's idf_version is a known major.minor. The component manager errors at configure
+# time if the active ESP-IDF doesn't satisfy this.
+dependencies:
+  idf: "~6.0.0"

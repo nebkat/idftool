@@ -9,7 +9,7 @@ OTA tests have two distinguishable images to switch between.
 
 ## Regenerating the fixtures
 
-Requires ESP-IDF (v5.x) and `esptool` on PATH.
+Requires **ESP-IDF 6.0.x** (pinned in `main/idf_component.yml`) and `esptool` on PATH.
 
 ```sh
 . $IDF_PATH/export.sh
