@@ -19,7 +19,7 @@ live in `samples/`.
 
 > **These erase and rewrite the connected device's flash.**
 
-They provision a known state (`write-image` of a full flash image) and then cycle every command:
+They provision a known state (`write-image` of a bootloader + partition table + app image) and then cycle every command:
 partition table read/write, raw partition read/write/erase, NVS, factory/OTA/boot selection,
 bundle round-trip, and full-image round-trip.
 

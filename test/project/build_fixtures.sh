@@ -38,10 +38,12 @@ cp "$HERE/build/partition_table/partition-table.bin" "$OUT/partition-table.bin"
 cp "$HERE/partitions.csv"                            "$OUT/partitions.csv"
 cp "$HERE/nvs.csv"                                   "$OUT/nvs.csv"
 
-# A full 4 MB flash image (bootloader + partition table + factory app), so the tests can provision
-# a known, valid state with `idftool write-image` regardless of what was on the device before.
-echo ">> Merging full flash image"
-( cd "$HERE/build" && esptool --chip "$CHIP" merge-bin --fill-flash-size 4MB \
+# A flash image (bootloader + partition table + factory app) so the tests can provision a known,
+# valid state with `idftool write-image` regardless of what was on the device before. No
+# --fill-flash-size: the image ends after the last segment (~350 KB, gaps padded 0xFF) rather than
+# padding to the full flash size, so it stays small enough to commit.
+echo ">> Merging flash image"
+( cd "$HERE/build" && esptool --chip "$CHIP" merge-bin \
     -o "$OUT/flash-image.bin" "@flash_args" )
 
 echo ">> Fixtures written to $OUT"
