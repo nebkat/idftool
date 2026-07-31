@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import Callable, Optional, Literal
 from zipfile import BadZipFile, ZipFile
 
+import questionary
 import rich_click as click
 
 from esptool import ESPLoader, CHIP_DEFS, flash_size_bytes
@@ -84,6 +85,39 @@ def _get_port_list() -> list[ListPortInfo]:
 
     sorted_port_info = sorted(ports, key=key_func)
     return sorted_port_info
+
+
+def prompt_for_port() -> Optional[str]:
+    """Interactively ask the user to pick a serial port.
+
+    Shows the currently-visible ports (best-guess Espressif device first) plus a
+    "type manually" escape hatch, since the target may not be present yet — the
+    common enter-bootloader case is a device that hasn't appeared in the list.
+
+    Returns the chosen port device, or None if selection isn't possible (no TTY)
+    or the manual entry was left empty — callers should treat None as "no port
+    supplied". Raises click.Abort if the user quits or hits Ctrl-C.
+    """
+    if not sys.stdin.isatty():
+        return None
+
+    MANUAL = "\0manual"  # sentinel values that can't collide with a device path
+    QUIT = "\0quit"
+    # _get_port_list sorts the best-guess (Espressif VID) port last; show it first.
+    choices = [
+        questionary.Choice(title=f"{p.device}   {p.description}", value=p.device)
+        for p in reversed(_get_port_list())
+    ]
+    choices.append(questionary.Choice(title="Enter a port manually…", value=MANUAL))
+    choices.append(questionary.Choice(title="Quit", value=QUIT))
+
+    answer = questionary.select("Select port", choices=choices).ask()
+    if answer is None or answer == QUIT:
+        raise click.Abort()
+    if answer == MANUAL:
+        return questionary.text("Port:").ask() or None
+    return answer
+
 
 class BasedIntParamType(click.ParamType):
     """Integer accepting any base via a 0x/0o/0b prefix (like int(x, 0))."""
@@ -660,13 +694,13 @@ CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
 click.rich_click.COMMANDS_TABLE_COLUMN_TYPES = ['name_with_aliases', 'help']
 click.rich_click.COMMAND_GROUPS = {
     '*': [
-        {'name': 'Discovery', 'commands': ['devices', 'print-table']},
+        {'name': 'Discovery', 'commands': ['devices']},
         {'name': 'Partition I/O', 'commands': ['read', 'write', 'erase', 'view']},
         {'name': 'Firmware', 'commands': ['ota', 'factory']},
         {'name': 'Boot selection', 'commands': ['get-boot', 'set-boot', 'clear-boot']},
         {'name': 'Images', 'commands': ['create-image', 'dump-image', 'write-image', 'print-image']},
         {'name': 'Bundles', 'commands': ['create-bundle', 'dump-bundle', 'write-bundle', 'print-bundle']},
-        {'name': 'Partition table', 'commands': ['convert-table', 'dump-table', 'write-table']},
+        {'name': 'Partition table', 'commands': ['print-table', 'convert-table', 'dump-table', 'write-table']},
         {'name': 'NVS', 'commands': ['create-nvs', 'write-nvs']},
         {'name': 'Misc', 'commands': ['enter-bootloader']},
     ],
@@ -1292,9 +1326,10 @@ def cmd_clear_boot(state):
                                       'mode as soon as it appears, then exit without resetting')
 @pass_state
 def cmd_enter_bootloader(state):
-    if not state.port:
+    port = state.port or prompt_for_port()
+    if not port:
         raise click.UsageError("enter-bootloader requires -p/--port")
-    port, baud, poll_interval = state.port, state.baud, 0.05
+    baud, poll_interval = state.baud, 0.05
     print(f"Waiting for {port}...", file=sys.stderr)
     while True:
         while not os.path.exists(port):
