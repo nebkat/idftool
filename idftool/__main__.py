@@ -746,17 +746,17 @@ def _reset_after_command(state, result, **_global_options):
         state.esp.hard_reset()
 
 
-@cli.command('devices', help='List serial ports with hardware IDs')
-def cmd_devices():
+def list_devices():
     for d in _get_port_list():
         print(f"{d.device} || {d.description} || {d.hwid}")
 
 
-@cli.command('read', help='Read a partition (or slice) into a file')
-@click.argument('partition')
-@click.argument('output_file')
-@pass_state
-def cmd_read(state, partition, output_file):
+@cli.command('devices', help='List serial ports with hardware IDs')
+def cmd_devices():
+    return list_devices()
+
+
+def read_partition(state, partition, output_file):
     loaded = state.setup()
     partition, address, length = get_partition_slice(
         loaded.partition_table, loaded.partition_table_entry, loaded.bootloader_entry, partition)
@@ -764,10 +764,15 @@ def cmd_read(state, partition, output_file):
     read_flash(loaded.esp, address=address, size=length, output=output_file)
 
 
-@cli.command('write', help='Write one or more files to named partitions')
-@click.argument('files', nargs=-1, required=True, metavar='PARTITION FILENAME ...')
+@cli.command('read', help='Read a partition (or slice) into a file')
+@click.argument('partition')
+@click.argument('output_file')
 @pass_state
-def cmd_write(state, files):
+def cmd_read(state, partition, output_file):
+    return read_partition(state, partition, output_file)
+
+
+def write_partitions(state, files):
     loaded = state.setup()
     files = list(files)
     if len(files) % 2 != 0:
@@ -790,10 +795,14 @@ def cmd_write(state, files):
     )
 
 
-@cli.command('erase', help='Erase a partition (or slice)')
-@click.argument('partition')
+@cli.command('write', help='Write one or more files to named partitions')
+@click.argument('files', nargs=-1, required=True, metavar='PARTITION FILENAME ...')
 @pass_state
-def cmd_erase(state, partition):
+def cmd_write(state, files):
+    return write_partitions(state, files)
+
+
+def erase_partition(state, partition):
     loaded = state.setup()
     partition, address, length = get_partition_slice(
         loaded.partition_table, loaded.partition_table_entry, loaded.bootloader_entry, partition)
@@ -801,13 +810,14 @@ def cmd_erase(state, partition):
     erase_region(loaded.esp, address=address, size=length)
 
 
-@cli.command('view', help="Pretty-print a partition's contents")
+@cli.command('erase', help='Erase a partition (or slice)')
 @click.argument('partition')
-@click.option('-w', '--width', type=int, default=16, show_default=True, help='Width of the hexdump')
-@click.option('--hex', 'output', flag_value='hex', default=True, help='Output as a hex dump')
-@click.option('-s', '--string', 'output', flag_value='str', help='Output as a string')
 @pass_state
-def cmd_view(state, partition, width, output):
+def cmd_erase(state, partition):
+    return erase_partition(state, partition)
+
+
+def view_partition(state, partition, width, output):
     loaded = state.setup()
     partition, address, length = get_partition_slice(
         loaded.partition_table, loaded.partition_table_entry, loaded.bootloader_entry, partition)
@@ -821,14 +831,17 @@ def cmd_view(state, partition, width, output):
         raise ValueError(f"Invalid output type {output}")
 
 
-@cli.command('create-image', help='Merge partition binaries into a single flash image')
-@click.option('-o', '--output', 'output_file', required=True, help='Output filename')
-@click.option('-f', '--format', 'output_format', type=click.Choice(['raw', 'uf2', 'hex']),
-              default='raw', show_default=True, help='Output format')
-@click.option('--flash-partition-table', is_flag=True, help='Include the partition table in the image')
-@click.argument('files', nargs=-1, required=True, metavar='PARTITION FILENAME ...')
+@cli.command('view', help="Pretty-print a partition's contents")
+@click.argument('partition')
+@click.option('-w', '--width', type=int, default=16, show_default=True, help='Width of the hexdump')
+@click.option('--hex', 'output', flag_value='hex', default=True, help='Output as a hex dump')
+@click.option('-s', '--string', 'output', flag_value='str', help='Output as a string')
 @pass_state
-def cmd_create_image(state, output_file, output_format, flash_partition_table, files):
+def cmd_view(state, partition, width, output):
+    return view_partition(state, partition, width, output)
+
+
+def create_image(state, output_file, output_format, flash_partition_table, files):
     loaded = state.setup(needs_device=False)
     files = list(files)
     if len(files) % 2 != 0:
@@ -862,10 +875,18 @@ def cmd_create_image(state, output_file, output_format, flash_partition_table, f
     )
 
 
-@cli.command('dump-image', help='Dump the entire flash to an image file')
-@click.argument('output_file', required=False)
+@cli.command('create-image', help='Merge partition binaries into a single flash image')
+@click.option('-o', '--output', 'output_file', required=True, help='Output filename')
+@click.option('-f', '--format', 'output_format', type=click.Choice(['raw', 'uf2', 'hex']),
+              default='raw', show_default=True, help='Output format')
+@click.option('--flash-partition-table', is_flag=True, help='Include the partition table in the image')
+@click.argument('files', nargs=-1, required=True, metavar='PARTITION FILENAME ...')
 @pass_state
-def cmd_dump_image(state, output_file):
+def cmd_create_image(state, output_file, output_format, flash_partition_table, files):
+    return create_image(state, output_file, output_format, flash_partition_table, files)
+
+
+def dump_image(state, output_file):
     esp = state.connect()
     flash_size = flash_size_bytes(detect_flash_size(esp))
 
@@ -883,10 +904,14 @@ def cmd_dump_image(state, output_file):
     read_flash(esp, address=0, size=flash_size, output=output_file)
 
 
-@cli.command('write-image', aliases=['reflash'], help='Write a full flash image to the device')
-@click.argument('image_file')
+@cli.command('dump-image', help='Dump the entire flash to an image file')
+@click.argument('output_file', required=False)
 @pass_state
-def cmd_write_image(state, image_file):
+def cmd_dump_image(state, output_file):
+    return dump_image(state, output_file)
+
+
+def write_image(state, image_file):
     loaded = state.setup(image_file=image_file)
     esp = loaded.esp
     if os.path.getsize(image_file) == 0:
@@ -920,10 +945,14 @@ def cmd_write_image(state, image_file):
     )
 
 
-@cli.command('print-image', help='Print partition table and app info from a flash image file')
+@cli.command('write-image', aliases=['reflash'], help='Write a full flash image to the device')
 @click.argument('image_file')
 @pass_state
-def cmd_print_image(state, image_file):
+def cmd_write_image(state, image_file):
+    return write_image(state, image_file)
+
+
+def print_image(state, image_file):
     image_size = check_image_file(image_file, state.partition_table_offset)
     with open(image_file, 'rb') as f:
         f.seek(state.partition_table_offset)
@@ -948,12 +977,14 @@ def cmd_print_image(state, image_file):
         print_partition_table_and_apps(partition_table, read)
 
 
-@cli.command('create-bundle', help='Pack partition images into a ZIP bundle')
-@click.option('-o', '--output', 'output_file', required=True, help='Output ZIP filename')
-@click.option('--flash-partition-table', is_flag=True, help='Include the partition table in the bundle')
-@click.argument('files', nargs=-1, required=True, metavar='PARTITION FILENAME ...')
+@cli.command('print-image', help='Print partition table and app info from a flash image file')
+@click.argument('image_file')
 @pass_state
-def cmd_create_bundle(state, output_file, flash_partition_table, files):
+def cmd_print_image(state, image_file):
+    return print_image(state, image_file)
+
+
+def create_bundle(state, output_file, flash_partition_table, files):
     loaded = state.setup(needs_device=False)
     files = list(files)
     if len(files) % 2 != 0:
@@ -977,10 +1008,16 @@ def cmd_create_bundle(state, output_file, flash_partition_table, files):
             print(f"Adding partition table CSV to bundle")
 
 
-@cli.command('dump-bundle', help='Pack every partition from the device into a ZIP')
-@click.argument('output_file', required=False)
+@cli.command('create-bundle', help='Pack partition images into a ZIP bundle')
+@click.option('-o', '--output', 'output_file', required=True, help='Output ZIP filename')
+@click.option('--flash-partition-table', is_flag=True, help='Include the partition table in the bundle')
+@click.argument('files', nargs=-1, required=True, metavar='PARTITION FILENAME ...')
 @pass_state
-def cmd_dump_bundle(state, output_file):
+def cmd_create_bundle(state, output_file, flash_partition_table, files):
+    return create_bundle(state, output_file, flash_partition_table, files)
+
+
+def dump_bundle(state, output_file):
     loaded = state.setup()
     esp, partition_table = loaded.esp, loaded.partition_table
     if not output_file:
@@ -1004,10 +1041,14 @@ def cmd_dump_bundle(state, output_file):
     print(f"Bundle written to {output_file}")
 
 
-@cli.command('write-bundle', help='Flash every binary in a bundle ZIP')
-@click.argument('input_file')
+@cli.command('dump-bundle', help='Pack every partition from the device into a ZIP')
+@click.argument('output_file', required=False)
 @pass_state
-def cmd_write_bundle(state, input_file):
+def cmd_dump_bundle(state, output_file):
+    return dump_bundle(state, output_file)
+
+
+def write_bundle(state, input_file):
     loaded = state.setup(bundle_file=input_file)
     esp, partition_table = loaded.esp, loaded.partition_table
     with ZipFile(input_file, 'r') as zf:
@@ -1043,10 +1084,14 @@ def cmd_write_bundle(state, input_file):
         )
 
 
-@cli.command('print-bundle', help='Print partition table and app info from a bundle ZIP')
-@click.argument('bundle_file')
+@cli.command('write-bundle', help='Flash every binary in a bundle ZIP')
+@click.argument('input_file')
 @pass_state
-def cmd_print_bundle(state, bundle_file):
+def cmd_write_bundle(state, input_file):
+    return write_bundle(state, input_file)
+
+
+def print_bundle(state, bundle_file):
     bundle_size = os.path.getsize(bundle_file)
     if bundle_size == 0:
         raise RuntimeError(f"Bundle '{bundle_file}' is empty")
@@ -1089,10 +1134,14 @@ def cmd_print_bundle(state, bundle_file):
         print_partition_table_and_apps(partition_table, read)
 
 
-@cli.command('print-table', aliases=['list'], help='Print a partition table from a CSV or binary file, or from the device')
-@click.argument('table_file', required=False)
+@cli.command('print-bundle', help='Print partition table and app info from a bundle ZIP')
+@click.argument('bundle_file')
 @pass_state
-def cmd_print_table(state, table_file):
+def cmd_print_bundle(state, bundle_file):
+    return print_bundle(state, bundle_file)
+
+
+def print_table(state, table_file):
     if table_file:
         partition_table = load_partition_table_file(
             table_file, state.partition_table_offset,
@@ -1105,13 +1154,14 @@ def cmd_print_table(state, table_file):
     state.setup(needs_device=False)
 
 
-@cli.command('convert-table', aliases=['create-table'], help='Convert a partition table file between CSV and binary')
-@click.argument('input_file')
-@click.argument('output_file')
-@click.option('-f', '--format', 'output_format', type=click.Choice(['csv', 'bin']), default=None,
-              help='Output format (default: inferred from the output extension)')
+@cli.command('print-table', aliases=['list'], help='Print a partition table from a CSV or binary file, or from the device')
+@click.argument('table_file', required=False)
 @pass_state
-def cmd_convert_table(state, input_file, output_file, output_format):
+def cmd_print_table(state, table_file):
+    return print_table(state, table_file)
+
+
+def convert_table(state, input_file, output_file, output_format):
     partition_table = load_partition_table_file(
         input_file, state.partition_table_offset,
         state.primary_bootloader_offset, state.recovery_bootloader_offset)
@@ -1119,12 +1169,17 @@ def cmd_convert_table(state, input_file, output_file, output_format):
     write_partition_table_file(partition_table, output_file, output_format)
 
 
-@cli.command('dump-table', help='Read the partition table from the device into a file')
-@click.argument('output_file', required=False)
+@cli.command('convert-table', aliases=['create-table'], help='Convert a partition table file between CSV and binary')
+@click.argument('input_file')
+@click.argument('output_file')
 @click.option('-f', '--format', 'output_format', type=click.Choice(['csv', 'bin']), default=None,
-              help='Output format (default: inferred from the output extension, else csv)')
+              help='Output format (default: inferred from the output extension)')
 @pass_state
-def cmd_dump_table(state, output_file, output_format):
+def cmd_convert_table(state, input_file, output_file, output_format):
+    return convert_table(state, input_file, output_file, output_format)
+
+
+def dump_table(state, output_file, output_format):
     loaded = state.setup()
     if not output_file:
         esp = loaded.esp
@@ -1141,11 +1196,16 @@ def cmd_dump_table(state, output_file, output_format):
     write_partition_table_file(loaded.partition_table, output_file, output_format)
 
 
-@cli.command('write-table', help='Flash a partition table from a CSV or binary file to the device')
-@click.argument('table_file')
-@click.option('--force', is_flag=True, help='Flash even if the partition table fails verification')
+@cli.command('dump-table', help='Read the partition table from the device into a file')
+@click.argument('output_file', required=False)
+@click.option('-f', '--format', 'output_format', type=click.Choice(['csv', 'bin']), default=None,
+              help='Output format (default: inferred from the output extension, else csv)')
 @pass_state
-def cmd_write_table(state, table_file, force):
+def cmd_dump_table(state, output_file, output_format):
+    return dump_table(state, output_file, output_format)
+
+
+def write_table(state, table_file, force):
     esp = state.connect()
     partition_table = load_partition_table_file(
         table_file, state.partition_table_offset,
@@ -1171,13 +1231,15 @@ def cmd_write_table(state, table_file, force):
     print("Partition table written")
 
 
-@cli.command('create-nvs', help='Generate an NVS partition image from a CSV file')
-@click.argument('csv_file')
-@click.option('-o', '--output', 'output_file', required=True, help='Output binary filename (.bin)')
-@click.option('--size', type=BASED_INT, default=None, help='Partition size in bytes (e.g. 0x6000)')
-@click.option('--partition', default=None, help='Partition name to read the size from the partition table')
+@cli.command('write-table', help='Flash a partition table from a CSV or binary file to the device')
+@click.argument('table_file')
+@click.option('--force', is_flag=True, help='Flash even if the partition table fails verification')
 @pass_state
-def cmd_create_nvs(state, csv_file, output_file, size, partition):
+def cmd_write_table(state, table_file, force):
+    return write_table(state, table_file, force)
+
+
+def create_nvs(state, csv_file, output_file, size, partition):
     if (size is None) == (partition is None):
         raise click.UsageError("Provide exactly one of --size or --partition")
     if partition is not None:
@@ -1197,11 +1259,17 @@ def cmd_create_nvs(state, csv_file, output_file, size, partition):
     print(f"Wrote {len(image):#x} bytes to '{output_file}'")
 
 
-@cli.command('write-nvs', help='Generate an NVS image from CSV and flash it')
-@click.argument('partition')
+@cli.command('create-nvs', help='Generate an NVS partition image from a CSV file')
 @click.argument('csv_file')
+@click.option('-o', '--output', 'output_file', required=True, help='Output binary filename (.bin)')
+@click.option('--size', type=BASED_INT, default=None, help='Partition size in bytes (e.g. 0x6000)')
+@click.option('--partition', default=None, help='Partition name to read the size from the partition table')
 @pass_state
-def cmd_write_nvs(state, partition, csv_file):
+def cmd_create_nvs(state, csv_file, output_file, size, partition):
+    return create_nvs(state, csv_file, output_file, size, partition)
+
+
+def write_nvs(state, partition, csv_file):
     loaded = state.setup()
     partition = get_partition(
         loaded.partition_table, loaded.partition_table_entry, loaded.bootloader_entry, partition)
@@ -1216,10 +1284,15 @@ def cmd_write_nvs(state, partition, csv_file):
     write_flash(esp=loaded.esp, addr_data=[(partition.offset, image)], flash_size='detect')
 
 
-@cli.command('factory', help='Flash an app to the factory partition')
-@click.argument('app_binary_file')
+@cli.command('write-nvs', help='Generate an NVS image from CSV and flash it')
+@click.argument('partition')
+@click.argument('csv_file')
 @pass_state
-def cmd_factory(state, app_binary_file):
+def cmd_write_nvs(state, partition, csv_file):
+    return write_nvs(state, partition, csv_file)
+
+
+def factory(state, app_binary_file):
     loaded = state.setup()
     esp, partition_table = loaded.esp, loaded.partition_table
     partition = next(
@@ -1248,10 +1321,14 @@ def cmd_factory(state, app_binary_file):
         esp.erase_region(offset=otadata_partition.offset, size=otadata_partition.size)
 
 
-@cli.command('ota', help='Push an app to the next OTA slot and switch to it')
+@cli.command('factory', help='Flash an app to the factory partition')
 @click.argument('app_binary_file')
 @pass_state
-def cmd_ota(state, app_binary_file):
+def cmd_factory(state, app_binary_file):
+    return factory(state, app_binary_file)
+
+
+def ota(state, app_binary_file):
     loaded = state.setup()
     esp, partition_table = loaded.esp, loaded.partition_table
     otadata_partition, otadata = read_otadata(esp, partition_table)
@@ -1274,9 +1351,14 @@ def cmd_ota(state, app_binary_file):
     write_otadata(esp, otadata_partition, otadata)
 
 
-@cli.command('get-boot', help='Show the currently-active OTA slot')
+@cli.command('ota', help='Push an app to the next OTA slot and switch to it')
+@click.argument('app_binary_file')
 @pass_state
-def cmd_get_boot(state):
+def cmd_ota(state, app_binary_file):
+    return ota(state, app_binary_file)
+
+
+def get_boot(state):
     loaded = state.setup()
     _, otadata = read_otadata(loaded.esp, loaded.partition_table)
 
@@ -1286,10 +1368,13 @@ def cmd_get_boot(state):
         print(f"OTA slot 'ota_{otadata.slot}' (seq={otadata.otadata.seq}, state={otadata.otadata.ota_state.name})")
 
 
-@cli.command('set-boot', help='Force the next boot to a specific OTA partition')
-@click.argument('partition')
+@cli.command('get-boot', help='Show the currently-active OTA slot')
 @pass_state
-def cmd_set_boot(state, partition):
+def cmd_get_boot(state):
+    return get_boot(state)
+
+
+def set_boot(state, partition):
     loaded = state.setup()
     otadata_partition, otadata = read_otadata(loaded.esp, loaded.partition_table)
 
@@ -1307,9 +1392,14 @@ def cmd_set_boot(state, partition):
     write_otadata(loaded.esp, otadata_partition, otadata)
 
 
-@cli.command('clear-boot', help='Erase otadata and let the bootloader fall back')
+@cli.command('set-boot', help='Force the next boot to a specific OTA partition')
+@click.argument('partition')
 @pass_state
-def cmd_clear_boot(state):
+def cmd_set_boot(state, partition):
+    return set_boot(state, partition)
+
+
+def clear_boot(state):
     loaded = state.setup()
     otadata_partition = next(
         (p for p in loaded.partition_table if p.type == DATA_TYPE and p.subtype == SUBTYPES[DATA_TYPE]['ota']),
@@ -1322,10 +1412,13 @@ def cmd_clear_boot(state):
     loaded.esp.erase_region(offset=otadata_partition.offset, size=otadata_partition.size)
 
 
-@cli.command('enter-bootloader', help='Fast-poll the serial port and drop the chip into ROM bootloader '
-                                      'mode as soon as it appears, then exit without resetting')
+@cli.command('clear-boot', help='Erase otadata and let the bootloader fall back')
 @pass_state
-def cmd_enter_bootloader(state):
+def cmd_clear_boot(state):
+    return clear_boot(state)
+
+
+def enter_bootloader(state):
     port = state.port or prompt_for_port()
     if not port:
         raise click.UsageError("enter-bootloader requires -p/--port")
@@ -1341,6 +1434,13 @@ def cmd_enter_bootloader(state):
             print(f"Bootloader entry failed: {type(e).__name__}: {e}. Retrying...", file=sys.stderr)
             time.sleep(poll_interval)
     print(f"In download mode: {esp.CHIP_NAME} ({port})")
+
+
+@cli.command('enter-bootloader', help='Fast-poll the serial port and drop the chip into ROM bootloader '
+                                      'mode as soon as it appears, then exit without resetting')
+@pass_state
+def cmd_enter_bootloader(state):
+    return enter_bootloader(state)
 
 
 def _main():

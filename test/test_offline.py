@@ -108,3 +108,10 @@ def test_create_and_print_bundle(run_offline, assets, tmp_path):
     out = run_offline(f"print-bundle {bundle}")
     assert "factory" in out
     assert "idftool_test" in out
+
+
+def test_library_api_importable():
+    # idftool is a library too: the operation functions and core types import with no device.
+    from idftool import State, Loaded, write_image, factory, ota
+    assert isinstance(State, type) and isinstance(Loaded, type)
+    assert all(callable(fn) for fn in (write_image, factory, ota))
