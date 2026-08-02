@@ -46,12 +46,15 @@ def pytest_collection_modifyitems(config, items):
 
 
 def _make_runner(port, baud):
-    def run(args, expect_error=False, timeout=900):
+    def run(args, expect_error=False, timeout=2400):
         """Run the idftool CLI as a subprocess; return combined stdout+stderr.
 
         `args` is a string ("read nvs out.bin") or a list. Device commands get --port/--baud
         prepended automatically when a port is configured. Asserts exit status (0, or non-zero
         when expect_error=True).
+
+        The timeout is generous because a full-flash dump/reflash of a large flash over a slow
+        serial link (some USB-serial bridges are only stable at 115200) can take many minutes.
         """
         cmd = [sys.executable, "-m", "idftool"]
         if port:
