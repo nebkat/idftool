@@ -1068,11 +1068,11 @@ def write_bundle(state, input_file):
             print(f"Writing partition {partition.name} (offset={partition.offset:#x}, size={partition.size:#x}) from bundle")
             addr_data.append((partition.offset, data))
 
-        # Flash partition table if present
+        # Flash partition table if present. Use the virtual partition-table entry (as create-image
+        # does): a table parsed from CSV or read from flash never contains a self-referential
+        # partition-table row, so searching `partition_table` for one raises StopIteration.
         if any(m == 'partition_table.csv' for m in zf.namelist()):
-            partition = next(
-                (e for e in partition_table if e.type == PARTITION_TABLE_TYPE and e.subtype == SUBTYPES[e.type]['primary'])
-            )
+            partition = loaded.partition_table_entry
             print(f"Writing partition table (offset={partition.offset:#x}, size={partition.size:#x}) from bundle")
             addr_data.append((partition.offset, partition_table.to_binary()))
 
