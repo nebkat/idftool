@@ -4,6 +4,29 @@ All notable changes to this project are documented here. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [v0.6.0] — 2026-08-02
+
+### Added
+- idftool is now importable as a library, esptool-style: every command's
+  logic is exposed as a plain function (`write_image`, `factory`, `ota`,
+  `read_partition`, `write_partitions`, `dump_bundle`, …) that takes a
+  `State` — which owns the serial connection — plus the same arguments as
+  the CLI command. `from idftool import State, write_image, factory, ota`
+  works with no import side effects, letting callers drive several
+  operations over a single connection. The CLI is unchanged: each command
+  is now a thin wrapper around its function.
+- `enter-bootloader` with no `-p/--port` now shows an interactive picker of
+  the visible serial ports (best-guess Espressif device first) with a
+  "type manually" escape hatch, since the target may not have appeared yet.
+  Falls back to the usual usage error when stdin isn't a TTY.
+
+### Fixed
+- `write-bundle` no longer crashes with an internal `StopIteration` when
+  flashing a bundle that includes the partition table; it now uses the
+  resolved partition-table offset directly.
+- `print-table`/`list` moved from the Discovery help panel into the
+  Partition table panel.
+
 ## [v0.5.1] — 2026-07-18
 
 ### Fixed
@@ -118,6 +141,7 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 ### Added
 - Initial release.
 
+[v0.6.0]: https://github.com/nebkat/idftool/releases/tag/v0.6.0
 [v0.5.1]: https://github.com/nebkat/idftool/releases/tag/v0.5.1
 [v0.5.0]: https://github.com/nebkat/idftool/releases/tag/v0.5.0
 [v0.3.0]: https://github.com/nebkat/idftool/releases/tag/v0.3.0
