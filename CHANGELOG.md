@@ -4,6 +4,15 @@ All notable changes to this project are documented here. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [v0.6.1] — 2026-08-10
+
+### Fixed
+- A flash read that fails while printing the partition table no longer aborts
+  the command before it starts. The otadata read (used only to mark the active
+  app partition) now reports a warning and carries on, and unreadable app
+  slots render as `<READ ERROR>` in the table instead of raising esptool's
+  `FatalError` out of the printer — requires `esp-idf-defs` v0.1.5.
+
 ## [v0.6.0] — 2026-08-02
 
 ### Added
@@ -141,6 +150,7 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 ### Added
 - Initial release.
 
+[v0.6.1]: https://github.com/nebkat/idftool/releases/tag/v0.6.1
 [v0.6.0]: https://github.com/nebkat/idftool/releases/tag/v0.6.0
 [v0.5.1]: https://github.com/nebkat/idftool/releases/tag/v0.5.1
 [v0.5.0]: https://github.com/nebkat/idftool/releases/tag/v0.5.0
