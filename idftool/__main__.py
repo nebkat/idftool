@@ -536,10 +536,9 @@ def print_partition_table_and_apps(
     for part in partition_table:
         if part.type != APP_TYPE:
             continue
-        app_binary = read(part.offset, part.size)
         try:
-            image_metadata = ImageMetadata.from_bytes(app_binary, app_required=True)
-        except (RuntimeError, ValueError):
+            image_metadata = ImageMetadata.from_bytes(read(part.offset, part.size), app_required=True)
+        except Exception:
             continue
         print()
         print(f"Partition '{part.name}' (offset={part.offset:#x}):")
@@ -655,6 +654,8 @@ class State:
                 _, otadata_params = read_otadata(esp, partition_table)
             except ValueError:
                 pass
+            except Exception as e:
+                print(f"Warning: failed to read otadata: {type(e).__name__}: {e}", file=sys.stderr)
 
         print_partition_table(partition_table, esp.read_flash if esp else None, otadata=otadata_params)
 

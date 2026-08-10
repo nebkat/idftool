@@ -110,6 +110,45 @@ def test_create_and_print_bundle(run_offline, assets, tmp_path):
     assert "idftool_test" in out
 
 
+class _FlakyEsp:
+    """ESPLoader stand-in that serves the partition table and fails every other read."""
+    FLASH_SECTOR_SIZE = 0x1000
+    BOOTLOADER_FLASH_OFFSET = 0x0
+    CHIP_NAME = "ESP32-S3"
+
+    def __init__(self, table_offset, table_binary):
+        self.table_offset = table_offset
+        self.table_binary = table_binary
+
+    def read_flash(self, offset, length, *args, **kwargs):
+        from esptool.util import FatalError
+        if offset == self.table_offset:
+            return self.table_binary
+        raise FatalError("Failed to read flash block (result was 01050000: Comms error)")
+
+
+def _flaky_state(monkeypatch):
+    from esp_idf_defs.partitions import PartitionTable
+    import idftool.__main__ as main
+
+    table = PartitionTable.from_csv((SAMPLES / "partitions.csv").read_text())
+    state = main.State(port=None, baud=115200, no_reset=False, partition_table_file=None,
+                       partition_table_offset=0x8000, partition_table_size=0xc00,
+                       primary_bootloader_offset=None, recovery_bootloader_offset=None)
+    state.esp = _FlakyEsp(0x8000, table.to_binary())
+    monkeypatch.setattr(main, "detect_flash_size", lambda esp: "16MB")
+    return state
+
+
+def test_setup_survives_failing_otadata_read(monkeypatch, capsys):
+    loaded = _flaky_state(monkeypatch).setup()
+    out = capsys.readouterr()
+
+    assert loaded.partition_table.find_by_name("factory") is not None
+    assert "failed to read otadata" in out.out + out.err
+    assert "READ ERROR" in out.out
+
+
 def test_library_api_importable():
     # idftool is a library too: the operation functions and core types import with no device.
     from idftool import State, Loaded, write_image, factory, ota
