@@ -12,5 +12,6 @@ from idftool.commands import (  # noqa: F401  (imported for their registration s
     bundles,
     table,
     nvs,
+    fs,
     firmware,
 )

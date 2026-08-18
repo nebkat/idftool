@@ -10,7 +10,9 @@ a = Analysis(
     pathex=[],
     binaries=[],
     datas=datas,
-    hiddenimports=[],
+    # idftool.fs and its backends are imported lazily inside the fs commands, to keep them
+    # off the startup path; name them so the analysis can't miss them.
+    hiddenimports=['idftool.fs', 'idftool.fs.fatfs', 'idftool.fs.littlefs', 'idftool.fs.spiffs'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

@@ -16,6 +16,12 @@
         "esptool~=5.2.0",
         "esp-idf-defs~=0.1.5",
         "esp-idf-nvs-partition-gen~=0.2.0",
+        # Filesystem images. pyfatfs is used through its low-level PyFat API only, so its
+        # PyFilesystem2 dependency is never imported; littlefs-python is what esp_littlefs
+        # itself generates images with. SPIFFS needs no dependency — ESP-IDF's generator is
+        # vendored in idftool/fs/spiffsgen.py.
+        "pyfatfs~=1.1",
+        "littlefs-python~=0.19",
     ]
 
 [project.optional-dependencies]
@@ -28,7 +34,7 @@
     Source = "https://github.com/nebkat/idftool"
 
 [tool.setuptools]
-    packages = ["idftool", "idftool.commands"]
+    packages = ["idftool", "idftool.commands", "idftool.fs"]
 
 [tool.setuptools_scm]
 

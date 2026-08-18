@@ -31,6 +31,8 @@ click.rich_click.COMMAND_GROUPS = {
         {'name': 'Bundles', 'commands': ['create-bundle', 'dump-bundle', 'write-bundle', 'print-bundle']},
         {'name': 'Partition table', 'commands': ['print-table', 'convert-table', 'dump-table', 'write-table']},
         {'name': 'NVS', 'commands': ['create-nvs', 'write-nvs']},
+        {'name': 'Filesystems', 'commands': ['create-fs', 'write-fs', 'read-fs',
+                                             'extract-fs', 'print-fs']},
         {'name': 'Misc', 'commands': ['enter-bootloader']},
     ],
 }

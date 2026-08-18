@@ -25,6 +25,10 @@ especially when dealing with multiple devices/partition tables.
 - **Reproducible multi-binary flashing.** `create-bundle` packs multiple
   partition binaries into a single ZIP; optionally flashing a partition
   table. `write-bundle` reflashes the lot in one command.
+- **Filesystems, both ways.** Build a FAT, littlefs, or SPIFFS image from a
+  directory and flash it (`write-fs`), or pull one back off the device and
+  extract it (`read-fs`) — wear levelling and all. The filesystem is inferred
+  from the partition's subtype, so you rarely have to say which.
 
 ## Installation
 
@@ -120,6 +124,12 @@ Setting boot partition to 'ota_1'...
 | **NVS** | |
 | [`create-nvs`](#create-nvs) | Generate an NVS partition image from a CSV file |
 | [`write-nvs`](#write-nvs) | Generate an NVS image from CSV and flash it |
+| **Filesystems** | |
+| [`create-fs`](#create-fs) | Build a filesystem image from a directory |
+| [`write-fs`](#write-fs) | Build a filesystem image from a directory and flash it |
+| [`read-fs`](#read-fs) | Read a filesystem partition and extract it to a directory |
+| [`extract-fs`](#extract-fs) | Extract a filesystem image file to a directory |
+| [`print-fs`](#print-fs) | List the contents of a filesystem image or partition |
 | **Misc** | |
 | [`enter-bootloader`](#enter-bootloader) | Drop the chip into ROM bootloader mode |
 
@@ -385,6 +395,80 @@ Generate an NVS partition image from a CSV file and flash it to the named
 partition on the device.
 ```text
 idftool write-nvs nvs nvs.csv
+```
+
+### Filesystems
+
+idftool builds, flashes, lists, and extracts the three filesystems ESP-IDF
+mounts from a data partition:
+
+| Filesystem | Partition subtype | Built with |
+|------------|-------------------|------------|
+| `fatfs`    | `fat`             | [`pyfatfs`](https://github.com/nathanhi/pyfatfs), plus ESP-IDF's wear levelling layer |
+| `littlefs` | `littlefs`        | [`littlefs-python`](https://github.com/jrast/littlefs-python), the same library [`esp_littlefs`](https://github.com/joltwallet/esp_littlefs) generates images with |
+| `spiffs`   | `spiffs`          | ESP-IDF's `spiffsgen.py`, vendored — plus the reader ESP-IDF doesn't ship |
+
+**Which filesystem?** idftool takes it from `--type` if you give one, otherwise
+from the partition's subtype, otherwise from what the image looks like. So
+`write-fs storage assets/` on a `spiffs` partition needs no `--type`, and
+`print-fs storage.bin` identifies the image on its own.
+
+**Wear levelling.** ESP-IDF mounts a `fat` partition in SPI flash through the
+wear levelling layer, which reserves several sectors of the partition and
+shifts the filesystem by a "dummy" sector that migrates as writes accumulate.
+idftool wraps FAT images in that container by default and unwraps them
+transparently on read — including images the device has written to, where the
+filesystem has been shifted and rotated. Pass `--no-fat-wear-levelling` for a
+bare image (e.g. for a read-only partition mounted with
+`esp_vfs_fat_spiflash_mount_ro`).
+
+**Matching the device's sdkconfig.** The per-filesystem options default to
+ESP-IDF's own Kconfig defaults, so they only need setting when the device
+differs — e.g. `--littlefs-name-max` for `CONFIG_LITTLEFS_OBJ_NAME_LEN`,
+`--spiffs-page-size` for `CONFIG_SPIFFS_PAGE_SIZE`, `--fat-sector-size` for
+`CONFIG_WL_SECTOR_SIZE`. Run `idftool create-fs --help` for the full list.
+
+Note that SPIFFS is flat: it has no directories, and a file's whole path
+counts against `CONFIG_SPIFFS_OBJ_NAME_LEN` (32 characters by default).
+
+#### `create-fs`
+Build a filesystem image from a directory, offline. Requires either `--size`
+(explicit image size) or `--partition` (take the size — and the filesystem —
+from the partition table).
+```text
+idftool create-fs assets/ -o storage.bin --size 0x100000 --type littlefs
+idftool --partition-table-file partitions.csv create-fs assets/ -o storage.bin --partition storage
+```
+
+#### `write-fs`
+Build a filesystem image from a directory and flash it to the named partition,
+sized to fill it. If the source is a file that already looks like a filesystem
+image it's flashed as-is (padded out to the partition) rather than rebuilt.
+```text
+idftool write-fs storage assets/
+idftool write-fs storage prebuilt-storage.bin
+idftool write-fs storage assets/ --type littlefs
+```
+
+#### `read-fs`
+Read a filesystem partition off the device and extract it into a directory.
+```text
+idftool read-fs storage ./storage-backup
+```
+
+#### `extract-fs`
+Extract a local filesystem image file into a directory, offline — the
+counterpart of `read-fs`.
+```text
+idftool extract-fs storage.bin ./storage-backup
+```
+
+#### `print-fs`
+List the contents of a filesystem image file, or of a partition on the device.
+Aliased as `list-fs`.
+```text
+idftool print-fs storage.bin        # from a file, offline
+idftool print-fs --partition storage # from the device
 ```
 
 ### Misc

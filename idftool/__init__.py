@@ -25,6 +25,7 @@ _SOURCES = {
     'idftool.commands.bundles': ('create_bundle', 'dump_bundle', 'write_bundle', 'print_bundle'),
     'idftool.commands.table': ('print_table', 'convert_table', 'dump_table', 'write_table'),
     'idftool.commands.nvs': ('create_nvs', 'write_nvs'),
+    'idftool.commands.fs': ('create_fs', 'write_fs', 'read_fs', 'extract_fs', 'print_fs'),
     'idftool.commands.firmware': ('factory', 'ota', 'get_boot', 'set_boot', 'clear_boot'),
 }
 

@@ -6,6 +6,38 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- Filesystem partitions can now be built, flashed, listed, and extracted, for
+  all three filesystems ESP-IDF mounts from a data partition — FAT, littlefs,
+  and SPIFFS:
+  - `create-fs` builds an image from a directory, offline. Size and filesystem
+    come from `--size`/`--type`, or from `--partition` and its subtype.
+  - `write-fs` builds an image and flashes it to a named partition. A prebuilt
+    image is passed through instead of rebuilt, the way `write-nvs` handles a
+    prebuilt NVS binary.
+  - `read-fs` reads a partition off the device and extracts it to a directory;
+    `extract-fs` does the same for a local image file.
+  - `print-fs` (alias `list-fs`) lists the contents of an image file or of a
+    partition on the device.
+
+  The filesystem is taken from `--type` if given, else from the partition's
+  subtype (`fat`, `littlefs`, `spiffs`), else detected from the image, so most
+  invocations need neither. Per-filesystem options (`--fat-sector-size`,
+  `--littlefs-name-max`, `--spiffs-page-size`, …) default to ESP-IDF's own
+  Kconfig defaults and only need setting when the device's sdkconfig differs.
+- FAT images are wrapped in ESP-IDF's wear levelling container by default —
+  how `esp_vfs_fat_spiflash_mount_rw_wl` expects a `fat` partition in SPI flash
+  to look — and unwrapped transparently when read back, including images the
+  device has since written to, where the filesystem has been shifted and
+  rotated by the wear levelling layer. `--no-fat-wear-levelling` produces a
+  bare image.
+- New dependencies: `pyfatfs` (used through its low-level `PyFat` API, so its
+  PyFilesystem2 dependency is never imported) and `littlefs-python` (the same
+  library `esp_littlefs` generates images with). SPIFFS needs no dependency:
+  ESP-IDF's `spiffsgen` is vendored, and idftool adds the reader ESP-IDF does
+  not ship. The backends are imported lazily, so no other command pays for
+  them at startup.
+
 ### Changed
 - The command layer is split out of `idftool/__main__.py`, which had grown to
   ~1,500 lines holding all 25 commands plus every shared helper. Commands now

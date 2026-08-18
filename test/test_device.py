@@ -87,6 +87,45 @@ def test_write_nvs(idf, device, assets, tmp_path):
     assert set(back.read_bytes()) != {0xFF}  # something was written
 
 
+# --- filesystems --------------------------------------------------------------------------
+
+@pytest.fixture
+def fs_tree(tmp_path):
+    """A small tree to flash. Names stay short enough for SPIFFS's 32-character limit."""
+    root = tmp_path / "tree"
+    (root / "sub").mkdir(parents=True)
+    (root / "hello.txt").write_bytes(b"hello world\n")
+    (root / "sub" / "nested.txt").write_bytes(b"nested\n")
+    (root / "big.bin").write_bytes(bytes(range(256)) * 20)
+    return root
+
+
+@pytest.mark.parametrize("fs_type", ["spiffs", "littlefs", "fatfs"])
+def test_write_and_read_fs(idf, device, tmp_path, fs_tree, fs_type):
+    # `storage` is declared spiffs in the test table, so the other two need --type. All three
+    # are worth flashing: the point is the image survives the round trip through flash.
+    idf(f"write-fs {DATA_PARTITION} {fs_tree} --type {fs_type}")
+
+    out = idf(f"print-fs --partition {DATA_PARTITION} --type {fs_type}")
+    assert "hello.txt" in out and "big.bin" in out
+
+    extracted = tmp_path / f"out-{fs_type}"
+    idf(f"read-fs {DATA_PARTITION} {extracted} --type {fs_type}")
+    for name in ("hello.txt", "big.bin", "sub/nested.txt"):
+        assert (extracted / name).read_bytes() == (fs_tree / name).read_bytes()
+
+
+def test_write_fs_accepts_a_prebuilt_image(idf, device, tmp_path, fs_tree):
+    image = tmp_path / "storage.bin"
+    idf(f"create-fs {fs_tree} -o {image} --size 0x10000 --type spiffs")
+    out = idf(f"write-fs {DATA_PARTITION} {image}")
+    assert "Using spiffs image" in out
+
+    extracted = tmp_path / "out"
+    idf(f"read-fs {DATA_PARTITION} {extracted}")
+    assert (extracted / "hello.txt").read_bytes() == (fs_tree / "hello.txt").read_bytes()
+
+
 # --- firmware / boot selection --------------------------------------------------------------
 
 def test_factory(idf, device, assets):
