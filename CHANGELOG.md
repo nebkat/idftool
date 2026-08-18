@@ -4,6 +4,23 @@ All notable changes to this project are documented here. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+- The command layer is split out of `idftool/__main__.py`, which had grown to
+  ~1,500 lines holding all 25 commands plus every shared helper. Commands now
+  live one family per module under `idftool/commands/`, with the pieces they
+  share in `idftool/cli.py` (the command group and global options),
+  `idftool/state.py` (`State`/`Loaded`), `idftool/partitions.py`,
+  `idftool/apps.py`, `idftool/nvs.py`, `idftool/ports.py`, and
+  `idftool/params.py`. `__main__.py` is now just the entry point.
+
+  No behaviour change: every command's `--help` output is byte-identical, and
+  the library API (`from idftool import State, write_image, …`) is unchanged —
+  it now resolves each name from the module that defines it. Code reaching into
+  `idftool.__main__` for internals (e.g. `idftool.__main__.State`) must import
+  from the defining module instead.
+
 ## [v0.6.1] — 2026-08-10
 
 ### Fixed

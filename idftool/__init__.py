@@ -7,65 +7,41 @@ your own code, reusing a single connection across operations::
 
     from idftool import State, write_image, factory, ota
 
-The names are resolved lazily from :mod:`idftool.__main__` on first access, so
-importing this package has no side effects — and running ``python -m idftool``
-does not import ``__main__`` twice.
+The names are resolved lazily from the module that defines them on first
+access, so importing this package has no side effects — and running
+``python -m idftool`` does not import the command modules twice.
 """
+import importlib
 
-__all__ = [
-    # Core types and connection helpers
-    'State',
-    'Loaded',
-    'get_esp',
-    'pass_state',
-    # Discovery
-    'list_devices',
-    # Partition I/O
-    'read_partition',
-    'write_partitions',
-    'erase_partition',
-    'view_partition',
-    # Firmware
-    'ota',
-    'factory',
-    # Boot selection
-    'get_boot',
-    'set_boot',
-    'clear_boot',
-    # Images
-    'create_image',
-    'dump_image',
-    'write_image',
-    'print_image',
-    # Bundles
-    'create_bundle',
-    'dump_bundle',
-    'write_bundle',
-    'print_bundle',
-    # Partition table
-    'print_table',
-    'convert_table',
-    'dump_table',
-    'write_table',
-    # NVS
-    'create_nvs',
-    'write_nvs',
-    # Misc
-    'enter_bootloader',
-]
+#: Public name → the module that defines it. Doubles as a map of where each
+#: command's logic lives; the CLI wrappers sit alongside it in the same module.
+_SOURCES = {
+    'idftool.state': ('State', 'Loaded', 'get_esp'),
+    'idftool.cli': ('pass_state',),
+    'idftool.commands.misc': ('list_devices', 'enter_bootloader'),
+    'idftool.commands.partition_io': ('read_partition', 'write_partitions', 'erase_partition',
+                                      'view_partition'),
+    'idftool.commands.images': ('create_image', 'dump_image', 'write_image', 'print_image'),
+    'idftool.commands.bundles': ('create_bundle', 'dump_bundle', 'write_bundle', 'print_bundle'),
+    'idftool.commands.table': ('print_table', 'convert_table', 'dump_table', 'write_table'),
+    'idftool.commands.nvs': ('create_nvs', 'write_nvs'),
+    'idftool.commands.firmware': ('factory', 'ota', 'get_boot', 'set_boot', 'clear_boot'),
+}
 
-_EXPORTS = frozenset(__all__)
+_EXPORTS = {name: module for module, names in _SOURCES.items() for name in names}
+
+__all__ = sorted(_EXPORTS)
 
 
 def __getattr__(name):
-    # PEP 562 lazy re-export: pull the operation functions and core types out of
-    # idftool.__main__ only when first accessed. Importing __main__ eagerly here
-    # would make `python -m idftool` import it twice (runpy warning), so defer it.
-    if name in _EXPORTS:
-        import idftool.__main__ as _main
-        return getattr(_main, name)
+    # PEP 562 lazy re-export: import the defining module only when the name is first
+    # accessed. Importing them eagerly here would make `python -m idftool` import the
+    # command modules twice (runpy warning), so defer it.
+    module = _EXPORTS.get(name)
+    if module is not None:
+        return getattr(importlib.import_module(module), name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def __dir__():
-    return sorted(set(globals()) | _EXPORTS)
+    return sorted(set(globals()) | set(_EXPORTS))

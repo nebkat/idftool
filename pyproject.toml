@@ -28,7 +28,7 @@
     Source = "https://github.com/nebkat/idftool"
 
 [tool.setuptools]
-    packages = ["idftool"]
+    packages = ["idftool", "idftool.commands"]
 
 [tool.setuptools_scm]
 

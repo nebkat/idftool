@@ -129,14 +129,14 @@ class _FlakyEsp:
 
 def _flaky_state(monkeypatch):
     from esp_idf_defs.partitions import PartitionTable
-    import idftool.__main__ as main
+    import idftool.state as state_module
 
     table = PartitionTable.from_csv((SAMPLES / "partitions.csv").read_text())
-    state = main.State(port=None, baud=115200, no_reset=False, partition_table_file=None,
-                       partition_table_offset=0x8000, partition_table_size=0xc00,
-                       primary_bootloader_offset=None, recovery_bootloader_offset=None)
+    state = state_module.State(port=None, baud=115200, no_reset=False, partition_table_file=None,
+                               partition_table_offset=0x8000, partition_table_size=0xc00,
+                               primary_bootloader_offset=None, recovery_bootloader_offset=None)
     state.esp = _FlakyEsp(0x8000, table.to_binary())
-    monkeypatch.setattr(main, "detect_flash_size", lambda esp: "16MB")
+    monkeypatch.setattr(state_module, "detect_flash_size", lambda esp: "16MB")
     return state
 
 
