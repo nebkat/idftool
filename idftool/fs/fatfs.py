@@ -271,10 +271,19 @@ def _build(sources: list[SourceEntry], size: int, *, sector_size: int = SECTOR_S
     fs.set_fp(fp)
     # pyfatfs sizes its allocator from the FAT table rather than from the volume, so it will
     # hand out clusters that don't exist whenever the FAT has room to spare — writing past the
-    # end of the image instead of reporting that it is full. Trim the in-memory FAT to the
-    # clusters the volume actually has; flush_fat() then writes only that much, leaving the
-    # rest of the FAT region zeroed, which is what "free" looks like anyway.
-    fs.fat = fs.fat[:geometry['clusters'] + 2]
+    # end of the image instead of reporting that it is full. Reserve the entries past the end
+    # of the volume for the duration of the build so they are never handed out.
+    #
+    # They are reserved rather than removed, and one spare is always kept, because pyfatfs's
+    # allocator only breaks out of its search on the iteration *after* it has found enough
+    # clusters: with nothing beyond the last real cluster the loop ends by exhaustion and
+    # reports the volume full, so an image whose contents exactly fill it would be rejected.
+    entries = geometry['clusters'] + 2
+    reserved = fs.FAT_CLUSTER_VALUES[fs.fat_type]['END_OF_CLUSTER_MAX']
+    if len(fs.fat) <= entries:
+        fs.fat.extend([reserved] * (entries + 1 - len(fs.fat)))
+    for i in range(entries, len(fs.fat)):
+        fs.fat[i] = reserved
 
     try:
         directories = {'': fs.root_dir}
@@ -288,6 +297,9 @@ def _build(sources: list[SourceEntry], size: int, *, sector_size: int = SECTOR_S
                 directories[source.path] = _mkdir(fs, parent, name, dt)
             else:
                 _mkfile(fs, parent, name, source.read(), dt)
+        # Drop the reserved entries again so only the volume's own clusters reach the disk;
+        # the rest of the FAT region keeps the zeroes _format() wrote, which reads as free.
+        del fs.fat[entries:]
         fs.flush_fat()
         fs.close()
     except PyFATException as e:

@@ -278,6 +278,29 @@ def test_fat_width_follows_the_cluster_count():
             assert geometry['clusters'] * 0x1000 > size * 0.9, "most of the volume should be usable"
 
 
+def test_fat_fills_the_volume_exactly(run_offline, tmp_path):
+    # Filling every last cluster must be accepted. pyfatfs's allocator only stops searching on
+    # the iteration after it has found enough clusters, so once the FAT was trimmed to the
+    # volume's real size an exactly-full image was reported as out of space instead.
+    from idftool.fs import fatfs, wl
+
+    size = 0x10000
+    clusters = fatfs._geometry(wl.filesystem_size(size), 0x1000, 1, 2, 512, None)['clusters']
+    root = tmp_path / "full"
+    root.mkdir()
+    for i in range(clusters):
+        (root / f"f{i}.bin").write_bytes(b"x" * 0x1000)
+
+    image = tmp_path / "full.bin"
+    out = run_offline(f"create-fs {root} -o {image} --size {size:#x} -t fatfs")
+    assert f"{clusters} files" in out
+    assert len(image.read_bytes()) == size
+
+    extracted = tmp_path / "out"
+    run_offline(f"extract-fs {image} {extracted}")
+    assert len(list(extracted.iterdir())) == clusters
+
+
 def test_fat_too_large_for_fat16_is_explained():
     from idftool.fs import fatfs, FsError
 
