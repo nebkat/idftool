@@ -4,6 +4,15 @@ All notable changes to this project are documented here. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- The `rich-click` requirement is now `>=1.9`, which is the version that
+  actually added native command aliases. The declared `>=1.8` floor allowed
+  1.8.9 to be installed, where the `aliases=` kwarg on a command raises
+  `TypeError: Command.__init__() got an unexpected keyword argument 'aliases'`
+  at import time, so every idftool invocation failed.
+
 ## [v0.7.0] — 2026-08-18
 
 ### Added
