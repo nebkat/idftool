@@ -5,14 +5,18 @@ import time
 import rich_click as click
 
 from esptool import flash_size_bytes
-from esptool.cmds import read_flash, write_flash, merge_bin, erase_flash, detect_flash_size
+from esptool.cmds import read_flash, write_flash, merge_bin, detect_flash_size
 
 from esp_idf_defs import ImageMetadata, ChipId
 from esp_idf_defs.partitions import PartitionTable
 
 from idftool.apps import print_partition_table_and_apps
 from idftool.cli import cli, pass_state
+from idftool.flash import flash_options, option_group, write_flash_options
 from idftool.partitions import check_image_file, get_partition_address, require_partitions
+
+# The erase is the option that needs finding, so keep it out of the pass-through panel.
+option_group('write-image', '--erase')
 
 def create_image(state, output_file, output_format, flash_partition_table, files):
     loaded = state.setup(needs_device=False)
@@ -84,7 +88,34 @@ def cmd_dump_image(state, output_file):
     return dump_image(state, output_file)
 
 
-def write_image(state, image_file):
+def write_image(state, image_file, erase=True, **options):
+    """Write a whole-flash image, **erasing the entire flash first** unless `erase` is False.
+
+    The erase is a full chip erase, not just the span the image covers: everything past the
+    end of the image file goes too. It is on by default because that is what writing a
+    whole-flash image has always meant here, and it is what makes a reflash reproducible —
+    but a full image whose partition table matches the device overwrites everything it cares
+    about anyway, so it is usually unnecessary.
+
+    It is also mutually exclusive with `skip_flashed`: nothing can already match on a chip
+    that was just wiped, so asking for both is an error rather than a silent no-op. Note that
+    a whole-flash image is written as a single region, so `skip_flashed` here is all or
+    nothing — the entire span has to match, which it stops doing as soon as the device boots
+    and writes its own NVS. Per-partition skipping is what `factory`, `ota` and `write` give
+    you; sector-level reflashing needs esptool's `diff_with`.
+
+    Any other keyword argument is forwarded to esptool's ``write_flash`` (see
+    :data:`idftool.flash.WRITE_FLASH_OPTIONS`).
+    """
+    if 'erase_all' in options:
+        raise click.UsageError("write-image spells esptool's erase_all as `erase` "
+                               "(--erase/--no-erase)")
+    if erase and options.get('skip_flashed'):
+        raise click.UsageError(
+            "skip_flashed does nothing when the flash is erased first — nothing can match a "
+            "chip that was just wiped. Pass --no-erase (erase=False) to write only the "
+            "regions that differ.")
+
     loaded = state.setup(image_file=image_file)
     esp = loaded.esp
     if os.path.getsize(image_file) == 0:
@@ -110,19 +141,30 @@ def write_image(state, image_file):
         image_data = image_f.read()
 
     print(f"Writing image '{image_file}'...")
-    erase_flash(esp)
     write_flash(
         esp=esp,
         addr_data=[(esp.BOOTLOADER_FLASH_OFFSET, image_data)],
         flash_size='detect',
+        **write_flash_options(options, erase_all=erase),
     )
 
 
-@cli.command('write-image', aliases=['reflash'], help='Write a full flash image to the device')
+@cli.command('write-image', aliases=['reflash'],
+             short_help='Write a full flash image to the device')
 @click.argument('image_file')
+@click.option('--erase/--no-erase', default=True, show_default=True,
+              help='Erase the entire flash before writing')
+@flash_options
 @pass_state
-def cmd_write_image(state, image_file):
-    return write_image(state, image_file)
+def cmd_write_image(state, image_file, erase, **options):
+    """Write a full flash image to the device.
+
+    The whole flash is erased first, including whatever lies past the end of the image —
+    pass --no-erase to write only what the image contains. --no-erase is also what
+    --skip-flashed needs: nothing can already match a chip that was just wiped, so the two
+    together are refused rather than quietly doing nothing.
+    """
+    return write_image(state, image_file, erase, **options)
 
 
 def print_image(state, image_file):

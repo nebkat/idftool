@@ -18,6 +18,7 @@ import importlib
 _SOURCES = {
     'idftool.state': ('State', 'Loaded', 'get_esp'),
     'idftool.cli': ('pass_state',),
+    'idftool.flash': ('WRITE_FLASH_OPTIONS',),
     'idftool.commands.misc': ('list_devices', 'enter_bootloader'),
     'idftool.commands.partition_io': ('read_partition', 'write_partitions', 'erase_partition',
                                       'view_partition'),

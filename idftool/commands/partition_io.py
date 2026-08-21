@@ -6,7 +6,11 @@ import rich_click as click
 from esptool.cmds import read_flash, write_flash, erase_region
 
 from idftool.cli import cli, pass_state
+from idftool.flash import flash_options, option_group, write_flash_options
 from idftool.partitions import get_partition_address, get_partition_slice
+
+# Keep the pass-through write options in a panel of their own.
+option_group('write')
 
 def hexdump(data: bytes, start = 0, width = 16):
     def to_printable_ascii(byte):
@@ -42,7 +46,9 @@ def cmd_read(state, partition, output_file):
     return read_partition(state, partition, output_file)
 
 
-def write_partitions(state, files):
+def write_partitions(state, files, **options):
+    """Write files to named partitions. Keyword arguments go to esptool's ``write_flash``
+    (see :data:`idftool.flash.WRITE_FLASH_OPTIONS`)."""
     loaded = state.setup()
     files = list(files)
     if len(files) % 2 != 0:
@@ -61,15 +67,17 @@ def write_partitions(state, files):
     write_flash(
         esp=loaded.esp,
         addr_data=addr_data,
-        flash_size='detect'
+        flash_size='detect',
+        **write_flash_options(options),
     )
 
 
 @cli.command('write', help='Write one or more files to named partitions')
 @click.argument('files', nargs=-1, required=True, metavar='PARTITION FILENAME ...')
+@flash_options
 @pass_state
-def cmd_write(state, files):
-    return write_partitions(state, files)
+def cmd_write(state, files, **options):
+    return write_partitions(state, files, **options)
 
 
 def erase_partition(state, partition):

@@ -8,9 +8,16 @@ from esp_idf_defs.partitions import APP_TYPE, DATA_TYPE, SUBTYPES
 
 from idftool.apps import load_app_binary
 from idftool.cli import cli, pass_state
+from idftool.flash import flash_options, option_group, write_flash_options
 from idftool.partitions import read_otadata, write_otadata
 
-def factory(state, app_binary_file):
+# Keep the pass-through write options in a panel of their own.
+option_group('factory')
+option_group('ota')
+
+def factory(state, app_binary_file, **options):
+    """Flash an app to the factory (or ota_0) partition and erase otadata. Keyword arguments
+    go to esptool's ``write_flash`` (see :data:`idftool.flash.WRITE_FLASH_OPTIONS`)."""
     loaded = state.setup()
     esp, partition_table = loaded.esp, loaded.partition_table
     partition = next(
@@ -28,7 +35,8 @@ def factory(state, app_binary_file):
     app_binary, image_metadata = load_app_binary(esp, app_binary_file, partition)
 
     print(f"Writing '{image_metadata.app_description.title}' to partition '{partition.name}'...")
-    write_flash(esp=esp, addr_data=[(partition.offset, app_binary)])
+    write_flash(esp=esp, addr_data=[(partition.offset, app_binary)],
+                **write_flash_options(options))
 
     otadata_partition = next(
         (p for p in partition_table if p.type == DATA_TYPE and p.subtype == SUBTYPES[DATA_TYPE]['ota']),
@@ -41,12 +49,15 @@ def factory(state, app_binary_file):
 
 @cli.command('factory', help='Flash an app to the factory partition')
 @click.argument('app_binary_file')
+@flash_options
 @pass_state
-def cmd_factory(state, app_binary_file):
-    return factory(state, app_binary_file)
+def cmd_factory(state, app_binary_file, **options):
+    return factory(state, app_binary_file, **options)
 
 
-def ota(state, app_binary_file):
+def ota(state, app_binary_file, **options):
+    """Write an app to the next OTA slot and switch the bootloader to it. Keyword arguments
+    go to esptool's ``write_flash`` (see :data:`idftool.flash.WRITE_FLASH_OPTIONS`)."""
     loaded = state.setup()
     esp, partition_table = loaded.esp, loaded.partition_table
     otadata_partition, otadata = read_otadata(esp, partition_table)
@@ -62,7 +73,8 @@ def ota(state, app_binary_file):
     app_binary, image_metadata = load_app_binary(esp, app_binary_file, partition)
 
     print(f"Writing '{image_metadata.app_description.title}' to partition '{partition.name}'...")
-    write_flash(esp=esp, addr_data=[(partition.offset, app_binary)])
+    write_flash(esp=esp, addr_data=[(partition.offset, app_binary)],
+                **write_flash_options(options))
 
     print(f"Setting boot partition to 'ota_{next_slot}'...")
     otadata = otadata.incremented_and_swapped(next_slot)
@@ -71,9 +83,10 @@ def ota(state, app_binary_file):
 
 @cli.command('ota', help='Push an app to the next OTA slot and switch to it')
 @click.argument('app_binary_file')
+@flash_options
 @pass_state
-def cmd_ota(state, app_binary_file):
-    return ota(state, app_binary_file)
+def cmd_ota(state, app_binary_file, **options):
+    return ota(state, app_binary_file, **options)
 
 
 def get_boot(state):

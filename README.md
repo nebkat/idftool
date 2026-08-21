@@ -254,7 +254,20 @@ Erase the entire flash and rewrite it from a flash image. The
 counterpart of `dump-image`.
 ```text
 idftool write-image build/full-flash.img
+idftool write-image --no-erase --skip-flashed build/full-flash.img
 ```
+The erase is a **full chip erase**, not just the span the image covers,
+so anything past the end of the image file goes too. `--no-erase` writes
+only what the image contains, and is what `--skip-flashed` needs:
+nothing can already match a chip that was just wiped, so asking for both
+is refused rather than quietly doing nothing.
+
+An image is written as one region, so `--skip-flashed` here is all or
+nothing: the whole span has to match, which it stops doing the moment the
+device boots and writes its own NVS. To ask "is this unit already running
+this build?", flash the app on its own with
+[`factory`](#factory)/[`ota`](#ota)/[`write`](#write) and
+`--skip-flashed`, which compares one partition.
 
 #### `print-image`
 Inspect a flash image file without touching a device: prints the
@@ -581,6 +594,46 @@ These flags apply to every subcommand and go **before** the command name:
 The commands `list`, `create-image`, `create-bundle`, and `create-nvs` will
 work **without** a device when you supply `--partition-table-file`; everything
 else needs a connected ESP.
+
+## Write options
+
+Every command that writes to flash — `write`, `write-image`, `write-nvs`,
+`write-fs`, `write-bundle`, `factory`, `ota` — takes the same set of flags,
+which are passed through to esptool's `write_flash`. They go **after** the
+command name, and each one left alone keeps esptool's own default.
+
+| Flag | Purpose |
+|------|---------|
+| `--skip-flashed` | Compare the MD5 of what is already in flash with the data about to be written, and skip the writes that would change nothing. The check is per file (or partition), not per sector, so it is all-or-nothing for each one. |
+| `--compress` / `--no-compress` | Compress on the way to the device. On by default, unless the flasher stub is disabled. |
+| `--encrypt` | Encrypt the data as it is written. |
+| `--force` | Ignore safety and content checks: chip/revision mismatch, secure boot, flash size. |
+| `--ignore-flash-enc-efuse` | Ignore the flash encryption eFuse settings. |
+| `--no-progress` | Do not print progress while writing. |
+
+`write-image` adds `--erase`/`--no-erase` (on by default), and refuses
+`--skip-flashed` unless the erase is off — see
+[`write-image`](#write-image-alias-reflash).
+
+`write-table` is the one write command that does not take them: its `--force`
+already means "flash a table that failed verification", and a 3 KiB partition
+table has nothing to gain from the rest.
+
+The same names work when idftool is driven as a library, along with the
+esptool options that take images rather than a yes/no (`diff_with`,
+`no_diff_verify`, `encrypt_files`, `erase_all`):
+
+```python
+from idftool import write_image, write_nvs
+
+# `state` is an idftool.State holding the connection and the global options
+write_image(state, 'flash.img', erase=False, skip_flashed=True)
+write_nvs(state, 'nvs', 'provision.csv', no_progress=True)
+```
+
+An option esptool does not know is rejected rather than ignored: it reads its
+keyword arguments with `kwargs.get`, so a misspelled one would otherwise be a
+write that quietly did something else.
 
 ## Partitions or files
 

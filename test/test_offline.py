@@ -333,6 +333,26 @@ def test_library_api_importable():
     assert all(callable(fn) for fn in (write_image, factory, ota))
 
 
+# --- write options --------------------------------------------------------------------------
+
+WRITE_COMMANDS = ("write", "write-image", "write-nvs", "write-fs", "write-bundle",
+                  "factory", "ota")
+
+
+@pytest.mark.parametrize("command", WRITE_COMMANDS)
+def test_write_commands_take_the_flash_options(run_offline, command):
+    out = run_offline(f"{command} --help")
+    assert "--skip-flashed" in out
+    assert "--no-progress" in out
+
+
+def test_write_image_erase_and_skip_flashed_conflict(run_offline, tmp_path):
+    # Refused up front (and before connecting), rather than silently doing nothing: nothing
+    # can already match a chip that was just erased.
+    out = run_offline(f"write-image --skip-flashed {tmp_path / 'nope.img'}", expect_error=True)
+    assert "--no-erase" in out
+
+
 # --- filesystems ----------------------------------------------------------------------------
 
 FS_TYPES = ("fatfs", "littlefs", "spiffs")

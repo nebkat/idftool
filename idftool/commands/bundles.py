@@ -11,7 +11,11 @@ from esp_idf_defs.partitions import APP_TYPE
 
 from idftool.apps import print_partition_table_and_apps, validate_app_binary
 from idftool.cli import cli, pass_state
+from idftool.flash import flash_options, option_group, write_flash_options
 from idftool.partitions import get_partition, parse_partition_table_csv
+
+# Keep the pass-through write options in a panel of their own.
+option_group('write-bundle')
 
 def create_bundle(state, output_file, flash_partition_table, files):
     loaded = state.setup(needs_device=False)
@@ -77,7 +81,9 @@ def cmd_dump_bundle(state, output_file):
     return dump_bundle(state, output_file)
 
 
-def write_bundle(state, input_file):
+def write_bundle(state, input_file, **options):
+    """Flash every binary in a bundle ZIP. Keyword arguments go to esptool's ``write_flash``
+    (see :data:`idftool.flash.WRITE_FLASH_OPTIONS`)."""
     loaded = state.setup(bundle_file=input_file)
     esp, partition_table = loaded.esp, loaded.partition_table
     with ZipFile(input_file, 'r') as zf:
@@ -110,14 +116,16 @@ def write_bundle(state, input_file):
             esp=esp,
             addr_data=addr_data,
             flash_size='detect',
+            **write_flash_options(options),
         )
 
 
 @cli.command('write-bundle', help='Flash every binary in a bundle ZIP')
 @click.argument('input_file')
+@flash_options
 @pass_state
-def cmd_write_bundle(state, input_file):
-    return write_bundle(state, input_file)
+def cmd_write_bundle(state, input_file, **options):
+    return write_bundle(state, input_file, **options)
 
 
 def print_bundle(state, bundle_file):

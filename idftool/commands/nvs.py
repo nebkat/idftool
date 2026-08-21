@@ -12,9 +12,16 @@ import rich_click as click
 from esptool.cmds import write_flash
 
 from idftool.cli import cli, pass_state, reject_file_as_partition
+from idftool.flash import flash_options, option_group, write_flash_options
 from idftool.nvs import fit_nvs_binary, generate_nvs_image, looks_like_nvs_binary
 from idftool.params import BASED_INT
 from idftool.partitions import get_partition
+
+# Keep the pass-through write options in a panel of their own.
+option_group('write-nvs')
+option_group('set-nvs', '--file', '--delete', '--namespace', '--output', '--rewrite',
+             '--dry-run')
+
 
 def _nvs_partition(loaded, name):
     try:
@@ -57,7 +64,10 @@ def cmd_create_nvs(state, csv_file, output_file, size, partition):
     return create_nvs(state, csv_file, output_file, size, partition)
 
 
-def write_nvs(state, partition, csv_file):
+def write_nvs(state, partition, csv_file, **options):
+    """Generate an NVS image from CSV (or take a prebuilt one) and flash it. Keyword
+    arguments go to esptool's ``write_flash`` (see
+    :data:`idftool.flash.WRITE_FLASH_OPTIONS`)."""
     loaded = state.setup()
     partition = _nvs_partition(loaded, partition)
     data = open(csv_file, 'rb').read()
@@ -68,15 +78,17 @@ def write_nvs(state, partition, csv_file):
         print(f"Generating NVS image from '{csv_file}' for partition '{partition.name}' (size={partition.size:#x})...")
         image = generate_nvs_image(csv_file, partition.size)
     print(f"Writing NVS image to partition '{partition.name}' (offset={partition.offset:#x}, size={partition.size:#x})")
-    write_flash(esp=loaded.esp, addr_data=[(partition.offset, image)], flash_size='detect')
+    write_flash(esp=loaded.esp, addr_data=[(partition.offset, image)], flash_size='detect',
+                **write_flash_options(options))
 
 
 @cli.command('write-nvs', help='Generate an NVS image from CSV and flash it')
 @click.argument('partition')
 @click.argument('csv_file')
+@flash_options
 @pass_state
-def cmd_write_nvs(state, partition, csv_file):
-    return write_nvs(state, partition, csv_file)
+def cmd_write_nvs(state, partition, csv_file, **options):
+    return write_nvs(state, partition, csv_file, **options)
 
 
 # --------------------------------------------------------------------------------------
@@ -351,7 +363,10 @@ def _split_target(args, image_file, what):
     return args[0], args[1:]
 
 
-def set_nvs(state, args, image_file, deletes, namespace, output_file, do_rewrite, dry_run):
+def set_nvs(state, args, image_file, deletes, namespace, output_file, do_rewrite, dry_run,
+            **options):
+    """Set or delete keys in an NVS partition or image. Keyword arguments go to esptool's
+    ``write_flash`` (see :data:`idftool.flash.WRITE_FLASH_OPTIONS`)."""
     import idftool.nvs as nvs
     from idftool.nvs.edit import apply
 
@@ -399,7 +414,8 @@ def set_nvs(state, args, image_file, deletes, namespace, output_file, do_rewrite
         total = sum(len(d) for _, d in writes)
         print(f"Writing {total:#x} bytes to partition '{part.name}' in "
               f"{len(writes)} run{'' if len(writes) == 1 else 's'}")
-        write_flash(esp=state.esp, addr_data=writes, flash_size='detect')
+        write_flash(esp=state.esp, addr_data=writes, flash_size='detect',
+                    **write_flash_options(options))
     else:
         target = output_file or image_file
         with open(target, 'wb') as f:
@@ -420,8 +436,10 @@ def set_nvs(state, args, image_file, deletes, namespace, output_file, do_rewrite
 @click.option('--rewrite', 'do_rewrite', is_flag=True,
               help='Compact the image instead of appending — rebuilds it from its contents')
 @click.option('--dry-run', is_flag=True, help='Show what would change without writing anything')
+@flash_options
 @pass_state
-def cmd_set_nvs(state, args, image_file, deletes, namespace, output_file, do_rewrite, dry_run):
+def cmd_set_nvs(state, args, image_file, deletes, namespace, output_file, do_rewrite, dry_run,
+                **options):
     """Set or delete keys in an NVS partition on the device, or in an image file with --file.
 
     A SPEC is `namespace:key=value`, or `namespace:key:type=value` to give the type of a key
@@ -432,7 +450,8 @@ def cmd_set_nvs(state, args, image_file, deletes, namespace, output_file, do_rew
     partition is left byte-for-byte alone and a device write only touches the pages that
     changed. If there is no room left to append, the image is compacted instead.
     """
-    return set_nvs(state, args, image_file, deletes, namespace, output_file, do_rewrite, dry_run)
+    return set_nvs(state, args, image_file, deletes, namespace, output_file, do_rewrite, dry_run,
+                   **options)
 
 
 def _parse_get(spec, default_namespace):

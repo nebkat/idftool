@@ -12,6 +12,7 @@ import rich_click as click
 from esptool.cmds import write_flash
 
 from idftool.cli import cli, pass_state, reject_file_as_partition
+from idftool.flash import FLASH_OPTION_FLAGS, flash_options, split_options, write_flash_options
 from idftool.params import BASED_INT
 from idftool.partitions import get_partition
 
@@ -33,7 +34,8 @@ for _fs_command in ('create-fs', 'write-fs', 'read-fs', 'extract-fs', 'print-fs'
         {'name': 'SPIFFS options', 'options': [
             '--spiffs-page-size', '--spiffs-block-size', '--spiffs-obj-name-len',
             '--spiffs-meta-len', '--spiffs-use-magic', '--spiffs-use-magic-len']},
-    ]
+    ] + ([{'name': 'Write options', 'options': FLASH_OPTION_FLAGS}]
+         if _fs_command == 'write-fs' else [])
 
 
 def fs_options(f):
@@ -139,7 +141,14 @@ def cmd_create_fs(state, source, output_file, fs_type, size, partition, **option
 
 
 def write_fs(state, partition, source, fs_type, **options):
+    """Build a filesystem image (or take a prebuilt one) and flash it to `partition`.
+
+    Keyword arguments are the per-filesystem knobs of :mod:`idftool.fs`, plus anything in
+    :data:`idftool.flash.WRITE_FLASH_OPTIONS`, which is forwarded to esptool's
+    ``write_flash``.
+    """
     import idftool.fs as fs
+    flash, options = split_options(options)
     loaded = state.setup()
     part = _fs_partition(loaded, partition)
     fs_type = fs.resolve_type(fs_type, partition=part, what=f"'{source}'")
@@ -175,7 +184,8 @@ def write_fs(state, partition, source, fs_type, **options):
         print(fs.format_listing(volume.entries()))
     print(f"Writing {fs_type} image to partition '{part.name}' "
           f"(offset={part.offset:#x}, size={part.size:#x})")
-    write_flash(esp=loaded.esp, addr_data=[(part.offset, image)], flash_size='detect')
+    write_flash(esp=loaded.esp, addr_data=[(part.offset, image)], flash_size='detect',
+                **write_flash_options(flash))
 
 
 @cli.command('write-fs', help='Build a filesystem image from a directory and flash it')
@@ -184,6 +194,7 @@ def write_fs(state, partition, source, fs_type, **options):
 @click.option('-t', '--type', 'fs_type', type=FS_TYPE_CHOICE, default=None,
               help='Filesystem to build  [default: from the partition subtype]')
 @fs_options
+@flash_options
 @pass_state
 def cmd_write_fs(state, partition, source, fs_type, **options):
     return write_fs(state, partition, source, fs_type, **options)

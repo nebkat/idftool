@@ -134,6 +134,16 @@ def test_factory(idf, device, assets):
     assert "not set" in idf("get-boot").lower()
 
 
+def test_skip_flashed_skips_a_write_that_would_change_nothing(idf, device, assets):
+    # The same app twice: the second write compares MD5s and writes nothing at all.
+    idf(f"factory {assets / 'app-v1.bin'}")
+    out = idf(f"factory {assets / 'app-v1.bin'} --skip-flashed")
+    assert "skipping write" in out
+    # A different app does not match, so it is written normally.
+    out = idf(f"factory {assets / 'app-v2.bin'} --skip-flashed")
+    assert "skipping write" not in out
+
+
 def test_ota_and_boot(idf, device, assets):
     idf("clear-boot")  # normalise: start from erased otadata
 

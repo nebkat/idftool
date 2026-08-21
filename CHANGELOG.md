@@ -55,6 +55,30 @@ this project adheres to [Semantic Versioning](https://semver.org/).
     compacted instead, which `--rewrite` also asks for directly.
 
   Encrypted NVS partitions are not supported yet.
+- Every command that writes to flash — `write`, `write-image`, `write-nvs`,
+  `write-fs`, `write-bundle`, `factory`, `ota` — now passes esptool's
+  `write_flash` options through, as flags (`--skip-flashed`,
+  `--compress`/`--no-compress`, `--encrypt`, `--force`,
+  `--ignore-flash-enc-efuse`, `--no-progress`) and as keyword arguments on the
+  matching library function, which also reach the ones that take images rather
+  than a yes/no (`diff_with`, `no_diff_verify`, `encrypt_files`, `erase_all`).
+
+  `--skip-flashed` is the interesting one: esptool compares the MD5 of what is
+  already in flash against the data about to be written and skips the writes
+  that would change nothing, so re-flashing an up-to-date partition costs a
+  checksum instead of a write. The check is per file, not per sector, so it is
+  all-or-nothing for each one.
+
+  An option esptool does not know is rejected rather than ignored. It reads its
+  keyword arguments with `kwargs.get`, so a misspelled one would otherwise be a
+  write that quietly did something else.
+- `write-image` learned `--no-erase`, which writes only what the image contains
+  instead of erasing the whole chip first. The erase stays on by default —
+  that is what writing a whole-flash image has always meant here — but it is
+  mutually exclusive with `--skip-flashed`, since nothing can already match a
+  chip that was just wiped. Asking for both is an error rather than a silent
+  no-op.
+
 ### Fixed
 - The `rich-click` requirement is now `>=1.9`, which is the version that
   actually added native command aliases. The declared `>=1.8` floor allowed
