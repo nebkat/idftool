@@ -164,7 +164,7 @@ def print_bundle(state, bundle_file):
 
 
 @cli.command('print-bundle', help='Print partition table and app info from a bundle ZIP')
-@click.argument('bundle_file')
+@click.option('-f', '--file', 'bundle_file', required=True, help='Bundle ZIP to read')
 @pass_state
 def cmd_print_bundle(state, bundle_file):
     return print_bundle(state, bundle_file)

@@ -117,19 +117,24 @@ Setting boot partition to 'ota_1'...
 | [`write-bundle`](#write-bundle) | Flash every binary in a bundle ZIP |
 | [`print-bundle`](#print-bundle) | Print partition table and app info from a bundle ZIP |
 | **Partition table** | |
-| [`convert-table`](#convert-table) | Convert a partition table file between CSV and binary |
+| [`create-table`](#create-table) | Convert a partition table file between CSV and binary |
 | [`print-table`](#print-table) | Print a partition table from a CSV or binary file, or the device |
 | [`dump-table`](#dump-table) | Read the partition table from the device into a file |
 | [`write-table`](#write-table) | Flash a partition table from a CSV or binary file |
 | **NVS** | |
 | [`create-nvs`](#create-nvs) | Generate an NVS partition image from a CSV file |
 | [`write-nvs`](#write-nvs) | Generate an NVS image from CSV and flash it |
+| [`read-nvs`](#read-nvs) | Read an NVS partition from the device and extract it to CSV |
+| [`extract-nvs`](#extract-nvs) | Extract an NVS image file to a CSV file |
+| [`print-nvs`](#print-nvs) | List the contents of an NVS partition or image |
+| [`get-nvs`](#get-nvs) | Print the value of one or more keys in an NVS partition or image |
+| [`set-nvs`](#set-nvs) | Set or delete keys in an NVS partition or image |
 | **Filesystems** | |
 | [`create-fs`](#create-fs) | Build a filesystem image from a directory |
 | [`write-fs`](#write-fs) | Build a filesystem image from a directory and flash it |
 | [`read-fs`](#read-fs) | Read a filesystem partition and extract it to a directory |
 | [`extract-fs`](#extract-fs) | Extract a filesystem image file to a directory |
-| [`print-fs`](#print-fs) | List the contents of a filesystem image or partition |
+| [`print-fs`](#print-fs) | List the contents of a filesystem partition or image |
 | **Misc** | |
 | [`enter-bootloader`](#enter-bootloader) | Drop the chip into ROM bootloader mode |
 
@@ -257,7 +262,7 @@ partition table embedded in the image and, for each app partition that
 contains a valid app, the project name, version, IDF version, compile
 time, ELF SHA256, and target chip.
 ```text
-idftool print-image build/full-flash.img
+idftool print-image -f build/full-flash.img
 ```
 
 ### Bundles
@@ -299,7 +304,7 @@ table from the embedded `partition_table.csv` and, for each app
 partition whose `.bin` is present in the bundle, the project name,
 version, IDF version, compile time, ELF SHA256, and target chip.
 ```text
-idftool print-bundle release.zip
+idftool print-bundle -f release.zip
 ```
 
 ### Partition table
@@ -315,14 +320,20 @@ When the input is a CSV that includes a bootloader row, pass
 `--primary-bootloader-offset` (an offset or a chip name, e.g. `esp32s3`)
 so the offset can be resolved.
 
-#### `convert-table`
+#### `create-table`
 Convert a partition table between CSV and binary, offline. Handles both
 directions; the binary output includes the MD5 checksum and padding, so it
-is ready to flash or embed in an image. Aliased as `create-table`.
+is ready to flash or embed in an image, and converts one back to CSV just as
+readily — for a partition table the two directions are the same lossless
+operation, which is why one command covers both. Aliased as `convert-table`.
+
+The output format is inferred from the output file's extension; `--format`
+overrides it. (There is no `-f` short form here — `-f` means `--file`
+everywhere else, and this command's input and output are both positional.)
 ```text
-idftool convert-table partitions.csv partitions.bin
-idftool convert-table partitions.bin partitions.csv
-idftool --primary-bootloader-offset esp32s3 convert-table partitions.csv partitions.bin
+idftool create-table partitions.csv partitions.bin
+idftool create-table partitions.bin partitions.csv
+idftool --primary-bootloader-offset esp32s3 create-table partitions.csv partitions.bin
 ```
 
 #### `print-table`
@@ -336,8 +347,8 @@ or `ota (invalid)` when otadata is erased).
 
 Aliased as `list`.
 ```text
-idftool print-table partitions.bin        # from a file, offline
 idftool print-table                        # from the device
+idftool print-table -f partitions.bin      # from a file, offline
 idftool list                               # same thing
 idftool --partition-table-file partitions.csv print-table
 ```
@@ -397,6 +408,71 @@ partition on the device.
 idftool write-nvs nvs nvs.csv
 ```
 
+#### `print-nvs`
+List the key/value pairs in an NVS image file or in a partition on the
+device. `--pages` also prints the page map — each page's state, sequence
+number, and how many of its 126 entries are written or erased. Alias:
+`list-nvs`.
+```text
+idftool print-nvs nvs                # from the device
+idftool print-nvs -f nvs.bin         # from a file, offline
+idftool print-nvs -f nvs.bin --pages
+```
+
+#### `extract-nvs` / `read-nvs`
+Dump the contents back out as an `nvs_partition_gen` CSV, which feeds
+straight back into `create-nvs`. `extract-nvs` reads an image file,
+`read-nvs` reads the device.
+```text
+idftool extract-nvs -f nvs.bin nvs.csv
+idftool read-nvs nvs nvs.csv
+```
+
+#### `get-nvs`
+Print the value of one or more keys, bare and one per line, so they can be
+captured in a shell. A key is `namespace:key`, or just `key` with
+`--namespace`. Blobs print as hex, or as raw bytes with `--raw`.
+```text
+idftool get-nvs nvs storage:device_id
+idftool get-nvs nvs -n storage device_name device_id
+idftool get-nvs nvs storage:cert --raw > cert.der
+idftool get-nvs -f nvs.bin storage:device_id
+
+serial=$(idftool get-nvs nvs storage:device_id)
+```
+
+#### `set-nvs`
+Set or delete keys in an NVS image that already exists, without rebuilding
+it from a CSV. Works on an image file or, with `--partition`, on a live
+device.
+
+A spec is `namespace:key=value`. The type comes from the entry being
+replaced, so editing an existing key needs no type; a key that isn't there
+yet takes one explicitly as `namespace:key:type=value`. A value of `@FILE`
+is read from that file. With `--namespace` set, a bare `key=value` works,
+and a leading colon means the default namespace (`:key:type=value`).
+```text
+idftool set-nvs nvs storage:device_name="My Device"
+idftool set-nvs nvs storage:serial:string=SN-0001 -d storage:old_key
+idftool set-nvs nvs -n storage :cert:blob=@device.der
+idftool set-nvs -f nvs.bin storage:device_id=42
+idftool set-nvs nvs storage:device_id=42 --dry-run
+```
+
+Changes are **appended** the way the firmware writes them: NVS never
+rewrites an entry in place, so a new entry goes into free space and the old
+one is marked erased. Everything else in the partition stays byte-for-byte
+identical, and a device write only re-flashes the 4 KiB pages that actually
+changed — the rest of the partition is never erased.
+
+When there is no free space left to append into, the firmware would garbage
+collect; `set-nvs` instead rebuilds a compacted image from the parsed
+contents and says so. `--rewrite` takes that path deliberately, which is
+also how you reclaim the space that erased entries are still occupying.
+
+Encrypted NVS partitions are not supported yet — `set-nvs` and the other
+reading commands work on plaintext images only.
+
 ### Filesystems
 
 idftool builds, flashes, lists, and extracts the three filesystems ESP-IDF
@@ -411,7 +487,7 @@ mounts from a data partition:
 **Which filesystem?** idftool takes it from `--type` if you give one, otherwise
 from the partition's subtype, otherwise from what the image looks like. So
 `write-fs storage assets/` on a `spiffs` partition needs no `--type`, and
-`print-fs storage.bin` identifies the image on its own.
+`print-fs -f storage.bin` identifies the image on its own.
 
 **Wear levelling.** ESP-IDF mounts a `fat` partition in SPI flash through the
 wear levelling layer, which reserves several sectors of the partition and
@@ -460,15 +536,15 @@ idftool read-fs storage ./storage-backup
 Extract a local filesystem image file into a directory, offline — the
 counterpart of `read-fs`.
 ```text
-idftool extract-fs storage.bin ./storage-backup
+idftool extract-fs -f storage.bin ./storage-backup
 ```
 
 #### `print-fs`
 List the contents of a filesystem image file, or of a partition on the device.
 Aliased as `list-fs`.
 ```text
-idftool print-fs storage.bin        # from a file, offline
-idftool print-fs --partition storage # from the device
+idftool print-fs storage             # from the device
+idftool print-fs -f storage.bin      # from a file, offline
 ```
 
 ### Misc
@@ -505,6 +581,44 @@ These flags apply to every subcommand and go **before** the command name:
 The commands `list`, `create-image`, `create-bundle`, and `create-nvs` will
 work **without** a device when you supply `--partition-table-file`; everything
 else needs a connected ESP.
+
+## Partitions or files
+
+Most commands can work against a device or against a local file, and which one
+they use follows a single rule:
+
+> A command's **subject** — the thing it inspects or modifies — is a
+> `PARTITION` positional, or `-f FILE`.
+> **Payloads** (files pushed at the device) and **outputs** (`-o`) stay
+> positional.
+
+So the subject always comes first, and `-f` is how you point it at a file
+instead of the chip:
+
+```text
+idftool print-nvs nvs                  # the nvs partition on the device
+idftool print-nvs -f nvs.bin           # a local image file
+idftool set-nvs nvs storage:id=42      # edit the device
+idftool set-nvs -f nvs.bin storage:id=42
+```
+
+Commands whose subject can only ever be a file take `-f` too, so there is
+nothing per-command to remember: `print-image -f`, `print-bundle -f`,
+`print-table -f`, `extract-fs -f`, `extract-nvs -f`.
+
+Files that are *not* the subject keep their positional slot, because there is
+no device alternative for them to displace — the payload in
+`write-table partitions.csv`, `factory app.bin`, `ota app.bin`, and the inputs
+to `create-*` and `create-table`.
+
+Passing a file where a partition belongs is caught **before** connecting, so
+you get a usage error instead of a serial timeout:
+
+```text
+$ idftool print-nvs nvs.bin
+Error: 'nvs.bin' is a file, not a partition name — use `idftool print-nvs -f nvs.bin`,
+or name the partition to read from the device
+```
 
 ## Partition addressing
 

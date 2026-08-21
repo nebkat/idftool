@@ -11,7 +11,7 @@ import rich_click as click
 
 from esptool.cmds import write_flash
 
-from idftool.cli import cli, pass_state
+from idftool.cli import cli, pass_state, reject_file_as_partition
 from idftool.params import BASED_INT
 from idftool.partitions import get_partition
 
@@ -23,7 +23,8 @@ FS_TYPE_CHOICE = click.Choice(['fatfs', 'littlefs', 'spiffs'])
 for _fs_command in ('create-fs', 'write-fs', 'read-fs', 'extract-fs', 'print-fs', 'list-fs'):
     click.rich_click.OPTION_GROUPS[f'* {_fs_command}'] = [
         # Long names only: listing a short alias too renders the option twice.
-        {'name': 'Options', 'options': ['--output', '--type', '--size', '--partition', '--help']},
+        {'name': 'Options', 'options': ['--output', '--file', '--type', '--size',
+                                        '--partition', '--help']},
         {'name': 'FAT options', 'options': [
             '--fat-sector-size', '--fat-sectors-per-cluster', '--fat-type',
             '--fat-wear-levelling', '--fat-volume-id', '--fat-device-id']},
@@ -89,8 +90,15 @@ def _fs_options_for(fs_type, options):
 
 
 def _fs_partition(loaded, name):
-    return get_partition(
-        loaded.partition_table, loaded.partition_table_entry, loaded.bootloader_entry, name)
+    try:
+        return get_partition(
+            loaded.partition_table, loaded.partition_table_entry, loaded.bootloader_entry, name)
+    except ValueError as e:
+        # A name that is a real file on disk is almost always someone reaching for --file.
+        if os.path.exists(name):
+            raise click.UsageError(f"{e} — '{name}' is a file, so you probably want "
+                                   f"-f/--file {name}")
+        raise
 
 
 def create_fs(state, source, output_file, fs_type, size, partition, **options):
@@ -220,7 +228,7 @@ def extract_fs(state, image_file, destination, fs_type, **options):
 
 
 @cli.command('extract-fs', help='Extract a filesystem image file to a directory')
-@click.argument('image_file')
+@click.option('-f', '--file', 'image_file', required=True, help='Filesystem image file to extract')
 @click.argument('destination')
 @click.option('-t', '--type', 'fs_type', type=FS_TYPE_CHOICE, default=None,
               help='Filesystem to read  [default: detected from the image]')
@@ -230,10 +238,11 @@ def cmd_extract_fs(state, image_file, destination, fs_type, **options):
     return extract_fs(state, image_file, destination, fs_type, **options)
 
 
-def print_fs(state, image_file, partition, fs_type, **options):
+def print_fs(state, partition, image_file, fs_type, **options):
     import idftool.fs as fs
     if (image_file is None) == (partition is None):
-        raise click.UsageError("Provide exactly one of an image file or --partition")
+        raise click.UsageError("Provide exactly one of a partition name or --file")
+    reject_file_as_partition(partition, 'print-fs')
 
     part = None
     if image_file is not None:
@@ -253,12 +262,13 @@ def print_fs(state, image_file, partition, fs_type, **options):
         print(fs.format_listing(volume.entries()))
 
 
-@cli.command('print-fs', aliases=['list-fs'], help='List the contents of a filesystem image or partition')
-@click.argument('image_file', required=False)
-@click.option('--partition', default=None, help='Read the filesystem from this partition on the device')
+@cli.command('print-fs', aliases=['list-fs'], help='List the contents of a filesystem partition or image')
+@click.argument('partition', required=False)
+@click.option('-f', '--file', 'image_file', default=None,
+              help='Read the filesystem from this image file instead of the device')
 @click.option('-t', '--type', 'fs_type', type=FS_TYPE_CHOICE, default=None,
               help='Filesystem to read  [default: from the partition subtype, else detected]')
 @fs_options
 @pass_state
-def cmd_print_fs(state, image_file, partition, fs_type, **options):
-    return print_fs(state, image_file, partition, fs_type, **options)
+def cmd_print_fs(state, partition, image_file, fs_type, **options):
+    return print_fs(state, partition, image_file, fs_type, **options)

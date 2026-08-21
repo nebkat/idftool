@@ -23,8 +23,9 @@ _SOURCES = {
                                       'view_partition'),
     'idftool.commands.images': ('create_image', 'dump_image', 'write_image', 'print_image'),
     'idftool.commands.bundles': ('create_bundle', 'dump_bundle', 'write_bundle', 'print_bundle'),
-    'idftool.commands.table': ('print_table', 'convert_table', 'dump_table', 'write_table'),
-    'idftool.commands.nvs': ('create_nvs', 'write_nvs'),
+    'idftool.commands.table': ('print_table', 'create_table', 'dump_table', 'write_table'),
+    'idftool.commands.nvs': ('create_nvs', 'write_nvs', 'print_nvs', 'extract_nvs',
+                             'read_nvs', 'get_nvs', 'set_nvs'),
     'idftool.commands.fs': ('create_fs', 'write_fs', 'read_fs', 'extract_fs', 'print_fs'),
     'idftool.commands.firmware': ('factory', 'ota', 'get_boot', 'set_boot', 'clear_boot'),
 }

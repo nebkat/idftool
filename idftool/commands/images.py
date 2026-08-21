@@ -151,7 +151,7 @@ def print_image(state, image_file):
 
 
 @cli.command('print-image', help='Print partition table and app info from a flash image file')
-@click.argument('image_file')
+@click.option('-f', '--file', 'image_file', required=True, help='Flash image file to read')
 @pass_state
 def cmd_print_image(state, image_file):
     return print_image(state, image_file)

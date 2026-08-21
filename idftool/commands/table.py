@@ -1,4 +1,4 @@
-"""Partition table files: ``print-table``, ``convert-table``, ``dump-table``, ``write-table``."""
+"""Partition table files: ``print-table``, ``create-table``, ``dump-table``, ``write-table``."""
 import time
 
 import rich_click as click
@@ -26,13 +26,14 @@ def print_table(state, table_file):
 
 
 @cli.command('print-table', aliases=['list'], help='Print a partition table from a CSV or binary file, or from the device')
-@click.argument('table_file', required=False)
+@click.option('-f', '--file', 'table_file', default=None,
+              help='Partition table file to print instead of reading the device')
 @pass_state
 def cmd_print_table(state, table_file):
     return print_table(state, table_file)
 
 
-def convert_table(state, input_file, output_file, output_format):
+def create_table(state, input_file, output_file, output_format):
     partition_table = load_partition_table_file(
         input_file, state.partition_table_offset,
         state.primary_bootloader_offset, state.recovery_bootloader_offset)
@@ -40,14 +41,19 @@ def convert_table(state, input_file, output_file, output_format):
     write_partition_table_file(partition_table, output_file, output_format)
 
 
-@cli.command('convert-table', aliases=['create-table'], help='Convert a partition table file between CSV and binary')
+# `create-X` is the builder in every other family (create-image, create-bundle, create-nvs,
+# create-fs), so it leads here too. `convert-table` stays as an alias: unlike the others this
+# one is symmetric — a table's CSV and binary carry the same information, and round-tripping
+# bin -> csv -> bin is byte-identical — which is why one command covers both directions.
+@cli.command('create-table', aliases=['convert-table'],
+             help='Convert a partition table file between CSV and binary')
 @click.argument('input_file')
 @click.argument('output_file')
-@click.option('-f', '--format', 'output_format', type=click.Choice(['csv', 'bin']), default=None,
+@click.option('--format', 'output_format', type=click.Choice(['csv', 'bin']), default=None,
               help='Output format (default: inferred from the output extension)')
 @pass_state
-def cmd_convert_table(state, input_file, output_file, output_format):
-    return convert_table(state, input_file, output_file, output_format)
+def cmd_create_table(state, input_file, output_file, output_format):
+    return create_table(state, input_file, output_file, output_format)
 
 
 def dump_table(state, output_file, output_format):

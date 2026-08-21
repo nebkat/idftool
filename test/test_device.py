@@ -106,7 +106,7 @@ def test_write_and_read_fs(idf, device, tmp_path, fs_tree, fs_type):
     # are worth flashing: the point is the image survives the round trip through flash.
     idf(f"write-fs {DATA_PARTITION} {fs_tree} --type {fs_type}")
 
-    out = idf(f"print-fs --partition {DATA_PARTITION} --type {fs_type}")
+    out = idf(f"print-fs {DATA_PARTITION} --type {fs_type}")
     assert "hello.txt" in out and "big.bin" in out
 
     extracted = tmp_path / f"out-{fs_type}"
@@ -156,7 +156,7 @@ def test_ota_and_boot(idf, device, assets):
 def test_bundle_roundtrip(idf, device, tmp_path):
     bundle = tmp_path / "bundle.zip"
     idf(f"dump-bundle {bundle}")            # reads every partition (slow)
-    out = idf(f"print-bundle {bundle}")
+    out = idf(f"print-bundle -f {bundle}")
     assert "factory" in out
     idf(f"write-bundle {bundle}")           # flash it all back
 
@@ -170,7 +170,7 @@ def test_dump_and_print_image(idf, device, tmp_path):
     # be redundant and very slow.
     image = tmp_path / "full.img"
     idf(f"dump-image {image}")              # reads the whole flash (slow)
-    out = idf(f"print-image {image}")
+    out = idf(f"print-image -f {image}")
     assert "factory" in out
 
 

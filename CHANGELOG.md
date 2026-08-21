@@ -6,6 +6,55 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- **Breaking.** Commands that can read either a partition or a file now take
+  the partition as their first positional argument and the file behind
+  `-f`/`--file`, matching `read`/`write`/`erase`/`view`. Commands whose subject
+  can only be a file take `-f` as well, so there is no per-command exception to
+  remember. Files that are *payloads* (`write-table`, `factory`, `ota`) or
+  outputs (`-o`) are unaffected.
+
+  | Was | Now |
+  |-----|-----|
+  | `print-fs image.bin` | `print-fs -f image.bin` |
+  | `print-fs --partition storage` | `print-fs storage` |
+  | `extract-fs image.bin DEST` | `extract-fs -f image.bin DEST` |
+  | `print-image flash.bin` | `print-image -f flash.bin` |
+  | `print-bundle release.zip` | `print-bundle -f release.zip` |
+  | `print-table partitions.csv` | `print-table -f partitions.csv` |
+  | `print-nvs`/`get-nvs`/`set-nvs` | `PARTITION`, or `-f FILE` |
+
+  Passing a file where a partition now belongs is caught before connecting, so
+  it fails with a usage error naming the `-f` form rather than a serial
+  timeout.
+- **Breaking.** `convert-table` is now `create-table`, matching the `create-X`
+  builder in every other family (`create-image`, `create-bundle`, `create-nvs`,
+  `create-fs`). `convert-table` remains as a command alias; the library function
+  is `idftool.create_table`. Its `--format` option lost its `-f` short form,
+  which now means `--file` everywhere else.
+
+### Added
+- NVS partitions can now be read and edited, not just generated. ESP-IDF's
+  `nvs_partition_gen` can only build an image from scratch, so idftool has its
+  own NVS parser and entry encoder in `idftool.nvs`; the encoder is pinned to
+  the generator's output byte for byte by the test suite, blob chunking
+  included.
+  - `print-nvs` (alias `list-nvs`) lists the key/value pairs in an image file
+    or in a partition on the device. `--pages` also shows the page map.
+  - `extract-nvs -f image.bin out.csv` dumps the contents back to an
+    `nvs_partition_gen` CSV, which feeds straight back into `create-nvs`;
+    `read-nvs PARTITION out.csv` does the same from the device.
+  - `get-nvs` prints the value of one or more keys, bare and one per line, for
+    use in scripts. `--raw` writes a blob's bytes to stdout.
+  - `set-nvs` sets or deletes keys in an image that already exists. The type of
+    an existing key is taken from the entry being replaced, so only a new key
+    needs one spelled out. Changes are appended the way the firmware writes
+    them — the replaced entry is marked erased rather than overwritten — so the
+    rest of the partition is untouched and a device write only re-flashes the
+    4 KiB pages that changed. With no room left to append, the image is
+    compacted instead, which `--rewrite` also asks for directly.
+
+  Encrypted NVS partitions are not supported yet.
 ### Fixed
 - The `rich-click` requirement is now `>=1.9`, which is the version that
   actually added native command aliases. The declared `>=1.8` floor allowed
