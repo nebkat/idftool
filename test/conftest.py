@@ -32,7 +32,7 @@ def pytest_addoption(parser):
 
 def pytest_configure(config):
     config.addinivalue_line("markers", "device: requires a real ESP connected via --port")
-    config.addinivalue_line("markers", "slow: slow device test (full-flash dump / reflash)")
+    config.addinivalue_line("markers", "slow: slow device test (reads or writes every partition)")
 
 
 def pytest_collection_modifyitems(config, items):
@@ -46,12 +46,15 @@ def pytest_collection_modifyitems(config, items):
 
 
 def _make_runner(port, baud):
-    def run(args, expect_error=False, timeout=2400):
+    def run(args, expect_error=False, timeout=2400, stdout_only=False):
         """Run the idftool CLI as a subprocess; return combined stdout+stderr.
 
         `args` is a string ("read nvs out.bin") or a list. Device commands get --port/--baud
         prepended automatically when a port is configured. Asserts exit status (0, or non-zero
         when expect_error=True).
+
+        Pass `stdout_only` for a command whose stdout is data meant to be captured (get-nvs),
+        to assert that the progress output really did go to stderr and not into the values.
 
         The timeout is generous because a full-flash dump/reflash of a large flash over a slow
         serial link (some USB-serial bridges are only stable at 115200) can take many minutes.
@@ -61,7 +64,7 @@ def _make_runner(port, baud):
             cmd += ["--port", port, "--baud", str(baud)]
         cmd += args.split() if isinstance(args, str) else [str(a) for a in args]
         proc = subprocess.run(cmd, cwd=TEST_DIR, capture_output=True, text=True, timeout=timeout)
-        out = proc.stdout + proc.stderr
+        out = proc.stdout if stdout_only else proc.stdout + proc.stderr
         if expect_error:
             assert proc.returncode != 0, f"`idftool {args}` unexpectedly succeeded:\n{out}"
         else:

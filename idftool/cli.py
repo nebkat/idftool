@@ -2,6 +2,9 @@
 
 Command modules import ``cli`` and ``pass_state`` from here and register themselves by
 being imported (see :mod:`idftool.commands`)."""
+import contextlib
+import sys
+
 import rich_click as click
 
 from esptool import ESPLoader
@@ -98,4 +101,10 @@ def _reset_after_command(state, result, **_global_options):
     # Runs only after a command succeeds (a command that raises propagates past this), so the chip
     # is reset only on success. Offline commands never connect, so state.esp stays None.
     if state.esp is not None and not state.no_reset:
-        state.esp.hard_reset()
+        if state.stdout_is_data:
+            # Runs after the command printed its result, so its chatter would land in the middle
+            # of what a caller is capturing.
+            with contextlib.redirect_stdout(sys.stderr):
+                state.esp.hard_reset()
+        else:
+            state.esp.hard_reset()

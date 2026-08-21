@@ -87,6 +87,76 @@ def test_write_nvs(idf, device, assets, tmp_path):
     assert set(back.read_bytes()) != {0xFF}  # something was written
 
 
+def test_nvs_read_commands(idf, device, assets, tmp_path):
+    idf(f"write-nvs {NVS_PARTITION} {assets / 'nvs.csv'}")
+
+    out = idf(f"print-nvs {NVS_PARTITION}")
+    for text in ("storage", "device_id", "12345", "device_name", "idftool-test"):
+        assert text in out
+
+    # get-nvs is meant to be captured in a shell, so its values must be the only thing on
+    # stdout — on a device everything else (esptool's chatter, the partition table, the reset)
+    # would otherwise land in the middle of them.
+    value = idf(f"get-nvs {NVS_PARTITION} storage:device_id", stdout_only=True)
+    assert value.strip() == "12345"
+
+    csv = tmp_path / "readback.csv"
+    idf(f"read-nvs {NVS_PARTITION} {csv}")
+    text = csv.read_text()
+    assert "device_id,data,u32,12345" in text
+    assert "device_name,data,string,idftool-test" in text
+
+
+def test_set_nvs_writes_only_the_changed_pages(idf, device, assets, tmp_path):
+    """The load-bearing one: set-nvs appends in place and re-flashes just the dirty pages.
+
+    Everything else in the partition has to survive that byte for byte, and the result has to
+    still parse as a valid NVS image once it is read back off the chip.
+    """
+    idf(f"write-nvs {NVS_PARTITION} {assets / 'nvs.csv'}")
+    before = tmp_path / "before.bin"
+    idf(f"read {NVS_PARTITION} {before}")
+
+    out = idf(f"set-nvs {NVS_PARTITION} storage:device_name=renamed-on-device")
+    assert "1 of 6 page changed" in out          # appended, not compacted
+
+    # Read the partition back and check the device holds what we think it does.
+    after = tmp_path / "after.bin"
+    idf(f"read {NVS_PARTITION} {after}")
+    a, b = before.read_bytes(), after.read_bytes()
+    assert len(a) == len(b)
+    assert a[0x1000:] == b[0x1000:]              # only page 0 was touched
+
+    listing = idf(f"print-nvs {NVS_PARTITION}")
+    assert "renamed-on-device" in listing
+    assert "idftool-test" not in listing         # the replaced entry is erased, not duplicated
+    for text in ("device_id", "12345", "counter"):
+        assert text in listing                   # everything else survived
+    assert "Warning:" not in listing             # and it still parses cleanly
+
+
+def test_set_nvs_adds_and_deletes_keys(idf, device, assets):
+    idf(f"write-nvs {NVS_PARTITION} {assets / 'nvs.csv'}")
+    idf(f"set-nvs {NVS_PARTITION} storage:serial:string=SN-DEVICE-1 -d storage:counter")
+    out = idf(f"print-nvs {NVS_PARTITION}")
+    assert "SN-DEVICE-1" in out
+    assert "counter" not in out
+    assert "Warning:" not in out
+
+
+def test_set_nvs_rewrite_compacts_on_the_device(idf, device, assets):
+    idf(f"write-nvs {NVS_PARTITION} {assets / 'nvs.csv'}")
+    for i in range(5):
+        idf(f"set-nvs {NVS_PARTITION} storage:counter={i}")
+    assert "erased" in idf(f"print-nvs {NVS_PARTITION} --pages")
+
+    out = idf(f"set-nvs {NVS_PARTITION} storage:counter=99 --rewrite")
+    assert "compacted" in out
+    pages = idf(f"print-nvs {NVS_PARTITION} --pages")
+    assert "0 erased" in pages
+    assert idf(f"get-nvs {NVS_PARTITION} storage:counter", stdout_only=True).strip() == "99"
+
+
 # --- filesystems --------------------------------------------------------------------------
 
 @pytest.fixture
@@ -173,13 +243,17 @@ def test_bundle_roundtrip(idf, device, tmp_path):
 
 # --- full flash image -----------------------------------------------------------------------
 
-@pytest.mark.slow
 def test_dump_and_print_image(idf, device, tmp_path):
     # write-image is already exercised by the `device` provisioning fixture (and reflash is its
-    # alias), so this just dumps the whole flash and inspects it — a full 16 MB reflash on top would
-    # be redundant and very slow.
-    image = tmp_path / "full.img"
-    idf(f"dump-image {image}")              # reads the whole flash (slow)
+    # alias), so this just dumps flash and inspects it.
+    #
+    # Bounded to the region the fixture table covers (see partitions.csv — the last partition
+    # ends at 0xc0000). Dumping the whole chip is pointless and actively unreliable: a board can
+    # have 32 MB of which all but the first 768 KB is erased, and pulling that back as one serial
+    # read is slow and long enough to time out.
+    image = tmp_path / "flash.img"
+    idf(f"dump-image {image} --size 0xc0000")
+    assert image.stat().st_size == 0xc0000
     out = idf(f"print-image -f {image}")
     assert "factory" in out
 

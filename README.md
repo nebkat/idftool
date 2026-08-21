@@ -445,6 +445,10 @@ idftool read-nvs nvs nvs.csv
 Print the value of one or more keys, bare and one per line, so they can be
 captured in a shell. A key is `namespace:key`, or just `key` with
 `--namespace`. Blobs print as hex, or as raw bytes with `--raw`.
+
+Only the values go to stdout — progress, the partition table and the rest go to
+stderr — so a capture gets the value and nothing else, even when reading from a
+device.
 ```text
 idftool get-nvs nvs storage:device_id
 idftool get-nvs nvs -n storage device_name device_id

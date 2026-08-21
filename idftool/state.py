@@ -61,6 +61,10 @@ class State:
         self.primary_bootloader_offset = primary_bootloader_offset
         self.recovery_bootloader_offset = recovery_bootloader_offset
         self.esp: Optional[ESPLoader] = None
+        #: Set by a command whose stdout is data meant to be piped or captured (get-nvs).
+        #: Progress and status then belong on stderr instead — including the hard reset,
+        #: which happens after the command has already printed its result.
+        self.stdout_is_data = False
 
     def connect(self) -> ESPLoader:
         if self.esp is None:

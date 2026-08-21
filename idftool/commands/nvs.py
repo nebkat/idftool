@@ -4,6 +4,7 @@
 The image format itself lives in :mod:`idftool.nvs`, which is imported lazily by the commands
 that parse an image so the generate-only paths don't pay for it.
 """
+import contextlib
 import os.path
 import sys
 
@@ -484,16 +485,22 @@ def get_nvs(state, args, image_file, namespace, raw):
     if raw and len(keys) != 1:
         raise click.UsageError("--raw reads exactly one key")
 
-    data, _, _ = _load_image(state, partition, image_file, 'get-nvs')
-    image = nvs.parse(data)
-    _report_errors(image)
+    # Everything reading the image prints — esptool's connection chatter, the partition table,
+    # the "Reading partition" line — goes to stderr, so stdout carries the values and nothing
+    # else and `v=$(idftool get-nvs ...)` captures what it should. Reading a file prints little,
+    # but reading a device prints a screenful.
+    state.stdout_is_data = True
+    with contextlib.redirect_stdout(sys.stderr):
+        data, _, _ = _load_image(state, partition, image_file, 'get-nvs')
+        image = nvs.parse(data)
+        _report_errors(image)
 
-    values = []
-    for ns, key in keys:
-        entry = image.get(ns, key)
-        if entry is None:
-            raise nvs.NvsError(f"'{ns}:{key}' is not in the image")
-        values.append(entry)
+        values = []
+        for ns, key in keys:
+            entry = image.get(ns, key)
+            if entry is None:
+                raise nvs.NvsError(f"'{ns}:{key}' is not in the image")
+            values.append(entry)
 
     if raw:
         entry = values[0]

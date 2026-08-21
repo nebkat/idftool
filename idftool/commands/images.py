@@ -13,6 +13,7 @@ from esp_idf_defs.partitions import PartitionTable
 from idftool.apps import print_partition_table_and_apps
 from idftool.cli import cli, pass_state
 from idftool.flash import flash_options, option_group, write_flash_options
+from idftool.params import BASED_INT
 from idftool.partitions import check_image_file, get_partition_address, require_partitions
 
 # The erase is the option that needs finding, so keep it out of the pass-through panel.
@@ -63,9 +64,20 @@ def cmd_create_image(state, output_file, output_format, flash_partition_table, f
     return create_image(state, output_file, output_format, flash_partition_table, files)
 
 
-def dump_image(state, output_file):
+def dump_image(state, output_file, size=None):
+    """Dump flash to an image file, the whole chip unless `size` bounds it.
+
+    A large flash is mostly empty — everything past the last partition is erased — and it all
+    has to come back over one serial read, which is slow and gives a long transfer more chance
+    to time out. `size` reads only the first N bytes, which is usually all that is worth having.
+    """
     esp = state.connect()
     flash_size = flash_size_bytes(detect_flash_size(esp))
+    if size is None:
+        size = flash_size
+    elif size > flash_size:
+        raise click.UsageError(f"--size {size:#x} is larger than the detected flash "
+                               f"({flash_size:#x})")
 
     if not output_file:
         chip = esp.CHIP_NAME.lower().replace(' ', '-')
@@ -77,15 +89,17 @@ def dump_image(state, output_file):
         timestamp = time.strftime("%Y%m%d-%H%M%S")
         output_file = f"{chip}-{serial}-{timestamp}.img"
 
-    print(f"Dumping {flash_size:#x} bytes of flash to {output_file}...")
-    read_flash(esp, address=0, size=flash_size, output=output_file)
+    print(f"Dumping {size:#x} bytes of flash to {output_file}...")
+    read_flash(esp, address=0, size=size, output=output_file)
 
 
-@cli.command('dump-image', help='Dump the entire flash to an image file')
+@cli.command('dump-image', help='Dump the flash to an image file')
 @click.argument('output_file', required=False)
+@click.option('--size', type=BASED_INT, default=None,
+              help='Bytes to read from the start of flash  [default: the whole chip]')
 @pass_state
-def cmd_dump_image(state, output_file):
-    return dump_image(state, output_file)
+def cmd_dump_image(state, output_file, size):
+    return dump_image(state, output_file, size)
 
 
 def write_image(state, image_file, erase=True, **options):

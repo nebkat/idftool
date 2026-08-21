@@ -39,14 +39,15 @@ this project adheres to [Semantic Versioning](https://semver.org/).
   own NVS parser and entry encoder in `idftool.nvs`; the encoder is pinned to
   the generator's output byte for byte by the test suite, blob chunking
   included.
-  - `print-nvs` (alias `list-nvs`) lists the key/value pairs in an image file
-    or in a partition on the device. `--pages` also shows the page map.
+  - `print-nvs` (alias `list-nvs`) lists the key/value pairs in a partition on
+    the device, or in an image file with `-f`. `--pages` also shows the page map.
   - `extract-nvs -f image.bin out.csv` dumps the contents back to an
     `nvs_partition_gen` CSV, which feeds straight back into `create-nvs`;
     `read-nvs PARTITION out.csv` does the same from the device.
   - `get-nvs` prints the value of one or more keys, bare and one per line, for
     use in scripts. `--raw` writes a blob's bytes to stdout.
-  - `set-nvs` sets or deletes keys in an image that already exists. The type of
+  - `set-nvs` sets or deletes keys in a partition or image that already exists.
+    The type of
     an existing key is taken from the entry being replaced, so only a new key
     needs one spelled out. Changes are appended the way the firmware writes
     them — the replaced entry is marked erased rather than overwritten — so the
@@ -56,7 +57,7 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 
   Encrypted NVS partitions are not supported yet.
 - Every command that writes to flash — `write`, `write-image`, `write-nvs`,
-  `write-fs`, `write-bundle`, `factory`, `ota` — now passes esptool's
+  `write-fs`, `write-bundle`, `factory`, `ota`, `set-nvs` — now passes esptool's
   `write_flash` options through, as flags (`--skip-flashed`,
   `--compress`/`--no-compress`, `--encrypt`, `--force`,
   `--ignore-flash-enc-efuse`, `--no-progress`) and as keyword arguments on the
@@ -72,6 +73,10 @@ this project adheres to [Semantic Versioning](https://semver.org/).
   An option esptool does not know is rejected rather than ignored. It reads its
   keyword arguments with `kwargs.get`, so a misspelled one would otherwise be a
   write that quietly did something else.
+- `dump-image` learned `--size`, which reads only the first N bytes instead of the
+  whole chip. Most of a large flash is erased — everything past the last
+  partition — and pulling it all back as one serial read is slow and gives a
+  long transfer more chance to time out.
 - `write-image` learned `--no-erase`, which writes only what the image contains
   instead of erasing the whole chip first. The erase stays on by default —
   that is what writing a whole-flash image has always meant here — but it is

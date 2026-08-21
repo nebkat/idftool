@@ -42,5 +42,5 @@
     testpaths = ["test"]
     markers = [
         "device: requires a real ESP connected via --port (skipped otherwise)",
-        "slow: slow device test (full-flash dump / reflash)",
+        "slow: slow device test (reads or writes every partition)",
     ]
