@@ -13,9 +13,16 @@
         "click>=8.1",
         "rich-click>=1.9",
         "questionary>=2.0",
-        "esptool~=5.2.0",
+        # Ranges, not `~=x.y.z`: idftool is installed into the ESP-IDF Python env, which
+        # pins these itself — IDF 6.0 and 6.1 both ship esptool 5.3.1 and
+        # nvs-partition-gen 0.1.9, and a compatible-release pin loses to it on every
+        # bump. Only the API idftool actually uses has to hold: esptool's CHIP_DEFS /
+        # ESPLoader / flash_size_bytes and cmds.{detect_chip,detect_flash_size,
+        # read_flash,write_flash,erase_region,merge_bin}, and nvs_partition_gen's
+        # generate(args) plus its NVS and Page classes.
+        "esptool>=5.2,<6",
         "esp-idf-defs~=0.1.5",
-        "esp-idf-nvs-partition-gen~=0.2.0",
+        "esp-idf-nvs-partition-gen>=0.1.9,<0.3",
         # Filesystem images. pyfatfs is used through its low-level PyFat API only, so its
         # PyFilesystem2 dependency is never imported; littlefs-python is what esp_littlefs
         # itself generates images with. SPIFFS needs no dependency — ESP-IDF's generator is

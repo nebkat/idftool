@@ -4,6 +4,20 @@ All notable changes to this project are documented here. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- Dependency pins no longer fight the ESP-IDF Python environment. idftool is
+  installed into that env, which pins `esptool` and `esp-idf-nvs-partition-gen`
+  itself — IDF 6.0 and 6.1 both ship esptool 5.3.1 and nvs-partition-gen 0.1.9,
+  so the compatible-release pins (`~=5.2.0`, `~=0.2.0`) were reported as
+  conflicts on every pip operation there, and IDF wins the tie. Both are now
+  ranges wide enough to hold whatever IDF installs (`esptool>=5.2,<6`,
+  `esp-idf-nvs-partition-gen>=0.1.9,<0.3`); the API idftool actually uses is
+  present across them. nvs-partition-gen 0.1.9 and 0.2.0 differ only by an error
+  message, and the ceiling stops short of 0.3.0, which replaces the argparse
+  entry point `generate(args)` is reached through.
+
 ## [v0.8.0] — 2026-08-21
 
 ### Changed
