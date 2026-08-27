@@ -7,11 +7,13 @@ import rich_click as click
 
 from esptool.cmds import detect_chip
 
+from esp_pylib.serial_ports import get_port_list
+
 from idftool.cli import cli, pass_state
-from idftool.ports import _get_port_list, prompt_for_port
+from idftool.ports import prompt_for_port
 
 def list_devices():
-    for d in _get_port_list():
+    for d in get_port_list():
         print(f"{d.device} || {d.description} || {d.hwid}")
 
 

@@ -15,16 +15,17 @@ from esp_idf_defs.otadata import OtaDataParameters
 from esp_idf_defs.partitions import PartitionTable, print_partition_table, PartitionDefinition, \
     BOOTLOADER_TYPE, SUBTYPES, PARTITION_TABLE_TYPE
 
+from esp_pylib.serial_ports import get_port_names
+
 from idftool.partitions import check_image_file, check_write_bundle_has_partition_table, \
     load_partition_table_file, parse_partition_table_csv, read_otadata, require_partitions
-from idftool.ports import get_port_list
 
 def get_esp(port: str | None, baud: int) -> ESPLoader:
     esp: ESPLoader | None = None
     if port:
         esp = detect_chip(port, baud=baud)
     else:
-        ports = get_port_list()
+        ports = get_port_names()
         for port in ports:
             try:
                 print(f"Serial port {port} (baud={baud})")

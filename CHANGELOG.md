@@ -4,6 +4,38 @@ All notable changes to this project are documented here. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+- **Breaking.** `get_port_list` is no longer importable from `idftool.ports`.
+  Serial port discovery now comes from `esp-pylib`, which publishes both shapes
+  directly:
+
+  ```python
+  from esp_pylib.serial_ports import get_port_names  # ["/dev/ttyUSB0", ...]
+  from esp_pylib.serial_ports import get_port_list   # ListPortInfo objects
+  ```
+
+  `idftool.ports.get_port_list` returned names, so `get_port_names` is the
+  drop-in replacement. It was removed instead of quietly re-pointed because
+  esp-pylib's `get_port_list` returns objects, not names — had the old name been
+  kept, code would have carried on importing it and failed somewhere further
+  along, holding a `ListPortInfo` where it expected a string. `prompt_for_port`
+  is unchanged.
+
+- The likely Espressif device is now offered first wherever ports are listed or
+  guessed: `devices` prints it at the top, the picker highlights it, and
+  connecting without `-p` tries it before anything else. It used to be sorted to
+  the bottom and tried last, so a machine with other serial devices attached
+  would work through those first.
+
+- Port discovery — which devices are hidden, how they are ranked, and the
+  vid/pid/name/serial filters — is now whatever esp-pylib does, shared with
+  esptool, rather than a copy maintained here.
+
+### Added
+- `esp-pylib` is now a dependency (`>=1.1.4,<2`).
+
 ## [v0.8.1] — 2026-08-27
 
 ### Fixed

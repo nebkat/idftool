@@ -1,69 +1,16 @@
-"""Serial port discovery and the interactive port picker."""
+"""The interactive serial port picker.
+
+Port discovery itself lives in ``esp_pylib.serial_ports`` — the same
+implementation esptool uses. Import ``get_port_list`` (``ListPortInfo``) or
+``get_port_names`` (device paths) from there directly rather than through here.
+"""
 import sys
 from typing import Optional
 
 import questionary
 import rich_click as click
 
-from serial.tools import list_ports
-from serial.tools.list_ports_common import ListPortInfo
-
-# TODO: Use esptool version when merged
-def get_port_list() -> list[str]:
-    """Get the list of serial ports names with optional filters.
-
-    For backwards compatibility, this function returns a list of port names.
-    """
-    return [port.device for port in _get_port_list()]
-
-
-def _get_port_list() -> list[ListPortInfo]:
-    ports = []
-    for port in list_ports.comports():
-        if sys.platform == "darwin" and port.device.endswith(
-            ("Bluetooth-Incoming-Port", "wlan-debug", "cu.debug-console")
-        ):
-            continue
-        ports.append(port)
-
-    # Constants for sorting optimization
-    ESPRESSIF_VID = 0x303A
-    LINUX_DEVICE_PATTERNS = ("ttyUSB", "ttyACM")
-    MACOS_DEVICE_PATTERNS = ("usbserial", "usbmodem")
-
-    def _port_sort_key_linux(port_info: ListPortInfo) -> tuple[int, str]:
-        if port_info.vid == ESPRESSIF_VID:
-            return (3, port_info.device)
-
-        if any(pattern in port_info.device for pattern in LINUX_DEVICE_PATTERNS):
-            return (2, port_info.device)
-
-        return (1, port_info.device)
-
-    def _port_sort_key_macos(port_info: ListPortInfo) -> tuple[int, str]:
-        if port_info.vid == ESPRESSIF_VID:
-            return (3, port_info.device)
-
-        if any(pattern in port_info.device for pattern in MACOS_DEVICE_PATTERNS):
-            return (2, port_info.device)
-
-        return (1, port_info.device)
-
-    def _port_sort_key_windows(port_info: ListPortInfo) -> tuple[int, str]:
-        if port_info.vid == ESPRESSIF_VID:
-            return (2, port_info.device)
-
-        return (1, port_info.device)
-
-    if sys.platform == "win32":
-        key_func = _port_sort_key_windows
-    elif sys.platform == "darwin":
-        key_func = _port_sort_key_macos
-    else:
-        key_func = _port_sort_key_linux
-
-    sorted_port_info = sorted(ports, key=key_func)
-    return sorted_port_info
+import esp_pylib.serial_ports as serial_ports
 
 
 def prompt_for_port() -> Optional[str]:
@@ -82,10 +29,9 @@ def prompt_for_port() -> Optional[str]:
 
     MANUAL = "\0manual"  # sentinel values that can't collide with a device path
     QUIT = "\0quit"
-    # _get_port_list sorts the best-guess (Espressif VID) port last; show it first.
     choices = [
         questionary.Choice(title=f"{p.device}   {p.description}", value=p.device)
-        for p in reversed(_get_port_list())
+        for p in serial_ports.get_port_list()
     ]
     choices.append(questionary.Choice(title="Enter a port manually…", value=MANUAL))
     choices.append(questionary.Choice(title="Quit", value=QUIT))

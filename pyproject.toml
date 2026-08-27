@@ -22,6 +22,10 @@
         # generate(args) plus its NVS and Page classes.
         "esptool>=5.2,<6",
         "esp-idf-defs~=0.1.5",
+        # Serial port discovery and sorting, shared with esptool (which moved this
+        # code out to esp-pylib). Floor is 1.1.4 rather than 1.0: the sort key
+        # changed shape in 1.1.4, and the picker relies on its ordering.
+        "esp-pylib>=1.1.4,<2",
         "esp-idf-nvs-partition-gen>=0.1.9,<0.3",
         # Filesystem images. pyfatfs is used through its low-level PyFat API only, so its
         # PyFilesystem2 dependency is never imported; littlefs-python is what esp_littlefs
