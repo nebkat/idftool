@@ -17,8 +17,9 @@ option_group('ota')
 def factory(state, app_binary_file, **options):
     """Flash an app to the factory (or ota_0) partition and erase otadata.
 
-    The write is skipped when the partition already holds this exact binary — pass
-    ``skip_flashed=False`` (``--no-skip-flashed``) to write it regardless. otadata is erased
+    Only the flash sectors that differ are written, and nothing at all when the
+    partition already holds this exact binary. ``--no-diff`` writes whole regions (still skipping one that
+    matches entirely), and ``--no-skip-flashed --no-diff`` writes regardless. otadata is erased
     either way: the skip is about the bytes, not about which slot boots.
 
     Keyword arguments go to :func:`idftool.flash.write_flash` (see
@@ -41,7 +42,7 @@ def factory(state, app_binary_file, **options):
 
     print(f"Writing '{image_metadata.app_description.title}' to partition '{partition.name}'...")
     write_flash(esp=esp, addr_data=[(partition.offset, app_binary)],
-                **write_flash_options(options, skip_flashed=True))
+                **write_flash_options(options, skip_flashed=True, diff=True))
 
     otadata_partition = next(
         (p for p in partition_table if p.type == DATA_TYPE and p.subtype == SUBTYPES[DATA_TYPE]['ota']),
@@ -63,8 +64,9 @@ def cmd_factory(state, app_binary_file, **options):
 def ota(state, app_binary_file, **options):
     """Write an app to the next OTA slot and switch the bootloader to it.
 
-    The write is skipped when the slot already holds this exact binary — pass
-    ``skip_flashed=False`` (``--no-skip-flashed``) to write it regardless. The slot is
+    Only the flash sectors that differ are written, and nothing at all when the
+    slot already holds this exact binary. ``--no-diff`` writes whole regions (still skipping one that
+    matches entirely), and ``--no-skip-flashed --no-diff`` writes regardless. The slot is
     switched either way: the skip is about the bytes, not about which slot boots.
 
     Keyword arguments go to :func:`idftool.flash.write_flash` (see
@@ -85,7 +87,7 @@ def ota(state, app_binary_file, **options):
 
     print(f"Writing '{image_metadata.app_description.title}' to partition '{partition.name}'...")
     write_flash(esp=esp, addr_data=[(partition.offset, app_binary)],
-                **write_flash_options(options, skip_flashed=True))
+                **write_flash_options(options, skip_flashed=True, diff=True))
 
     print(f"Setting boot partition to 'ota_{next_slot}'...")
     otadata = otadata.incremented_and_swapped(next_slot)

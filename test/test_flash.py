@@ -6,8 +6,8 @@ import pytest
 import rich_click as click
 
 from conftest import SAMPLES
-from idftool.flash import (FLASH_OPTION_FLAGS, WRITE_FLASH_OPTIONS, split_options,
-                           write_flash_options)
+from idftool.flash import (FLASH_OPTION_FLAGS, IDFTOOL_FLASH_OPTIONS, WRITE_FLASH_OPTIONS,
+                           split_options, write_flash_options)
 
 
 def test_options_are_all_real_esptool_kwargs():
@@ -72,8 +72,14 @@ def test_split_options_separates_the_two_families():
 
 
 def test_flags_and_option_names_line_up():
+    known = (*WRITE_FLASH_OPTIONS, *IDFTOOL_FLASH_OPTIONS)
     for flag in FLASH_OPTION_FLAGS:
-        assert flag.lstrip('-').replace('-', '_') in WRITE_FLASH_OPTIONS
+        assert flag.lstrip('-').replace('-', '_') in known
+
+
+def test_idftool_options_are_not_esptool_kwargs():
+    """The ones idftool implements itself must not collide with a name esptool would read."""
+    assert not set(IDFTOOL_FLASH_OPTIONS) & set(WRITE_FLASH_OPTIONS)
 
 
 def test_write_image_refuses_erase_with_skip_flashed():
@@ -317,3 +323,179 @@ def test_app_commands_skip_by_default():
     for name in ('factory', 'ota'):
         source = inspect.getsource(getattr(firmware, name))
         assert 'skip_flashed=True' in source, name
+
+
+# --- the differential scan -------------------------------------------------------------
+
+def _region(sectors, sector_size=0x1000):
+    """A region of `sectors` distinguishable sectors."""
+    # Never zero, so a sector is always distinguishable from erased-to-zero test flash.
+    return b"".join(bytes([i % 251 + 1]) * sector_size for i in range(sectors))
+
+
+def test_changed_sectors_finds_exactly_what_differs():
+    from idftool.flash import changed_sectors
+
+    data = _region(256)  # 1 MB
+    flashed = bytearray(data)
+    for sector in (3, 4, 200):
+        flashed[sector * 0x1000] ^= 0xFF
+    esp = _FakeFlash(bytes(flashed))
+
+    assert changed_sectors(esp, 0x10000, data) == [3 * 0x1000, 4 * 0x1000, 200 * 0x1000]
+    assert len(esp.calls) == 256  # the whole region, a sector at a time
+
+
+def test_changed_sectors_reports_nothing_when_identical():
+    from idftool.flash import changed_sectors
+
+    data = _region(64)
+    assert changed_sectors(_FakeFlash(data), 0x10000, data) == []
+
+
+def test_changed_sectors_abandons_a_region_that_differs_throughout():
+    from idftool.flash import changed_sectors, DIFF_MIN_SAMPLE_FRACTION
+
+    data = _region(256)  # 1 MB -> minimum sample is 1/8 of it, 32 sectors
+    esp = _FakeFlash(bytes(len(data)))  # nothing matches
+
+    assert changed_sectors(esp, 0x10000, data) is None
+    # Abandoned at the first opportunity, not after hashing the lot.
+    assert len(esp.calls) == 256 // DIFF_MIN_SAMPLE_FRACTION
+
+
+def test_a_version_bump_is_not_mistaken_for_a_rewrite():
+    """The case the minimum sample exists for.
+
+    A rebuild that changes only the version string rewrites the app descriptor in sector 0
+    and leaves everything else alone. Judged on its first sector that image looks entirely
+    changed — and abandoning there would rewrite a megabyte to avoid writing 4 KB.
+    """
+    from idftool.flash import changed_sectors
+
+    data = _region(256)
+    flashed = bytearray(data)
+    flashed[0x20:0x120] = b"\xa5" * 0x100  # the descriptor, and nothing else
+    esp = _FakeFlash(bytes(flashed))
+
+    assert changed_sectors(esp, 0x10000, data) == [0]
+    assert len(esp.calls) == 256  # scanned to the end rather than giving up on sector 0
+
+
+def test_the_bail_threshold_relaxes_as_the_scan_proceeds():
+    """The documented shape: eager to give up early, reluctant late."""
+    from idftool.flash import DIFF_COST_RATIO
+
+    def threshold(fraction):
+        return 1 - DIFF_COST_RATIO * (1 - fraction)
+
+    assert threshold(0.125) == pytest.approx(0.70, abs=0.005)
+    assert threshold(0.5) == pytest.approx(0.83, abs=0.005)
+    assert threshold(0.9) == pytest.approx(0.97, abs=0.005)
+    # Never below the cheapest transport's break-even, or it would give up on scans that pay.
+    assert threshold(0) > 0.65
+
+
+def test_a_late_run_of_differences_does_not_abandon_the_scan():
+    """What a fixed 'quit after N differences' counter would get wrong.
+
+    Everything past the halfway mark differs, which is well over the 0.70 the rule starts
+    at — but by the time it is seen, most of the hashing is spent and finishing is cheaper.
+    """
+    from idftool.flash import changed_sectors
+
+    data = _region(256)
+    flashed = bytearray(data)
+    flashed[128 * 0x1000:] = bytes(128 * 0x1000)
+    esp = _FakeFlash(bytes(flashed))
+
+    offsets = changed_sectors(esp, 0x10000, data)
+    assert offsets is not None and len(offsets) == 128
+
+
+def test_sector_ranges_merges_consecutive_sectors():
+    from idftool.flash import sector_ranges
+
+    assert sector_ranges([0x0, 0x1000, 0x3000], 0x4000) == [(0x0, 0x2000), (0x3000, 0x1000)]
+    assert sector_ranges([0x2000, 0x0, 0x1000], 0x3000) == [(0x0, 0x3000)]  # sorted first
+    assert sector_ranges([], 0x3000) == []
+
+
+def test_sector_ranges_does_not_run_past_the_end():
+    from idftool.flash import sector_ranges
+
+    # A region that does not fill its last sector is written short, not padded.
+    assert sector_ranges([0x3000], 0x3800) == [(0x3000, 0x800)]
+
+
+def test_write_flash_hands_on_only_the_changed_sectors(monkeypatch, capsys):
+    import idftool.flash as flash_module
+
+    data = _region(64)
+    flashed = bytearray(data)
+    flashed[5 * 0x1000] ^= 0xFF
+    flashed[6 * 0x1000] ^= 0xFF
+    flashed[40 * 0x1000] ^= 0xFF
+    esp = _FakeFlash(bytes(flashed))
+
+    forwarded = {}
+    monkeypatch.setattr(flash_module, "esptool_write_flash",
+                        lambda **kwargs: forwarded.update(kwargs))
+    flash_module.write_flash(esp=esp, addr_data=[(0x10000, data)], diff=True)
+
+    # Two runs: the consecutive pair merged, and the lone one on its own. Sent as separate
+    # entries so esptool verifies what it wrote rather than the whole region.
+    assert forwarded['addr_data'] == [
+        (0x10000 + 5 * 0x1000, data[5 * 0x1000:7 * 0x1000]),
+        (0x10000 + 40 * 0x1000, data[40 * 0x1000:41 * 0x1000]),
+    ]
+    assert "3 of 64 sectors differ" in capsys.readouterr().out
+
+
+def test_diff_falls_back_to_a_whole_region_write_when_abandoned(monkeypatch, capsys):
+    import idftool.flash as flash_module
+
+    data = _region(256)
+    esp = _FakeFlash(bytes(len(data)))
+    forwarded = {}
+    monkeypatch.setattr(flash_module, "esptool_write_flash",
+                        lambda **kwargs: forwarded.update(kwargs))
+
+    flash_module.write_flash(esp=esp, addr_data=[(0x10000, data)], diff=True)
+
+    assert forwarded['addr_data'] == [(0x10000, data)]  # the entry as it came in
+    assert "differs too widely" in capsys.readouterr().out
+
+
+def test_diff_skips_a_region_that_matches_entirely(monkeypatch):
+    import idftool.flash as flash_module
+
+    data = _region(64)
+    esp = _FakeFlash(data)
+    called = []
+    monkeypatch.setattr(flash_module, "esptool_write_flash",
+                        lambda **kwargs: called.append(kwargs))
+
+    flash_module.write_flash(esp=esp, addr_data=[(0x10000, data)], diff=True)
+    assert called == []
+
+
+def test_diff_leaves_an_unaligned_region_alone(monkeypatch):
+    """Rewriting a sector at a time would erase the sector the region starts inside."""
+    import idftool.flash as flash_module
+
+    data = _region(8)
+    esp = _FakeFlash(data, base=0x10800)
+    monkeypatch.setattr(flash_module, "esptool_write_flash", lambda **kwargs: None)
+
+    flash_module.write_flash(esp=esp, addr_data=[(0x10800, data)], diff=True)
+    # Fell back to the whole-region comparison: chunked, not sector by sector.
+    assert [size for _, size in esp.calls] == [0x1000, 0x7000]
+
+
+def test_app_commands_diff_by_default():
+    import inspect
+    import idftool.commands.firmware as firmware
+
+    for name in ('factory', 'ota'):
+        assert 'diff=True' in inspect.getsource(getattr(firmware, name)), name

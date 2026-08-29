@@ -227,6 +227,20 @@ def test_skip_flashed_skips_a_write_that_would_change_nothing(idf, device, asset
     assert "skipping write" in out
 
 
+def test_diff_writes_only_the_sectors_that_changed(idf, device, assets):
+    # App writes compare sector by sector by default and write what differs — or give up and
+    # write the lot when too much of it has changed. Either is correct; which one happens
+    # depends on how much these two builds have in common.
+    idf(f"factory {assets / 'app-v1.bin'} --no-diff --no-skip-flashed")
+    out = idf(f"factory {assets / 'app-v2.bin'}")
+    assert "sectors differ" in out or "differs too widely" in out
+
+    # Whichever path it took, the partition has to hold app-v2 exactly afterwards — which
+    # the whole-region comparison is the independent check of.
+    out = idf(f"factory {assets / 'app-v2.bin'} --no-diff")
+    assert "already in flash" in out
+
+
 def test_ota_and_boot(idf, device, assets):
     idf("clear-boot")  # normalise: start from erased otadata
 
