@@ -16,10 +16,12 @@ arguments::
 """
 import hashlib
 import io
-from contextlib import redirect_stdout
+import sys
+from contextlib import contextmanager, redirect_stdout
 
 import rich_click as click
 from esptool.cmds import _update_image_flash_params, write_flash as esptool_write_flash
+from esptool.logger import EsptoolLogger, log
 from esptool.util import get_bytes, pad_to
 
 #: Keyword arguments of esptool's ``write_flash`` that idftool forwards. The ones without a
@@ -83,6 +85,14 @@ DIFF_COST_RATIO = 0.343
 DIFF_MIN_SAMPLE_FRACTION = 8
 DIFF_MIN_SAMPLE_MIN = 0x10000
 DIFF_MIN_SAMPLE_MAX = 0x40000
+
+#: How many matching sectors are worth rewriting to keep one run going rather than starting
+#: another. Each separate write costs about 69 ms of fixed overhead (erase command,
+#: compression, round trips, its own verify) against about 31 ms to erase and write one more
+#: sector inside a run it is already writing — so bridging a gap of two pays for itself, and
+#: three does not. Both figures measured on an ESP32-S3: 4 KB alone 0.10 s, 64 KB in one run
+#: 0.50 s.
+DIFF_COALESCE_SECTORS = 2
 
 
 def flash_options(f):
@@ -240,22 +250,23 @@ def flash_check_unavailable(esp, options):
     return None
 
 
-def changed_sectors(esp, address, data, sector_size=DIFF_SECTOR_SIZE):
-    """Which sectors of `data` differ from what is in flash at `address`.
+def plan_sector_writes(esp, address, data, on_scanned=None, sector_size=DIFF_SECTOR_SIZE,
+                       coalesce=DIFF_COALESCE_SECTORS):
+    """Yield the writes a sector-by-sector comparison calls for, as it finds them.
 
-    Returns a list of sector offsets (relative to `address`), empty when nothing differs —
-    or None when the scan was abandoned because a whole-region write had become the cheaper
-    answer. `data` must already be :func:`bytes_as_written`, and `address` sector-aligned.
+    Yields ``(offset, length, reason)`` relative to `address`. `reason` is ``'changed'`` for
+    a run of sectors that differ, or ``'remainder'`` for everything left when the scan is
+    abandoned — after which nothing more is yielded. A region already in flash yields
+    nothing at all. `data` must be :func:`bytes_as_written` and `address` sector-aligned.
 
-    Scanning is not free: it costs a hash of the whole region (~3.7 s/MB) to save writing
-    the sectors that match (~8.6 s/MB each, plus the verify esptool does afterwards). Which
-    way that lands depends on how much of the region actually changed, and that is not known
-    up front — but it is learned while scanning, so the decision is made as it goes.
+    Yielding as it goes, rather than returning a plan, is what lets the caller write each run
+    while the scan continues: one pass over the region, and one progress bar.
 
-    After `fraction` of the region has been scanned with `dirty` of it differing, the
-    hashing already done is spent either way and only the rest matters: carrying on costs
-    the remaining hash plus writing the dirty part, stopping costs writing all of it. So it
-    is worth carrying on while::
+    Scanning is not free (~3.7 s/MB) and pays only if enough of the region matches, which is
+    not known up front but is learned while scanning. After `fraction` of the region has been
+    scanned with `dirty` of it differing, the hashing already done is spent either way and
+    only the rest matters: carrying on costs the remaining hash plus writing what differs,
+    giving up costs writing all that is left. So it is worth carrying on while::
 
         dirty < 1 - DIFF_COST_RATIO * (1 - fraction)
 
@@ -268,35 +279,126 @@ def changed_sectors(esp, address, data, sector_size=DIFF_SECTOR_SIZE):
     total = len(data)
     minimum = min(max(total // DIFF_MIN_SAMPLE_FRACTION, DIFF_MIN_SAMPLE_MIN),
                   DIFF_MIN_SAMPLE_MAX)
-    dirty, scanned, sectors = [], 0, 0
-    while scanned < total:
-        size = min(sector_size, total - scanned)
-        if esp.flash_md5sum(address + scanned, size) != \
-                hashlib.md5(data[scanned:scanned + size]).hexdigest():
-            dirty.append(scanned)
-        scanned += size
+    run_start = run_end = None
+    dirty = sectors = offset = 0
+
+    while offset < total:
+        size = min(sector_size, total - offset)
+        if esp.flash_md5sum(address + offset, size) != \
+                hashlib.md5(data[offset:offset + size]).hexdigest():
+            if run_start is None:
+                run_start = offset
+            run_end = offset + size
+            dirty += 1
+        elif run_end is not None and offset - run_end >= coalesce * sector_size:
+            # Far enough past the open run that a fresh write is cheaper than bridging.
+            yield run_start, run_end - run_start, 'changed'
+            run_start = run_end = None
+        offset += size
         sectors += 1
-        if minimum <= scanned < total:
-            if len(dirty) / sectors >= 1 - DIFF_COST_RATIO * (1 - scanned / total):
-                return None
-    return dirty
+        if on_scanned is not None:
+            on_scanned(offset)
+
+        if minimum <= offset < total and \
+                dirty / sectors >= 1 - DIFF_COST_RATIO * (1 - offset / total):
+            start = run_start if run_start is not None else offset
+            yield start, total - start, 'remainder'
+            return
+
+    if run_start is not None:
+        yield run_start, run_end - run_start, 'changed'
 
 
-def sector_ranges(offsets, total, sector_size=DIFF_SECTOR_SIZE):
-    """Merge sector offsets into (offset, length) runs of consecutive sectors.
+class Progress:
+    """One progress bar for a whole operation, redrawn in place.
 
-    Consecutive sectors become one write rather than several: each write costs an erase and
-    a round trip of its own (~4 ms), and a run is no more expensive to send than its parts.
-    The final run is cut off at `total` rather than padded, so the last sector of a region
-    that does not fill one is written short, exactly as a whole-region write would leave it.
+    The differential path scans and writes in the same pass, so its progress is two numbers
+    that advance independently — bytes compared, and bytes written. Both go on one bar, which
+    tracks the scan (whose total is known from the start) and reports the writes alongside.
+
+    Does nothing at all when output is not a terminal or `enabled` is false, so piped output
+    and ``--no-progress`` stay clean.
     """
-    runs = []
-    for offset in sorted(offsets):
-        if runs and runs[-1][0] + runs[-1][1] == offset:
-            runs[-1][1] += sector_size
-        else:
-            runs.append([offset, sector_size])
-    return [(offset, min(length, total - offset)) for offset, length in runs]
+
+    def __init__(self, label, total, enabled=True, width=28, stream=None):
+        self.label, self.total, self.width = label, total, width
+        self.stream = stream if stream is not None else sys.stdout
+        self.enabled = enabled and self.total > 0 and self.stream.isatty()
+        self.scanned = self.written = 0
+        self._drawn = False
+
+    @staticmethod
+    def size(count):
+        for unit, scale in (('M', 1 << 20), ('K', 1 << 10)):
+            if count >= scale:
+                return f'{count / scale:.1f}{unit}'.replace('.0', '')
+        return f'{count}B'
+
+    def update(self, scanned=None, written=None):
+        if scanned is not None:
+            self.scanned = scanned
+        if written is not None:
+            self.written = written
+        self.draw()
+
+    def draw(self):
+        if not self.enabled:
+            return
+        done = min(self.scanned, self.total)
+        filled = self.width * done // self.total
+        bar = '=' * filled + ' ' * (self.width - filled)
+        suffix = f'compared {self.size(done)}/{self.size(self.total)}'
+        if self.written:
+            suffix += f', written {self.size(self.written)}'
+        self.stream.write(f'\r  [{bar}] {100 * done // self.total:>3}%  {suffix}\x1b[K')
+        self.stream.flush()
+        self._drawn = True
+
+    def finish(self):
+        if self._drawn:
+            self.stream.write('\r\x1b[K')
+            self.stream.flush()
+            self._drawn = False
+
+
+@contextmanager
+def quiet_esptool():
+    """Silence esptool's routine progress while it writes, keeping notes and warnings.
+
+    A differential write calls ``write_flash`` once per run of changed sectors, and each call
+    narrates itself — erase range, compressed size, its own progress bar, bytes written,
+    verification — which is six lines and a flickering bar per run. idftool draws one bar
+    across the whole operation instead, so the per-run narration has to go.
+
+    Anything esptool considers worth flagging still gets through: `note`, `warning` and
+    `error` are printed directly rather than through the silenced `print`, so this suppresses
+    by kind rather than by matching message text, and nothing new can slip past it.
+    """
+    class _Quiet(EsptoolLogger):
+        def print(self, *args, **kwargs):
+            pass
+
+        def note(self, message):
+            print(f"Note: {message}")
+
+        def warning(self, message):
+            print(f"Warning: {message}")
+
+        def error(self, message):
+            print(message, file=sys.stderr)
+
+        def progress_bar(self, *args, **kwargs):
+            pass
+
+        def stage(self, finish=False):
+            pass
+
+    original = type(log)
+    log.__class__ = _Quiet          # what esptool's own set_logger() does, but reversible
+    try:
+        yield
+    finally:
+        log.__class__ = original
 
 
 def write_flash(esp, addr_data, flash_freq='keep', flash_mode='keep', flash_size='keep',
@@ -308,10 +410,11 @@ def write_flash(esp, addr_data, flash_freq='keep', flash_mode='keep', flash_size
     chunks (:func:`flash_matches`) and hands esptool only the files that really need writing,
     with ``skip_flashed`` off so it does not repeat the work.
 
-    ``diff`` goes further and compares a sector at a time (:func:`changed_sectors`), passing
-    on only the sectors that differ — as separate entries, so that esptool's own post-write
-    verification is over what was written rather than the whole region. It supersedes
-    ``skip_flashed``, which is the same comparison with the region as its only unit.
+    ``diff`` goes further and compares a sector at a time (:func:`plan_sector_writes`),
+    writing each run of changed sectors as the scan reaches it. Runs are written separately
+    so that esptool's post-write verification is over what was written rather than the whole
+    region. It supersedes ``skip_flashed``, which is the same comparison with the region as
+    its only unit.
 
     Every other keyword argument goes straight through.
     """
@@ -322,7 +425,8 @@ def write_flash(esp, addr_data, flash_freq='keep', flash_mode='keep', flash_size
         if unavailable:
             print(f"Note: not checking what is already in flash, {unavailable}")
         else:
-            addr_data = _plan_writes(esp, addr_data, diff, flash_freq, flash_mode, flash_size)
+            addr_data = _plan_writes(esp, addr_data, diff, flash_freq, flash_mode,
+                                     flash_size, kwargs)
             if not addr_data:
                 return
 
@@ -330,12 +434,12 @@ def write_flash(esp, addr_data, flash_freq='keep', flash_mode='keep', flash_size
                                flash_mode=flash_mode, flash_size=flash_size, **kwargs)
 
 
-def _plan_writes(esp, addr_data, diff, flash_freq, flash_mode, flash_size):
-    """What of `addr_data` still has to be written, after comparing it against flash.
+def _plan_writes(esp, addr_data, diff, flash_freq, flash_mode, flash_size, kwargs):
+    """What of `addr_data` is left for esptool to write, after comparing it against flash.
 
-    Entries that have to be written whole are passed on as they came in, so that esptool
-    still sees the file names it prints and re-reads them itself. Entries reduced to
-    individual sectors necessarily become bytes.
+    Entries compared a sector at a time are written here, as the comparison finds them, and
+    do not come back. The rest are returned as they came in, so that esptool still sees the
+    file names it prints and re-reads them itself.
     """
     planned = []
     for entry in addr_data:
@@ -353,7 +457,7 @@ def _plan_writes(esp, addr_data, diff, flash_freq, flash_mode, flash_size):
         # it. Rare (partition offsets are sector-aligned), and the whole-region comparison
         # below still applies.
         if diff and address % DIFF_SECTOR_SIZE == 0:
-            if _plan_sectors(esp, address, prepared, described, planned):
+            if _write_changed_sectors(esp, address, prepared, described, kwargs):
                 continue
 
         if len(prepared) > CHECK_FIRST_CHUNK_SIZE:
@@ -365,29 +469,43 @@ def _plan_writes(esp, addr_data, diff, flash_freq, flash_mode, flash_size):
     return planned
 
 
-def _plan_sectors(esp, address, prepared, described, planned):
-    """Scan `prepared` a sector at a time and add what differs to `planned`.
+def _write_changed_sectors(esp, address, prepared, described, kwargs):
+    """Compare `prepared` against flash a sector at a time, writing what differs as it goes.
 
-    Returns False when the scan was abandoned, leaving the caller to fall back to comparing
-    the region as a whole.
+    Returns False when the scan was abandoned before writing anything, leaving the caller to
+    fall back to comparing the region as a whole.
     """
-    print(f"Comparing {described} against flash at {address:#010x}, sector by sector...")
-    offsets = changed_sectors(esp, address, prepared)
+    print(f"Comparing {described} against flash at {address:#010x}...")
+    progress = Progress(described, len(prepared), enabled=not kwargs.get('no_progress'))
+    written = runs = 0
+    abandoned = False
 
-    if offsets is None:
-        print(f"{described} differs too widely for a sector-by-sector write, "
-              f"writing all of it")
-        return False
+    try:
+        for offset, length, reason in plan_sector_writes(
+                esp, address, prepared, on_scanned=lambda n: progress.update(scanned=n)):
+            if reason == 'remainder':
+                abandoned = True
+                if written == 0:
+                    return False        # nothing written yet: let the caller write it whole
+            # `flash_size` stays 'keep': `prepared` has already been through
+            # bytes_as_written, and re-detecting the size costs a round trip per run.
+            run = {**kwargs, 'no_progress': True}
+            with quiet_esptool():
+                esptool_write_flash(
+                    esp=esp, flash_size='keep',
+                    addr_data=[(address + offset, prepared[offset:offset + length])], **run)
+            written += length
+            runs += 1
+            progress.update(written=written)
+    finally:
+        progress.finish()
 
-    if not offsets:
+    if written == 0:
         print(f"{described} at {address:#010x} is already in flash, skipping write")
-        return True
-
-    ranges = sector_ranges(offsets, len(prepared))
-    changed = sum(length for _, length in ranges)
-    print(f"{described}: {len(offsets)} of "
-          f"{-(-len(prepared) // DIFF_SECTOR_SIZE)} sectors differ, writing "
-          f"{changed} of {len(prepared)} bytes in {len(ranges)} region(s)")
-    planned.extend((address + offset, prepared[offset:offset + length])
-                   for offset, length in ranges)
+    elif abandoned:
+        print(f"{described}: too much of it differs to keep comparing, wrote the remaining "
+              f"{Progress.size(written)} in full")
+    else:
+        print(f"{described}: wrote {Progress.size(written)} of "
+              f"{Progress.size(len(prepared))} in {runs} region{'s' if runs != 1 else ''}")
     return True
