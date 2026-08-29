@@ -5,14 +5,14 @@ import time
 import rich_click as click
 
 from esptool import flash_size_bytes
-from esptool.cmds import read_flash, write_flash, merge_bin, detect_flash_size
+from esptool.cmds import read_flash, merge_bin, detect_flash_size
 
 from esp_idf_defs import ImageMetadata, ChipId
 from esp_idf_defs.partitions import PartitionTable
 
 from idftool.apps import print_partition_table_and_apps
 from idftool.cli import cli, pass_state
-from idftool.flash import flash_options, option_group, write_flash_options
+from idftool.flash import flash_options, option_group, write_flash, write_flash_options
 from idftool.params import BASED_INT
 from idftool.partitions import check_image_file, get_partition_address, require_partitions
 

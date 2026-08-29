@@ -9,10 +9,9 @@ import sys
 
 import rich_click as click
 
-from esptool.cmds import write_flash
 
 from idftool.cli import cli, pass_state, reject_file_as_partition
-from idftool.flash import FLASH_OPTION_FLAGS, flash_options, split_options, write_flash_options
+from idftool.flash import FLASH_OPTION_FLAGS, flash_options, split_options, write_flash, write_flash_options
 from idftool.params import BASED_INT
 from idftool.partitions import get_partition
 

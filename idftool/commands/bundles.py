@@ -5,13 +5,12 @@ from zipfile import BadZipFile, ZipFile
 
 import rich_click as click
 
-from esptool.cmds import write_flash
 
 from esp_idf_defs.partitions import APP_TYPE
 
 from idftool.apps import print_partition_table_and_apps, validate_app_binary
 from idftool.cli import cli, pass_state
-from idftool.flash import flash_options, option_group, write_flash_options
+from idftool.flash import flash_options, option_group, write_flash, write_flash_options
 from idftool.partitions import get_partition, parse_partition_table_csv
 
 # Keep the pass-through write options in a panel of their own.

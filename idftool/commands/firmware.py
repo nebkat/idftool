@@ -1,14 +1,13 @@
 """Firmware and boot selection: ``factory``, ``ota``, and the ``*-boot`` commands."""
 import rich_click as click
 
-from esptool.cmds import write_flash
 
 from esp_idf_defs.otadata import OtaImageState
 from esp_idf_defs.partitions import APP_TYPE, DATA_TYPE, SUBTYPES
 
 from idftool.apps import load_app_binary
 from idftool.cli import cli, pass_state
-from idftool.flash import flash_options, option_group, write_flash_options
+from idftool.flash import flash_options, option_group, write_flash, write_flash_options
 from idftool.partitions import read_otadata, write_otadata
 
 # Keep the pass-through write options in a panel of their own.
@@ -16,8 +15,14 @@ option_group('factory')
 option_group('ota')
 
 def factory(state, app_binary_file, **options):
-    """Flash an app to the factory (or ota_0) partition and erase otadata. Keyword arguments
-    go to esptool's ``write_flash`` (see :data:`idftool.flash.WRITE_FLASH_OPTIONS`)."""
+    """Flash an app to the factory (or ota_0) partition and erase otadata.
+
+    The write is skipped when the partition already holds this exact binary — pass
+    ``skip_flashed=False`` (``--no-skip-flashed``) to write it regardless. otadata is erased
+    either way: the skip is about the bytes, not about which slot boots.
+
+    Keyword arguments go to :func:`idftool.flash.write_flash` (see
+    :data:`idftool.flash.WRITE_FLASH_OPTIONS`)."""
     loaded = state.setup()
     esp, partition_table = loaded.esp, loaded.partition_table
     partition = next(
@@ -36,7 +41,7 @@ def factory(state, app_binary_file, **options):
 
     print(f"Writing '{image_metadata.app_description.title}' to partition '{partition.name}'...")
     write_flash(esp=esp, addr_data=[(partition.offset, app_binary)],
-                **write_flash_options(options))
+                **write_flash_options(options, skip_flashed=True))
 
     otadata_partition = next(
         (p for p in partition_table if p.type == DATA_TYPE and p.subtype == SUBTYPES[DATA_TYPE]['ota']),
@@ -56,8 +61,14 @@ def cmd_factory(state, app_binary_file, **options):
 
 
 def ota(state, app_binary_file, **options):
-    """Write an app to the next OTA slot and switch the bootloader to it. Keyword arguments
-    go to esptool's ``write_flash`` (see :data:`idftool.flash.WRITE_FLASH_OPTIONS`)."""
+    """Write an app to the next OTA slot and switch the bootloader to it.
+
+    The write is skipped when the slot already holds this exact binary — pass
+    ``skip_flashed=False`` (``--no-skip-flashed``) to write it regardless. The slot is
+    switched either way: the skip is about the bytes, not about which slot boots.
+
+    Keyword arguments go to :func:`idftool.flash.write_flash` (see
+    :data:`idftool.flash.WRITE_FLASH_OPTIONS`)."""
     loaded = state.setup()
     esp, partition_table = loaded.esp, loaded.partition_table
     otadata_partition, otadata = read_otadata(esp, partition_table)
@@ -74,7 +85,7 @@ def ota(state, app_binary_file, **options):
 
     print(f"Writing '{image_metadata.app_description.title}' to partition '{partition.name}'...")
     write_flash(esp=esp, addr_data=[(partition.offset, app_binary)],
-                **write_flash_options(options))
+                **write_flash_options(options, skip_flashed=True))
 
     print(f"Setting boot partition to 'ota_{next_slot}'...")
     otadata = otadata.incremented_and_swapped(next_slot)

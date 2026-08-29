@@ -3,10 +3,10 @@ import os.path
 
 import rich_click as click
 
-from esptool.cmds import read_flash, write_flash, erase_region
+from esptool.cmds import read_flash, erase_region
 
 from idftool.cli import cli, pass_state
-from idftool.flash import flash_options, option_group, write_flash_options
+from idftool.flash import flash_options, option_group, write_flash, write_flash_options
 from idftool.partitions import get_partition_address, get_partition_slice
 
 # Keep the pass-through write options in a panel of their own.

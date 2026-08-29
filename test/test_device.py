@@ -205,13 +205,26 @@ def test_factory(idf, device, assets):
 
 
 def test_skip_flashed_skips_a_write_that_would_change_nothing(idf, device, assets):
-    # The same app twice: the second write compares MD5s and writes nothing at all.
-    idf(f"factory {assets / 'app-v1.bin'}")
-    out = idf(f"factory {assets / 'app-v1.bin'} --skip-flashed")
-    assert "skipping write" in out
-    # A different app does not match, so it is written normally.
-    out = idf(f"factory {assets / 'app-v2.bin'} --skip-flashed")
+    # The same app twice: the second write compares on-device MD5s and writes nothing at
+    # all. App writes do this by default, so the second call needs no flag.
+    idf(f"factory {assets / 'app-v1.bin'} --no-skip-flashed")
+    out = idf(f"factory {assets / 'app-v1.bin'}")
+    assert "already in flash" in out and "skipping write" in out
+
+    # --no-skip-flashed writes it anyway.
+    out = idf(f"factory {assets / 'app-v1.bin'} --no-skip-flashed")
     assert "skipping write" not in out
+
+    # A different app does not match, so it is written normally.
+    out = idf(f"factory {assets / 'app-v2.bin'}")
+    assert "skipping write" not in out
+
+    # The other write commands leave it off unless asked.
+    idf(f"write factory {assets / 'app-v1.bin'}")
+    out = idf(f"write factory {assets / 'app-v1.bin'}")
+    assert "skipping write" not in out
+    out = idf(f"write factory {assets / 'app-v1.bin'} --skip-flashed")
+    assert "skipping write" in out
 
 
 def test_ota_and_boot(idf, device, assets):

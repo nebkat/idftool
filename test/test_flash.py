@@ -26,10 +26,21 @@ def test_options_are_all_real_esptool_kwargs():
 
 def test_untouched_flags_are_dropped():
     # What click hands a command when none of the flags were given: nothing reaches esptool,
-    # so its own defaults apply.
-    given = dict(skip_flashed=False, compress=None, encrypt=False, force=False,
+    # so its own defaults apply. The `--x/--no-x` pairs say "untouched" with None, because
+    # their False is a real answer.
+    given = dict(skip_flashed=None, compress=None, encrypt=False, force=False,
                  ignore_flash_enc_efuse=False, no_progress=False)
     assert write_flash_options(given) == {}
+
+
+def test_skip_flashed_false_survives():
+    # --no-skip-flashed has to reach write_flash, or it could not turn off the default the
+    # app commands ask for.
+    assert write_flash_options({'skip_flashed': False}) == {'skip_flashed': False}
+    assert write_flash_options({'skip_flashed': False}, skip_flashed=True) == \
+        {'skip_flashed': False}
+    assert write_flash_options({'skip_flashed': None}, skip_flashed=True) == \
+        {'skip_flashed': True}
 
 
 def test_set_flags_are_forwarded():
@@ -130,3 +141,179 @@ def test_options_reach_esptool(monkeypatch, tmp_path):
     assert written["no_compress"] is True     # `compress=False` said esptool's way
     assert "force" not in written             # untouched flags keep esptool's defaults
     assert "no_progress" not in written
+
+
+class _FakeFlash:
+    """ESPLoader stand-in holding flash contents, answering the on-device MD5 command.
+
+    Records every ``flash_md5sum`` call so a test can assert what was hashed and, more to the
+    point, what was not: the comparison exists to stop early.
+    """
+    CHIP_NAME = "ESP32-S3"
+    BOOTLOADER_FLASH_OFFSET = 0x0
+    IS_STUB = True
+    secure_download_mode = False
+
+    def __init__(self, contents=b"", base=0x10000):
+        self.base = base
+        self.contents = bytearray(contents)
+        self.calls = []
+
+    def get_secure_boot_enabled(self):
+        return False
+
+    def flash_md5sum(self, addr, size):
+        import hashlib
+        self.calls.append((addr, size))
+        start = addr - self.base
+        region = bytes(self.contents[start:start + size])
+        region += b"\xff" * (size - len(region))  # unwritten flash reads as erased
+        return hashlib.md5(region).hexdigest()
+
+
+def test_flash_matches_identical_content():
+    from idftool.flash import flash_matches
+
+    data = bytes(range(256)) * 400  # 100 KB
+    esp = _FakeFlash(data)
+    assert flash_matches(esp, 0x10000, data)
+    # One sector, then 64 KB chunks, then the remainder — and every byte accounted for.
+    assert [size for _, size in esp.calls] == [0x1000, 0x10000, 100 * 1024 - 0x11000]
+    assert sum(size for _, size in esp.calls) == len(data)
+
+
+def test_flash_matches_stops_at_the_first_differing_chunk():
+    from idftool.flash import flash_matches
+
+    data = bytes(range(256)) * 4000  # 1000 KB
+    flashed = bytearray(data)
+    flashed[0x800] ^= 0xFF  # a difference inside the first sector
+    esp = _FakeFlash(bytes(flashed))
+
+    assert not flash_matches(esp, 0x10000, data)
+    # The whole point: one 4 KB hash, not a megabyte of them.
+    assert esp.calls == [(0x10000, 0x1000)]
+
+
+def test_flash_matches_finds_a_late_difference():
+    from idftool.flash import flash_matches
+
+    data = bytes(range(256)) * 4000
+    flashed = bytearray(data)
+    flashed[-1] ^= 0xFF  # last byte, so every chunk has to be hashed
+    esp = _FakeFlash(bytes(flashed))
+
+    assert not flash_matches(esp, 0x10000, data)
+    assert sum(size for _, size in esp.calls) == len(data)
+
+
+def test_flash_matches_blank_flash():
+    from idftool.flash import flash_matches
+
+    esp = _FakeFlash(b"")  # erased: reads back as 0xFF
+    assert not flash_matches(esp, 0x10000, b"\x00" * 0x4000)
+    assert esp.calls == [(0x10000, 0x1000)]
+
+
+def test_flash_matches_shorter_than_one_chunk():
+    from idftool.flash import flash_matches
+
+    data = b"partition table"
+    esp = _FakeFlash(data)
+    assert flash_matches(esp, 0x10000, data)
+    assert esp.calls == [(0x10000, len(data))]
+
+
+@pytest.mark.parametrize("options, reason", [
+    ({'erase_all': True}, 'erased'),
+    ({'encrypt': True}, 'encrypted'),
+    ({'encrypt_files': [(0, b'x')]}, 'encrypted'),
+    ({'diff_with': ['old.bin']}, 'differential'),
+])
+def test_flash_check_is_unavailable_when_it_would_lie(options, reason):
+    from idftool.flash import flash_check_unavailable
+
+    assert reason in flash_check_unavailable(_FakeFlash(), options)
+
+
+def test_flash_check_is_available_by_default():
+    from idftool.flash import flash_check_unavailable
+
+    assert flash_check_unavailable(_FakeFlash(), {}) is None
+
+
+def test_flash_check_needs_a_readable_flash():
+    from idftool.flash import flash_check_unavailable
+
+    esp = _FakeFlash()
+    esp.secure_download_mode = True
+    assert 'secure download' in flash_check_unavailable(esp, {})
+
+    esp = _FakeFlash()
+    esp.CHIP_NAME, esp.IS_STUB = 'ESP8266', False
+    assert 'ESP8266' in flash_check_unavailable(esp, {})
+
+
+def test_write_flash_skips_the_files_already_there(monkeypatch, capsys):
+    import idftool.flash as flash_module
+
+    same, different = b"\xa5" * 0x2000, bytes(range(256)) * 32
+    esp = _FakeFlash(same + b"\x00" * 0x2000, base=0x10000)
+
+    forwarded = {}
+    monkeypatch.setattr(flash_module, "esptool_write_flash",
+                        lambda **kwargs: forwarded.update(kwargs))
+
+    flash_module.write_flash(esp=esp, addr_data=[(0x10000, same), (0x12000, different)],
+                             skip_flashed=True)
+
+    # Only the file that really differs is handed on, and esptool is not asked to repeat
+    # the comparison that was just done.
+    assert forwarded['addr_data'] == [(0x12000, different)]
+    assert 'skip_flashed' not in forwarded
+    assert "already in flash" in capsys.readouterr().out
+
+
+def test_write_flash_is_not_called_when_everything_matches(monkeypatch):
+    import idftool.flash as flash_module
+
+    data = b"\xa5" * 0x2000
+    esp = _FakeFlash(data, base=0x10000)
+    called = []
+    monkeypatch.setattr(flash_module, "esptool_write_flash",
+                        lambda **kwargs: called.append(kwargs))
+
+    flash_module.write_flash(esp=esp, addr_data=[(0x10000, data)], skip_flashed=True)
+    assert called == []
+
+
+def test_write_flash_without_skip_flashed_hashes_nothing(monkeypatch):
+    import idftool.flash as flash_module
+
+    esp = _FakeFlash(b"\xa5" * 0x2000, base=0x10000)
+    monkeypatch.setattr(flash_module, "esptool_write_flash", lambda **kwargs: None)
+
+    flash_module.write_flash(esp=esp, addr_data=[(0x10000, b"\xa5" * 0x2000)])
+    assert esp.calls == []
+
+
+def test_write_flash_says_why_it_did_not_check(monkeypatch, capsys):
+    import idftool.flash as flash_module
+
+    esp = _FakeFlash(b"\xa5" * 0x2000, base=0x10000)
+    monkeypatch.setattr(flash_module, "esptool_write_flash", lambda **kwargs: None)
+
+    flash_module.write_flash(esp=esp, addr_data=[(0x10000, b"\xa5" * 0x2000)],
+                             skip_flashed=True, erase_all=True)
+    assert esp.calls == []
+    assert "erased" in capsys.readouterr().out
+
+
+def test_app_commands_skip_by_default():
+    """factory and ota ask for the check themselves; everything else leaves it off."""
+    import inspect
+    import idftool.commands.firmware as firmware
+
+    for name in ('factory', 'ota'):
+        source = inspect.getsource(getattr(firmware, name))
+        assert 'skip_flashed=True' in source, name
