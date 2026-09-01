@@ -559,13 +559,37 @@ def test_app_commands_diff_by_default():
 
 # --- output -----------------------------------------------------------------------------
 
-def test_progress_is_silent_when_output_is_not_a_terminal(capsys):
+def test_progress_is_silent_when_progress_is_not_wanted(capsys):
     from idftool.flash import Progress
 
-    bar = Progress('x', 0x1000)
+    bar = Progress('x', 0x1000, enabled=False)
     bar.update(scanned=0x800)
     bar.finish()
     assert capsys.readouterr().out == ""
+
+
+def test_progress_obeys_esptools_verbosity(capsys):
+    """Drawing through esptool's logger is what makes its own settings reach the bar."""
+    from esptool.logger import log
+    from idftool.flash import Progress
+
+    log.set_verbosity('silent')
+    try:
+        Progress('x', 0x1000).update(scanned=0x800)
+        assert capsys.readouterr().out == ""
+    finally:
+        log.set_verbosity('auto')
+
+
+def test_progress_redraws_only_when_the_percentage_moves(capsys):
+    """A megabyte is 256 sectors; a redraw apiece is wasted on a terminal that overwrites
+    and 256 lines of scroll on one that cannot."""
+    from idftool.flash import Progress
+
+    bar = Progress('x', 1000 * 0x1000)
+    for sector in range(1, 21):          # 20 updates spanning 0% to 2% of the region
+        bar.update(scanned=sector * 0x1000)
+    assert capsys.readouterr().out.count('%') == 3   # the first, then 1% and 2%
 
 
 def test_progress_sizes_read_the_way_a_person_would_say_them():

@@ -17,6 +17,7 @@ arguments::
 import hashlib
 import io
 import sys
+import time
 from contextlib import contextmanager, redirect_stdout
 
 import rich_click as click
@@ -310,22 +311,23 @@ def plan_sector_writes(esp, address, data, on_scanned=None, sector_size=DIFF_SEC
 
 
 class Progress:
-    """One progress bar for a whole operation, redrawn in place.
+    """One progress bar for a whole operation, drawn by esptool's own logger.
 
     The differential path scans and writes in the same pass, so its progress is two numbers
     that advance independently — bytes compared, and bytes written. Both go on one bar, which
     tracks the scan (whose total is known from the start) and reports the writes alongside.
 
-    Does nothing at all when output is not a terminal or `enabled` is false, so piped output
-    and ``--no-progress`` stay clean.
+    Rendering goes through ``log.progress_bar`` rather than being written out here, so this
+    inherits esptool's decisions rather than second-guessing them: whether the terminal takes
+    ANSI escapes, the Windows fallback, and the verbosity setting, which is what ``silent``
+    has to reach to be worth anything. It also means the bar looks like every other bar the
+    user sees from a flashing tool.
     """
 
-    def __init__(self, label, total, enabled=True, width=28, stream=None):
-        self.label, self.total, self.width = label, total, width
-        self.stream = stream if stream is not None else sys.stdout
-        self.enabled = enabled and self.total > 0 and self.stream.isatty()
+    def __init__(self, prefix, total, enabled=True):
+        self.prefix, self.total, self.enabled = prefix, total, enabled and total > 0
         self.scanned = self.written = 0
-        self._drawn = False
+        self._shown = None
 
     @staticmethod
     def size(count):
@@ -334,31 +336,64 @@ class Progress:
                 return f'{count / scale:.1f}{unit}'.replace('.0', '')
         return f'{count}B'
 
+    @staticmethod
+    def rate(count, seconds):
+        return f'{count / seconds * 8 / 1000:.1f} kbit/s' if seconds > 0 else 'instant'
+
     def update(self, scanned=None, written=None):
+        """Redraw, but only when the percentage has actually moved.
+
+        A megabyte is 256 sectors and a redraw apiece is wasted work on a smart terminal and
+        256 lines of scroll on one that cannot overwrite.
+        """
         if scanned is not None:
             self.scanned = scanned
         if written is not None:
             self.written = written
-        self.draw()
-
-    def draw(self):
         if not self.enabled:
             return
-        done = min(self.scanned, self.total)
-        filled = self.width * done // self.total
-        bar = '=' * filled + ' ' * (self.width - filled)
-        suffix = f'compared {self.size(done)}/{self.size(self.total)}'
+        percent = 100 * min(self.scanned, self.total) // self.total
+        if percent == self._shown:
+            return
+        self._shown = percent
+        suffix = f' compared {self.size(self.scanned)}/{self.size(self.total)}'
         if self.written:
             suffix += f', written {self.size(self.written)}'
-        self.stream.write(f'\r  [{bar}] {100 * done // self.total:>3}%  {suffix}\x1b[K')
-        self.stream.flush()
-        self._drawn = True
+        log.progress_bar(min(self.scanned, self.total), self.total,
+                         prefix=f'{self.prefix} ', suffix=suffix)
 
     def finish(self):
-        if self._drawn:
-            self.stream.write('\r\x1b[K')
-            self.stream.flush()
-            self._drawn = False
+        """End the bar's line if it stopped short — an abandoned scan never reaches 100%."""
+        if self._shown is not None and self._shown != 100:
+            log.print("")
+        self._shown = None
+
+
+class _QuietEsptool(EsptoolLogger):
+    """esptool's logger with its routine narration removed but nothing else.
+
+    `note`, `warning` and `error` are printed directly rather than through the silenced
+    `print`, so this suppresses by kind rather than by matching message text and nothing new
+    can slip past it. Installed by :func:`quiet_esptool` only for the duration of a write.
+    """
+
+    def print(self, *args, **kwargs):
+        pass
+
+    def note(self, message):
+        print(f"Note: {message}")
+
+    def warning(self, message):
+        print(f"Warning: {message}")
+
+    def error(self, message):
+        print(message, file=sys.stderr)
+
+    def progress_bar(self, *args, **kwargs):
+        pass
+
+    def stage(self, finish=False):
+        pass
 
 
 @contextmanager
@@ -368,33 +403,12 @@ def quiet_esptool():
     A differential write calls ``write_flash`` once per run of changed sectors, and each call
     narrates itself — erase range, compressed size, its own progress bar, bytes written,
     verification — which is six lines and a flickering bar per run. idftool draws one bar
-    across the whole operation instead, so the per-run narration has to go.
-
-    Anything esptool considers worth flagging still gets through: `note`, `warning` and
-    `error` are printed directly rather than through the silenced `print`, so this suppresses
-    by kind rather than by matching message text, and nothing new can slip past it.
+    across the whole operation instead (:class:`Progress`), so the per-run narration has to
+    go, but only while esptool is inside a run: the bar itself is drawn between them, through
+    the real logger.
     """
-    class _Quiet(EsptoolLogger):
-        def print(self, *args, **kwargs):
-            pass
-
-        def note(self, message):
-            print(f"Note: {message}")
-
-        def warning(self, message):
-            print(f"Warning: {message}")
-
-        def error(self, message):
-            print(message, file=sys.stderr)
-
-        def progress_bar(self, *args, **kwargs):
-            pass
-
-        def stage(self, finish=False):
-            pass
-
     original = type(log)
-    log.__class__ = _Quiet          # what esptool's own set_logger() does, but reversible
+    log.__class__ = _QuietEsptool     # what esptool's own set_logger() does, but reversible
     try:
         yield
     finally:
@@ -478,6 +492,7 @@ def _write_changed_sectors(esp, address, prepared, described, kwargs):
     print(f"Comparing {described} against flash at {address:#010x}...")
     progress = Progress(described, len(prepared), enabled=not kwargs.get('no_progress'))
     written = runs = 0
+    elapsed = 0.0
     abandoned = False
 
     try:
@@ -490,22 +505,28 @@ def _write_changed_sectors(esp, address, prepared, described, kwargs):
             # `flash_size` stays 'keep': `prepared` has already been through
             # bytes_as_written, and re-detecting the size costs a round trip per run.
             run = {**kwargs, 'no_progress': True}
+            started = time.time()
             with quiet_esptool():
                 esptool_write_flash(
                     esp=esp, flash_size='keep',
                     addr_data=[(address + offset, prepared[offset:offset + length])], **run)
+            elapsed += time.time() - started
             written += length
             runs += 1
             progress.update(written=written)
     finally:
         progress.finish()
 
+    # esptool reports what it wrote and how fast after every write; a differential one is
+    # made of many, so the same figures are totalled up and reported once here instead.
     if written == 0:
         print(f"{described} at {address:#010x} is already in flash, skipping write")
     elif abandoned:
         print(f"{described}: too much of it differs to keep comparing, wrote the remaining "
-              f"{Progress.size(written)} in full")
+              f"{Progress.size(written)} in full in {elapsed:.1f} seconds "
+              f"({Progress.rate(written, elapsed)})")
     else:
         print(f"{described}: wrote {Progress.size(written)} of "
-              f"{Progress.size(len(prepared))} in {runs} region{'s' if runs != 1 else ''}")
+              f"{Progress.size(len(prepared))} in {runs} region{'s' if runs != 1 else ''} "
+              f"in {elapsed:.1f} seconds ({Progress.rate(written, elapsed)})")
     return True
