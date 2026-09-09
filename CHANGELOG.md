@@ -4,6 +4,15 @@ All notable changes to this project are documented here. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- `app-info` (alias `print-app`), which prints the app description — project
+  name, version, IDF version, compile time, ELF SHA256, target chip — from a
+  bare application binary. `print-image` and `print-bundle` already printed this
+  per app partition; `app-info` reads an `app.bin` that is in neither yet, so a
+  build artifact can be identified before it is flashed or packed.
+
 ## [v0.9.0] — 2026-08-27
 
 ### Changed

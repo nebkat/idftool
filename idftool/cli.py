@@ -51,7 +51,7 @@ click.rich_click.COMMAND_GROUPS = {
     '*': [
         {'name': 'Discovery', 'commands': ['devices']},
         {'name': 'Partition I/O', 'commands': ['read', 'write', 'erase', 'view']},
-        {'name': 'Firmware', 'commands': ['ota', 'factory']},
+        {'name': 'Firmware', 'commands': ['ota', 'factory', 'app-info']},
         {'name': 'Boot selection', 'commands': ['get-boot', 'set-boot', 'clear-boot']},
         {'name': 'Images', 'commands': ['create-image', 'dump-image', 'write-image', 'print-image']},
         {'name': 'Bundles', 'commands': ['create-bundle', 'dump-bundle', 'write-bundle', 'print-bundle']},
