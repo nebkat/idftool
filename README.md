@@ -102,6 +102,7 @@ Setting boot partition to 'ota_1'...
 | **Firmware** | |
 | [`ota`](#ota) | Push an app to the next OTA slot and switch to it |
 | [`factory`](#factory) | Flash an app to the factory partition |
+| [`app-info`](#app-info) | Print the app description from an application binary |
 | **Boot selection** | |
 | [`get-boot`](#get-boot) | Show the currently-active OTA slot |
 | [`set-boot`](#set-boot) | Force the next boot to a specific OTA partition |
@@ -196,6 +197,17 @@ falls back to factory on next boot. If the device has no factory
 partition, the image is written to `ota_0` instead.
 ```text
 idftool factory build/my-app.bin
+```
+
+#### `app-info`
+Inspect an application binary on its own, without a device or a flash
+image: prints the project name, version, IDF version, compile time, ELF
+SHA256, and target chip from the app description the build embeds. This
+is the same block [`print-image`](#print-image) and
+[`print-bundle`](#print-bundle) print per app partition, for a bare
+`app.bin` that is not in either yet.
+```text
+idftool app-info -f build/my-app.bin
 ```
 
 ### Boot selection
@@ -661,7 +673,7 @@ idftool set-nvs -f nvs.bin storage:id=42
 
 Commands whose subject can only ever be a file take `-f` too, so there is
 nothing per-command to remember: `print-image -f`, `print-bundle -f`,
-`print-table -f`, `extract-fs -f`, `extract-nvs -f`.
+`print-table -f`, `extract-fs -f`, `extract-nvs -f`, `app-info -f`.
 
 Files that are *not* the subject keep their positional slot, because there is
 no device alternative for them to displace — the payload in
