@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from typing import Optional
 from zipfile import ZipFile
 
+import rich_click as click
+
 from esptool import ESPLoader, flash_size_bytes
 from esptool.cmds import detect_chip, detect_flash_size
 
@@ -19,6 +21,7 @@ from esp_pylib.serial_ports import get_port_names
 
 from idftool.partitions import check_image_file, check_write_bundle_has_partition_table, \
     load_partition_table_file, parse_partition_table_csv, read_otadata, require_partitions
+from idftool.ports import print_rerun_hint, select_device
 
 def get_esp(port: str | None, baud: int) -> ESPLoader:
     esp: ESPLoader | None = None
@@ -52,10 +55,12 @@ class State:
     """Holds the global options and the (lazily-established) device connection."""
 
     def __init__(self, *, port, baud, no_reset, partition_table_file, partition_table_offset,
-                 partition_table_size, primary_bootloader_offset, recovery_bootloader_offset):
+                 partition_table_size, primary_bootloader_offset, recovery_bootloader_offset,
+                 assume_yes=False):
         self.port = port
         self.baud = baud
         self.no_reset = no_reset
+        self.assume_yes = assume_yes
         self.partition_table_file = partition_table_file
         self.partition_table_offset = partition_table_offset
         self.partition_table_size = partition_table_size
@@ -67,8 +72,17 @@ class State:
         #: which happens after the command has already printed its result.
         self.stdout_is_data = False
 
+    def resolve_port(self) -> Optional[str]:
+        """The port to connect to: ``-p``, else ask interactively (unless ``-y``)."""
+        if self.port or self.assume_yes or not sys.stdin.isatty():
+            return self.port
+        port = select_device(self.baud)["port"]
+        print_rerun_hint(port)
+        return port
+
     def connect(self) -> ESPLoader:
         if self.esp is None:
+            self.port = self.resolve_port()
             self.esp = get_esp(port=self.port, baud=self.baud)
             # Fall back to the connected chip's bootloader offset only when the user didn't set one
             # explicitly, keeping the precedence: explicit CLI > chip default > value present in CSV.

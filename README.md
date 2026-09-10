@@ -598,8 +598,9 @@ These flags apply to every subcommand and go **before** the command name:
 
 | Flag | Purpose |
 |------|---------|
-| `-p`, `--port PATH` | Serial port device. If omitted, idftool auto-picks one. |
+| `-p`, `--port PATH` | Serial port device. If omitted, idftool asks — see [Choosing a device](#choosing-a-device). |
 | `-b`, `--baud N` | Serial baud rate (defaults to esptool's ROM baud, 115200). |
+| `-y`, `--yes` | Don't ask which device to use. |
 | `--no-reset` | Skip the hard reset that normally happens after a command. |
 | `--partition-table-file PATH` | Use a CSV or binary partition table from disk instead of reading it off the device. |
 | `--partition-table-offset OFFSET` | Where to expect the partition table in flash (default `0x8000`). |
@@ -610,6 +611,17 @@ These flags apply to every subcommand and go **before** the command name:
 The commands `list`, `create-image`, `create-bundle`, and `create-nvs` will
 work **without** a device when you supply `--partition-table-file`; everything
 else needs a connected ESP.
+
+## Choosing a device
+
+Without `-p`, idftool asks which device to use. `-y` skips the prompt. On
+macOS/Linux, `k` kills a process holding the selected port.
+
+```text
+? Select device
+ » /dev/cu.usbmodem1101   ESP32-S3      24:0a:c4:11:22:33
+   /dev/cu.usbserial-140  Unavailable   held by idf.py (pid 4417)
+```
 
 ## Write options
 

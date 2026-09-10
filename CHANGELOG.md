@@ -7,11 +7,9 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
-- `app-info` (alias `print-app`), which prints the app description — project
-  name, version, IDF version, compile time, ELF SHA256, target chip — from a
-  bare application binary. `print-image` and `print-bundle` already printed this
-  per app partition; `app-info` reads an `app.bin` that is in neither yet, so a
-  build artifact can be identified before it is flashed or packed.
+- Without `-p`, idftool asks which device to use. `-y` skips the prompt.
+- `k` in the device picker kills a process holding the port (macOS/Linux).
+- `idftool.ports.select_device()`, with an `identify` hook.
 
 ## [v0.9.0] — 2026-08-27
 

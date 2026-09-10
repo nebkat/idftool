@@ -17,6 +17,7 @@ from idftool.state import State
 pass_state = click.make_pass_decorator(State)
 
 
+
 def reject_file_as_partition(name, command):
     """Catch an image file passed where a partition name belongs.
 
@@ -68,6 +69,7 @@ click.rich_click.COMMAND_GROUPS = {
 @click.group(context_settings=CONTEXT_SETTINGS)
 @click.option('-p', '--port', default=None, help='Serial port device')
 @click.option('-b', '--baud', type=int, default=ESPLoader.ESP_ROM_BAUD, show_default=True, help='Serial port baud rate')
+@click.option('-y', '--yes', is_flag=True, help='Do not ask which device to use')
 @click.option('--no-reset', is_flag=True, help='Do not reset the chip after operations')
 @click.option('--partition-table-file', default=None,
               help='Path to a partition table CSV or binary file to use instead of reading from the device')
@@ -80,13 +82,14 @@ click.rich_click.COMMAND_GROUPS = {
 @click.option('--recovery-bootloader-offset', type=BASED_INT, default=None,
               help='Recovery bootloader offset (used when loading a table from CSV)')
 @click.pass_context
-def cli(ctx, port, baud, no_reset, partition_table_file, partition_table_offset,
+def cli(ctx, port, baud, yes, no_reset, partition_table_file, partition_table_offset,
         partition_table_size, primary_bootloader_offset, recovery_bootloader_offset):
     """Utility for flashing, provisioning, and interacting with Espressif SOCs running ESP-IDF."""
     ctx.obj = State(
         port=port,
         baud=baud,
         no_reset=no_reset,
+        assume_yes=yes,
         partition_table_file=partition_table_file,
         partition_table_offset=partition_table_offset,
         partition_table_size=partition_table_size,
