@@ -4,9 +4,11 @@ All notable changes to this project are documented here. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [v0.10.0] — 2026-09-10
 
 ### Added
+- `app-info` (alias `print-app`) prints the app description of a bare
+  application binary.
 - Without `-p`, idftool asks which device to use. `-y` skips the prompt.
 - `k` in the device picker kills a process holding the port (macOS/Linux).
 - `idftool.ports.select_device()`, with an `identify` hook.
@@ -339,6 +341,7 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 ### Added
 - Initial release.
 
+[v0.10.0]: https://github.com/nebkat/idftool/releases/tag/v0.10.0
 [v0.9.0]: https://github.com/nebkat/idftool/releases/tag/v0.9.0
 [v0.8.1]: https://github.com/nebkat/idftool/releases/tag/v0.8.1
 [v0.8.0]: https://github.com/nebkat/idftool/releases/tag/v0.8.0
