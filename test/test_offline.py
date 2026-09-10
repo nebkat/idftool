@@ -1,4 +1,6 @@
 """Offline idftool tests — no device required. Safe to run with a plain ``pytest``."""
+import sys
+
 import pytest
 
 from conftest import SAMPLES
@@ -512,3 +514,232 @@ def test_spiffs_name_limit_is_explained(run_offline, tmp_path):
     out = run_offline(f"create-fs {root} -o {tmp_path / 'x.bin'} --size 0x10000 -t spiffs",
                       expect_error=True)
     assert "--spiffs-obj-name-len" in out
+
+
+# --- device selection -------------------------------------------------------------------------
+
+def _state(monkeypatch, *, tty=True, **options):
+    import idftool.state as state_module
+
+    monkeypatch.setattr(state_module.sys.stdin, "isatty", lambda: tty, raising=False)
+    return state_module.State(
+        port=options.pop('port', None), baud=115200, no_reset=False,
+        partition_table_file=None, partition_table_offset=0x8000, partition_table_size=0xc00,
+        primary_bootloader_offset=None, recovery_bootloader_offset=None, **options)
+
+
+def _picker(monkeypatch, *, ports):
+    import idftool.state as state_module
+
+    shown = []
+
+    def select_device(baud, **_):
+        shown.append(list(ports))
+        return {"port": ports[0], "chip": "ESP32-S3", "mac": None, "error": None}
+
+    monkeypatch.setattr(state_module, "select_device", select_device)
+    monkeypatch.setattr(state_module, "print_rerun_hint", lambda port: None)
+    return shown
+
+
+def test_explicit_port_is_never_second_guessed(monkeypatch):
+    shown = _picker(monkeypatch, ports=["/dev/a", "/dev/b"])
+    assert _state(monkeypatch, port="/dev/chosen").resolve_port() == "/dev/chosen"
+    assert shown == []
+
+
+def test_unattended_run_is_never_asked(monkeypatch):
+    shown = _picker(monkeypatch, ports=["/dev/a", "/dev/b"])
+    assert _state(monkeypatch, tty=False).resolve_port() is None
+    assert shown == []
+
+
+def test_yes_skips_the_prompt(monkeypatch):
+    shown = _picker(monkeypatch, ports=["/dev/a", "/dev/b"])
+    assert _state(monkeypatch, assume_yes=True).resolve_port() is None
+    assert shown == []
+
+
+@pytest.mark.parametrize("ports", [["/dev/only"], ["/dev/a", "/dev/b"]])
+def test_an_interactive_run_always_asks(monkeypatch, ports):
+    shown = _picker(monkeypatch, ports=ports)
+    assert _state(monkeypatch).resolve_port() == ports[0]
+    assert shown == [ports]
+
+
+def test_an_empty_manual_entry_goes_back_to_the_list(monkeypatch):
+    import idftool.ports as ports
+
+    answers = iter([(ports.MANUAL, None), ("/dev/a", {"port": "/dev/a", "chip": "ESP32",
+                                                       "mac": None, "error": None})])
+    monkeypatch.setattr(ports, "_pick", lambda *a, **k: next(answers))
+    monkeypatch.setattr(ports.questionary, "text",
+                        lambda *a, **k: type("Q", (), {"unsafe_ask": lambda self: ""})())
+    monkeypatch.setattr(ports.sys.stdin, "isatty", lambda: True, raising=False)
+    assert ports.select_device(115200)["port"] == "/dev/a"
+
+
+def test_a_probe_releases_the_port_and_says_why_it_failed():
+    import os
+
+    import serial
+
+    from idftool.ports import probe_port
+
+    master, slave = os.openpty()
+    try:
+        path = os.ttyname(slave)
+        found = probe_port(path, 115200)
+        assert found["chip"] is None
+        assert found["error"] == "no response (not an ESP, or not in download mode)"
+        serial.Serial(path, exclusive=True).close()
+    finally:
+        os.close(master)
+        os.close(slave)
+
+
+def test_a_busy_port_names_who_is_holding_it():
+    import os
+    import shutil
+
+    import serial
+
+    from idftool.ports import probe_port
+
+    if shutil.which("lsof") is None:
+        pytest.skip("needs lsof to name the holder")
+    master, slave = os.openpty()
+    held = serial.Serial(os.ttyname(slave), exclusive=True)
+    try:
+        found = probe_port(os.ttyname(slave), 115200)
+        assert "held by this process" in found["error"]
+    finally:
+        held.close()
+        os.close(master)
+        os.close(slave)
+
+
+# --- identify ---------------------------------------------------------------------------------
+
+class _FakeLoader:
+    CHIP_NAME = "ESP32-S3"
+
+    def __init__(self):
+        self.closed = self.reset = False
+        self._port = self
+
+    def read_mac(self, mac_type):
+        return bytes.fromhex("240ac4112233")
+
+    def hard_reset(self):
+        self.reset = True
+
+    def close(self):
+        self.closed = True
+
+
+@pytest.fixture
+def fake_chip(monkeypatch):
+    import esptool.cmds
+
+    loader = _FakeLoader()
+    monkeypatch.setattr(esptool.cmds, "detect_chip", lambda port, **_: loader)
+    return loader
+
+
+def test_identify_names_the_device_and_rides_along(fake_chip):
+    from idftool.ports import device_fields, probe_port
+
+    class Board:
+        def __str__(self):
+            return "Harvest Controller v3"
+
+    board = Board()
+    seen = []
+    found = probe_port("/dev/x", 115200, lambda esp: seen.append(esp) or board)
+
+    assert seen == [fake_chip]
+    assert found["identity"] is board
+    assert device_fields(found) == ("/dev/x", "Harvest Controller v3", "ESP32-S3 · 24:0a:c4:11:22:33")
+    assert fake_chip.reset and fake_chip.closed
+
+
+def test_identify_returning_none_falls_back_to_the_chip(fake_chip):
+    from idftool.ports import device_fields, probe_port
+
+    found = probe_port("/dev/x", 115200, lambda esp: None)
+    assert device_fields(found) == ("/dev/x", "ESP32-S3", "24:0a:c4:11:22:33")
+
+
+def test_a_failing_identify_leaves_the_device_usable(fake_chip):
+    from idftool.ports import device_fields, probe_port
+
+    def identify(esp):
+        raise ValueError("nvs_ro has no device_type")
+
+    found = probe_port("/dev/x", 115200, identify)
+    assert found["error"] is None and found["identity"] is None
+    assert device_fields(found) == (
+        "/dev/x", "ESP32-S3", "24:0a:c4:11:22:33 · could not identify: nvs_ro has no device_type")
+    assert fake_chip.closed
+
+
+def test_device_labels_line_up():
+    from idftool.ports import device_labels
+
+    labels = device_labels([
+        {"port": "/dev/cu.usbmodem1101", "chip": "ESP32-S3", "mac": "24:0a:c4:11:22:33",
+         "identity": None, "error": None},
+        {"port": "/dev/ttyUSB0", "chip": None, "mac": None, "error": "held by idf.py (pid 1)"},
+    ])
+    assert labels == [
+        "/dev/cu.usbmodem1101   ESP32-S3      24:0a:c4:11:22:33",
+        "/dev/ttyUSB0           Unavailable   held by idf.py (pid 1)",
+    ]
+
+
+# --- kill -------------------------------------------------------------------------------------
+
+def _held_pty():
+    import os
+    import subprocess
+    import time
+
+    from idftool.ports import port_holders
+
+    master, slave = os.openpty()
+    path = os.ttyname(slave)
+    holder = subprocess.Popen([sys.executable, "-c",
+                               "import serial, sys, time; s = serial.Serial(sys.argv[1], exclusive=True)"
+                               "; time.sleep(60)", path])
+    deadline = time.monotonic() + 10
+    while not any(pid == holder.pid for pid, _ in port_holders(path)):
+        assert time.monotonic() < deadline, "holder never opened the port"
+        time.sleep(0.1)
+    return master, slave, path, holder
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="posix only")
+@pytest.mark.parametrize("confirmed", [True, False])
+def test_kill_holders(monkeypatch, confirmed):
+    import os
+    import shutil
+
+    import idftool.ports as ports
+
+    if shutil.which("lsof") is None:
+        pytest.skip("needs lsof")
+    master, slave, path, holder = _held_pty()
+    monkeypatch.setattr(ports.questionary, "confirm",
+                        lambda *a, **k: type("Q", (), {"unsafe_ask": lambda self: confirmed})())
+    try:
+        ports.kill_holders(path)
+        if confirmed:
+            assert holder.wait(timeout=5) is not None
+        else:
+            assert holder.poll() is None
+    finally:
+        holder.kill()
+        holder.wait()
+        os.close(master)
+        os.close(slave)
