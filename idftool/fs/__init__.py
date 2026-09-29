@@ -20,11 +20,13 @@ from typing import Optional
 
 from esp_idf_defs.partitions import DATA_TYPE, SUBTYPES, PartitionDefinition
 
+from idftool.display import Rows
 from idftool.fs import fatfs, littlefs, spiffs
 from idftool.fs.common import FsEntry, FsError, SourceEntry, Volume, collect
 
 __all__ = ['FsEntry', 'FsError', 'SourceEntry', 'Volume', 'FS_TYPES', 'create', 'mount',
-           'detect', 'describe', 'extract', 'resolve_type', 'backend_options', 'collect']
+           'detect', 'describe', 'extract', 'resolve_type', 'backend_options', 'collect',
+           'listing_rows']
 
 BACKENDS = {module.NAME: module for module in (fatfs, littlefs, spiffs)}
 FS_TYPES = tuple(BACKENDS)
@@ -156,21 +158,19 @@ def extract(volume: Volume, destination: str) -> list[FsEntry]:
     return entries
 
 
-def format_listing(entries: list[FsEntry]) -> str:
-    """Render a listing as a table in the same style as the partition table."""
-    if not entries:
-        return "(empty)"
-    width = max(len(e.path) for e in entries) + 1
-    lines = [f"| {'Path'.ljust(width)}| {'Size'.rjust(9)} |",
-             f"|{'-' * (width + 1)}|{'-' * 11}|"]
-    for entry in sorted(entries, key=lambda e: e.path):
-        size = '<dir>' if entry.is_dir else f"{entry.size}"
-        lines.append(f"| {entry.path.ljust(width)}| {size.rjust(9)} |")
+def listing_rows(entries: list[FsEntry]) -> Rows:
+    """A listing as :class:`~idftool.display.Rows`."""
+    rows = [(e.path, '<dir>' if e.is_dir else f"{e.size}")
+            for e in sorted(entries, key=lambda e: e.path)]
     files = sum(1 for e in entries if not e.is_dir)
     total = sum(e.size for e in entries if not e.is_dir)
     dirs = len(entries) - files
     summary = f"{files} file{'' if files == 1 else 's'}, {total} bytes"
     if dirs:
         summary += f", {dirs} director{'y' if dirs == 1 else 'ies'}"
-    lines.append(summary)
-    return '\n'.join(lines)
+    return Rows(('Path', 'Size'), rows, right={1: 9}, styles={0: "bold"}, footer=summary)
+
+
+def format_listing(entries: list[FsEntry]) -> str:
+    """Render a listing as a table in the same style as the partition table."""
+    return listing_rows(entries).markdown() if entries else "(empty)"

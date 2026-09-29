@@ -69,6 +69,8 @@ click.rich_click.COMMAND_GROUPS = {
 @click.group(context_settings=CONTEXT_SETTINGS)
 @click.option('-p', '--port', default=None, help='Serial port device')
 @click.option('-m', '--mac', type=MAC, default=None, help='Use the device with this MAC address')
+@click.option('--usb-serial', default=None,
+              help='Use the port with this USB serial number (e.g. an FTDI or CP2102N adapter)')
 @click.option('-b', '--baud', type=int, default=ESPLoader.ESP_ROM_BAUD, show_default=True, help='Serial port baud rate')
 @click.option('--probe', is_flag=True,
               help='Connect to every port to identify its board (resets them)')
@@ -85,14 +87,15 @@ click.rich_click.COMMAND_GROUPS = {
 @click.option('--recovery-bootloader-offset', type=BASED_INT, default=None,
               help='Recovery bootloader offset (used when loading a table from CSV)')
 @click.pass_context
-def cli(ctx, port, mac, baud, probe, yes, no_reset, partition_table_file, partition_table_offset,
+def cli(ctx, port, mac, usb_serial, baud, probe, yes, no_reset, partition_table_file, partition_table_offset,
         partition_table_size, primary_bootloader_offset, recovery_bootloader_offset):
     """Utility for flashing, provisioning, and interacting with Espressif SOCs running ESP-IDF."""
-    if port and mac:
-        raise click.UsageError("-p/--port and -m/--mac are mutually exclusive")
+    if sum(bool(o) for o in (port, mac, usb_serial)) > 1:
+        raise click.UsageError("-p/--port, -m/--mac and --usb-serial are mutually exclusive")
     ctx.obj = State(
         port=port,
         mac=mac,
+        usb_serial=usb_serial,
         probe=probe,
         baud=baud,
         no_reset=no_reset,

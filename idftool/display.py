@@ -1,7 +1,9 @@
-"""Terminal rendering: the partition table boxed and coloured when stdout is a terminal.
+"""Terminal rendering: tables boxed and coloured when stdout is a terminal.
 
-Anything else (a pipe, a file, a captured test) gets esp_idf_defs' plain table unchanged."""
+Anything else (a pipe, a file, a captured test) gets a plain Markdown table, unchanged from
+before the boxed ones existed."""
 import sys
+from dataclasses import dataclass, field
 from typing import Callable, Optional
 
 from esp_idf_defs.app_description import AppDescription
@@ -11,6 +13,56 @@ from esp_idf_defs.partitions import PartitionDefinition, APP_TYPE, DATA_TYPE, SU
 
 #: Type name → colour of its Type cell.
 TYPE_STYLES = {"app": "cyan", "data": "magenta", "bootloader": "yellow", "partition_table": "yellow"}
+
+
+@dataclass
+class Rows:
+    """A table: rendered boxed by :func:`print_rows` on a terminal, or as Markdown."""
+    headings: tuple[str, ...]
+    rows: list[tuple[str, ...]]
+    #: Indexes of right-aligned columns, and a minimum width for each (for Markdown).
+    right: dict[int, int] = field(default_factory=dict)
+    #: Rich style per column, on a terminal.
+    styles: dict[int, str] = field(default_factory=dict)
+    footer: Optional[str] = None
+
+    def markdown(self) -> str:
+        widths = [max([len(h), self.right.get(i, 0), *(len(r[i]) for r in self.rows)])
+                  for i, h in enumerate(self.headings)]
+
+        def line(cells):
+            return '| ' + ' | '.join(c.rjust(w) if i in self.right else c.ljust(w)
+                                     for i, (c, w) in enumerate(zip(cells, widths))) + ' |'
+
+        out = [line(self.headings), '|' + '|'.join('-' * (w + 2) for w in widths) + '|']
+        out += [line(r) for r in self.rows]
+        if self.footer:
+            out.append(self.footer)
+        return '\n'.join(out)
+
+
+def print_rows(rows: Rows) -> None:
+    """Print `rows`: boxed and coloured on a terminal, Markdown otherwise."""
+    if not rows.rows:
+        print("(empty)")
+        return
+    from rich import box
+    from rich.console import Console
+    from rich.table import Table
+
+    console = Console(file=sys.stdout, highlight=False)
+    if not console.is_terminal:
+        print(rows.markdown())
+        return
+    table = Table(box=box.ROUNDED, border_style="dim", header_style="bold")
+    for i, heading in enumerate(rows.headings):
+        table.add_column(heading, justify="right" if i in rows.right else "left",
+                         style=rows.styles.get(i, ""), overflow="fold")
+    for row in rows.rows:
+        table.add_row(*row)
+    console.print(table)
+    if rows.footer:
+        console.print(rows.footer, style="dim")
 
 
 def _keyword(value: int, keywords: dict) -> str:

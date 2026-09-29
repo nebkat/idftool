@@ -538,7 +538,7 @@ def _picker(monkeypatch, *, ports):
         return {"port": ports[0], "chip": "ESP32-S3", "mac": None, "error": None}
 
     monkeypatch.setattr(state_module, "select_device", select_device)
-    monkeypatch.setattr(state_module, "print_rerun_hint", lambda port, mac=None: None)
+    monkeypatch.setattr(state_module, "print_rerun_hint", lambda *_: None)
     return shown
 
 
@@ -762,7 +762,7 @@ def test_a_serial_that_is_not_a_mac_is_rejected(text):
 def _listed(monkeypatch, *ports):
     import idftool.ports as ports_module
 
-    listed = [type("Port", (), {"device": device, "serial_number": serial})()
+    listed = [type("Port", (), {"device": device, "serial_number": serial, "vid": None})()
               for device, serial in ports]
     monkeypatch.setattr(ports_module.serial_ports, "get_port_list", lambda: listed)
     probed = []
@@ -907,3 +907,41 @@ def test_a_probed_port_keeps_its_adapter():
         "/dev/bridge   CP210x",
     ]
     assert device_label(jtag) == "/dev/jtag — ESP32-S3 · ESP USB-Serial/JTAG · 9c:13:9e:1b:d4:6c"
+
+
+def test_a_usb_serial_finds_its_port(monkeypatch):
+    from idftool.ports import find_port_for_usb_serial
+
+    _listed(monkeypatch, ("/dev/ftdi", "A50285BI"), ("/dev/jtag", "9C:13:9E:1B:D4:6C"))
+    assert find_port_for_usb_serial("A50285BI") == "/dev/ftdi"
+
+
+def test_a_shared_usb_serial_is_refused(monkeypatch):
+    import rich_click as click
+
+    from idftool.ports import find_port_for_usb_serial
+
+    _listed(monkeypatch, ("/dev/a", "0001"), ("/dev/b", "0001"))
+    with pytest.raises(click.ClickException, match="shared by /dev/a, /dev/b"):
+        find_port_for_usb_serial("0001")
+
+
+def test_the_rerun_hint_offers_a_unique_usb_serial(capsys, monkeypatch):
+    from idftool.ports import print_rerun_hint
+
+    _listed(monkeypatch, ("/dev/ftdi", "A50285BI"), ("/dev/a", "0001"), ("/dev/b", "0001"))
+    monkeypatch.setattr(sys, "argv", ["idftool", "get-boot"])
+    print_rerun_hint("/dev/ftdi", None, "A50285BI")
+    print_rerun_hint("/dev/a", None, "0001")
+    err = capsys.readouterr().err.splitlines()
+    assert err[1].endswith("idftool --usb-serial A50285BI get-boot")
+    assert len(err) == 3  # no alternative for a serial number two ports share
+
+
+def test_a_usb_serial_matches_ftdis_windows_channel_suffix(monkeypatch):
+    import idftool.ports as ports_module
+
+    listed = [type("Port", (), {"device": "COM5", "vid": 0x0403, "serial_number": "A50285BIA"})()]
+    monkeypatch.setattr(ports_module.serial_ports, "get_port_list", lambda: listed)
+    assert ports_module.usb_ports_for_serial("A50285BI") == ["COM5"]
+    assert ports_module.usb_ports_for_serial("A50285BIA") == ["COM5"]

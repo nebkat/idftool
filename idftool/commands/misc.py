@@ -1,4 +1,5 @@
 """Discovery and one-off commands: ``devices``, ``monitor`` and ``enter-bootloader``."""
+import concurrent.futures
 import os.path
 import sys
 import time
@@ -11,37 +12,86 @@ from esp_pylib.constants import ESPRESSIF_VID
 from esp_pylib.serial_ports import get_port_list
 
 from idftool.cli import cli, pass_state
-from idftool.ports import adapter_name, prompt_for_port, usb_port_for_mac
+from idftool.ports import adapter_name, probe_port, prompt_for_port, quiet_esptool, \
+    usb_port_for_mac, usb_ports_for_serial
 
-def list_devices():
+def list_devices(state=None, probe=False):
+    """List the serial ports. With `probe`, connect to each to add its chip and MAC, which
+    resets the boards."""
+    from rich import box
+    from rich.console import Console
+    from rich.table import Table
+    from rich.text import Text
+
     ports = get_port_list()
     if not ports:
         click.echo("No serial ports found.", err=True)
         return
-    header = ("PORT", "TYPE", "SERIAL", "USB ID", "LOCATION")
-    rows = [(p.device, adapter_name(p), p.serial_number or "",
-             f"{p.vid:04X}:{p.pid:04X}" if p.vid is not None else "", p.location or "")
-            for p in ports]
-    widths = [max(len(r[i]) for r in [header, *rows]) for i in range(len(header))]
+    probed = {}
+    if probe:
+        click.echo(f"Probing {len(ports)} port(s)…", err=True)
+        baud = state.baud if state is not None else 115200
+        with quiet_esptool(), concurrent.futures.ThreadPoolExecutor(
+                max_workers=min(8, len(ports))) as pool:
+            for found in pool.map(lambda p: probe_port(p.device, baud), ports):
+                probed[found["port"]] = found
 
-    def line(cells, styles):
-        padded = [f"{c:<{w}}" for c, w in zip(cells, widths)]
-        padded[-1] = cells[-1]
-        return "  ".join(click.style(c, **s) for c, s in zip(padded, styles))
+    header = ["Port"]
+    if probe:
+        header += ["Chip", "MAC"]
+    header += ["Type", "USB serial #", "USB ID", "Location"]
+    rows, styles = [], []
+    for p in ports:
+        native = p.vid == ESPRESSIF_VID
+        row = [p.device]
+        style = [{"fg": "green", "bold": True}]
+        if probe:
+            found = probed[p.device]
+            row += [found["chip"] or "unavailable", found["mac"] or ""]
+            style += [{"bold": True} if found["chip"] else {"fg": "red"}, {}]
+        row += [adapter_name(p), p.serial_number or "",
+                f"{p.vid:04X}:{p.pid:04X}" if p.vid is not None else "", p.location or ""]
+        style += [{"fg": "cyan" if native else "yellow"}, {}, {"dim": True}, {"dim": True}]
+        rows.append(row)
+        styles.append(style)
+    console = Console(highlight=False)
+    if console.is_terminal:
+        def rich_style(style):
+            return " ".join(filter(None, ["bold" if style.get("bold") else "",
+                                          "dim" if style.get("dim") else "", style.get("fg")]))
 
-    click.echo(line(header, [{"bold": True, "dim": True}] * len(header)))
-    for port, row in zip(ports, rows):
-        native = port.vid == ESPRESSIF_VID
-        click.echo(line(row, [{"fg": "green", "bold": True},
-                              {"fg": "cyan" if native else "yellow"},
-                              {},
-                              {"dim": True},
-                              {"dim": True}]))
+        # Drop columns from the right (Location, USB ID, and with a MAC column, the serial
+        # number) rather than squeeze every column on a narrow terminal.
+        shown = len(header)
+        while shown > (4 if probe else 3) and (
+                sum(max(len(r[i]) for r in [header, *rows]) + 3 for i in range(shown)) + 1
+                > console.width):
+            shown -= 1
+        table = Table(box=box.ROUNDED, border_style="dim", header_style="bold")
+        for heading in header[:shown]:
+            table.add_column(heading, no_wrap=True)
+        for row, style in zip(rows, styles):
+            table.add_row(*(Text(cell, style=rich_style(st))
+                            for cell, st in list(zip(row, style))[:shown]))
+        console.print(table)
+    else:
+        # Space-separated columns when piped, for awk and friends.
+        widths = [max(len(r[i]) for r in [header, *rows]) for i in range(len(header))]
+        for row in [header, *rows]:
+            print("  ".join(f"{c:<{w}}" for c, w in zip(row, widths)).rstrip())
+    failures = [(port, found["error"]) for port, found in probed.items() if found["error"]]
+    if failures:
+        click.echo()
+        for port, error in failures:
+            click.echo(click.style(f"{port}: {error}", dim=True))
 
 
-@cli.command('devices', help='List serial ports and their USB adapters')
-def cmd_devices():
-    return list_devices()
+@cli.command('devices', aliases=['ports'], help='List serial ports and their USB adapters')
+@click.option('--probe', is_flag=True,
+              help='Connect to each port to add its chip and MAC (resets the boards)')
+@pass_state
+def cmd_devices(state, probe):
+    return list_devices(state, probe or state.probe)
 
 
 def monitor(state, monitor_args=()):
@@ -69,15 +119,18 @@ def cmd_monitor(state, monitor_args):
 
 def enter_bootloader(state):
     baud, poll_interval = state.baud, 0.05
-    if state.mac and not state.port:
+    if (state.mac or state.usb_serial) and not state.port:
         # Only a USB serial number can name a port that isn't there yet.
-        print(f"Waiting for {state.mac}...", file=sys.stderr)
-        while (port := usb_port_for_mac(state.mac)) is None:
+        wanted = state.mac or state.usb_serial
+        print(f"Waiting for {wanted}...", file=sys.stderr)
+        while (port := usb_port_for_mac(state.mac) if state.mac
+               else next(iter(usb_ports_for_serial(state.usb_serial)), None)) is None:
             time.sleep(poll_interval)
     else:
         port = state.port or prompt_for_port()
         if not port:
-            raise click.UsageError("enter-bootloader requires -p/--port or -m/--mac")
+            raise click.UsageError(
+                "enter-bootloader requires -p/--port, -m/--mac or --usb-serial")
         print(f"Waiting for {port}...", file=sys.stderr)
     while True:
         while not os.path.exists(port):

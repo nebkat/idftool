@@ -12,6 +12,7 @@ import rich_click as click
 
 
 from idftool.cli import cli, pass_state, reject_file_as_partition
+from idftool.display import print_rows
 from idftool.flash import flash_options, option_group, write_flash, write_flash_options
 from idftool.nvs import fit_nvs_binary, generate_nvs_image, looks_like_nvs_binary
 from idftool.params import BASED_INT
@@ -129,9 +130,9 @@ def print_nvs(state, partition, image_file, pages):
     print(f"{source[0].upper()}{source[1:]}: NVS version {2 if image.version == 0xFE else 1}, "
           f"{image.size:#x} bytes")
     if pages:
-        print(nvs.format_pages(image))
+        print_rows(nvs.pages_rows(image))
         print()
-    print(nvs.format_entries(image.entries))
+    print_rows(nvs.entries_rows(image.entries))
 
 
 @cli.command('print-nvs', aliases=['list-nvs'],
@@ -154,7 +155,7 @@ def extract_nvs(state, image_file, csv_file):
     text = nvs.to_csv(image.entries)
     with open(csv_file, 'w', encoding='utf-8') as f:
         f.write(text)
-    print(nvs.format_entries(image.entries))
+    print_rows(nvs.entries_rows(image.entries))
     print(f"Extracted {source} to '{csv_file}'")
 
 
@@ -174,7 +175,7 @@ def read_nvs(state, partition, csv_file):
     _report_errors(image)
     with open(csv_file, 'w', encoding='utf-8') as f:
         f.write(nvs.to_csv(image.entries))
-    print(nvs.format_entries(image.entries))
+    print_rows(nvs.entries_rows(image.entries))
     print(f"Extracted {source} to '{csv_file}'")
 
 

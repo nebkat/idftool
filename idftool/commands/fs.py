@@ -11,6 +11,7 @@ import rich_click as click
 
 
 from idftool.cli import cli, pass_state, reject_file_as_partition
+from idftool.display import print_rows
 from idftool.flash import FLASH_OPTION_FLAGS, flash_options, split_options, write_flash, write_flash_options
 from idftool.params import BASED_INT
 from idftool.partitions import get_partition
@@ -122,7 +123,7 @@ def create_fs(state, source, output_file, fs_type, size, partition, **options):
     with open(output_file, 'wb') as f:
         f.write(image)
     with fs.mount(fs_type, image, **opts) as volume:
-        print(fs.format_listing(volume.entries()))
+        print_rows(fs.listing_rows(volume.entries()))
     print(f"Wrote {len(image):#x} bytes to '{output_file}'")
 
 
@@ -180,7 +181,7 @@ def write_fs(state, partition, source, fs_type, **options):
             image = fs.create(fs_type, source, part.size, **opts)
 
     with fs.mount(fs_type, image, **opts) as volume:
-        print(fs.format_listing(volume.entries()))
+        print_rows(fs.listing_rows(volume.entries()))
     print(f"Writing {fs_type} image to partition '{part.name}' "
           f"(offset={part.offset:#x}, size={part.size:#x})")
     write_flash(esp=loaded.esp, addr_data=[(part.offset, image)], flash_size='detect',
@@ -211,7 +212,7 @@ def read_fs(state, partition, destination, fs_type, **options):
     opts = _fs_options_for(fs_type, options)
     with fs.mount(fs_type, image, **opts) as volume:
         entries = fs.extract(volume, destination)
-    print(fs.format_listing(entries))
+    print_rows(fs.listing_rows(entries))
     print(f"Extracted {fs_type} partition '{part.name}' to '{destination}'")
 
 
@@ -233,7 +234,7 @@ def extract_fs(state, image_file, destination, fs_type, **options):
     opts = _fs_options_for(fs_type, options)
     with fs.mount(fs_type, image, **opts) as volume:
         entries = fs.extract(volume, destination)
-    print(fs.format_listing(entries))
+    print_rows(fs.listing_rows(entries))
     print(f"Extracted {fs_type} image '{image_file}' to '{destination}'")
 
 
@@ -269,7 +270,7 @@ def print_fs(state, partition, image_file, fs_type, **options):
     opts = _fs_options_for(fs_type, options)
     print(f"{source[0].upper()}{source[1:]}: {fs_type}, {len(image):#x} bytes")
     with fs.mount(fs_type, image, **opts) as volume:
-        print(fs.format_listing(volume.entries()))
+        print_rows(fs.listing_rows(volume.entries()))
 
 
 @cli.command('print-fs', aliases=['list-fs'], help='List the contents of a filesystem partition or image')

@@ -13,6 +13,7 @@ can legitimately contain a half-written entry — the firmware ignores those too
 """
 import struct
 
+from idftool.display import Rows
 from idftool.nvs.common import (
     BITMAP_OFFSET, BITMAP_SIZE, ENTRY_ERASED, ENTRY_SIZE, ENTRY_STATES,
     ENTRY_WRITTEN, FIRST_ENTRY_OFFSET, HEADER_SIZE, MAX_ENTRIES, PAGE_SIZE, PAGE_STATES,
@@ -241,32 +242,27 @@ def parse(image: bytes, *, strict: bool = False) -> NvsImage:
                     errors=errors, version=version)
 
 
-def format_entries(entries: list[NvsEntry]) -> str:
-    """Render key/value pairs as a table, in the style of the partition table listing."""
-    if not entries:
-        return "(empty)"
-
+def entries_rows(entries: list[NvsEntry]) -> Rows:
+    """Key/value pairs as :class:`~idftool.display.Rows`."""
     rows = [(e.namespace, e.key, e.type, e.format_value()) for e in
             sorted(entries, key=lambda e: (e.namespace, e.key))]
-    headings = ('Namespace', 'Key', 'Type', 'Value')
-    widths = [max(len(h), max(len(r[i]) for r in rows)) for i, h in enumerate(headings)]
-
-    def line(cells):
-        return '| ' + ' | '.join(c.ljust(w) for c, w in zip(cells, widths)) + ' |'
-
-    out = [line(headings), '|' + '|'.join('-' * (w + 2) for w in widths) + '|']
-    out += [line(r) for r in rows]
-
     count = len(entries)
     total = sum(e.size for e in entries)
     namespaces = len({e.namespace for e in entries})
-    out.append(f"{count} entr{'y' if count == 1 else 'ies'} in {namespaces} "
-               f"namespace{'' if namespaces == 1 else 's'}, {total} bytes of data")
-    return '\n'.join(out)
+    footer = (f"{count} entr{'y' if count == 1 else 'ies'} in {namespaces} "
+              f"namespace{'' if namespaces == 1 else 's'}, {total} bytes of data")
+    return Rows(('Namespace', 'Key', 'Type', 'Value'), rows,
+                styles={0: "cyan", 1: "bold", 2: "magenta"}, footer=footer)
 
 
-def format_pages(image: NvsImage) -> str:
-    """Render the page map — states, sequence numbers, and how full each page is."""
+def format_entries(entries: list[NvsEntry]) -> str:
+    """Render key/value pairs as a table, in the style of the partition table listing."""
+    return entries_rows(entries).markdown() if entries else "(empty)"
+
+
+def pages_rows(image: NvsImage) -> Rows:
+    """The page map (states, sequence numbers, and how full each page is) as
+    :class:`~idftool.display.Rows`."""
     rows = []
     for page in image.pages:
         if page.is_uninit:
@@ -277,16 +273,12 @@ def format_pages(image: NvsImage) -> str:
         erased = sum(1 for s in page.entry_states if s == ENTRY_ERASED)
         rows.append((str(page.index), str(page.seq), page.state_name,
                      f'{used}/{MAX_ENTRIES}', f'{written} written, {erased} erased'))
+    return Rows(('Page', 'Seq', 'State', 'Used', 'Entries'), rows, styles={2: "bold"})
 
-    headings = ('Page', 'Seq', 'State', 'Used', 'Entries')
-    widths = [max(len(h), max(len(r[i]) for r in rows)) for i, h in enumerate(headings)]
 
-    def line(cells):
-        return '| ' + ' | '.join(c.ljust(w) for c, w in zip(cells, widths)) + ' |'
-
-    out = [line(headings), '|' + '|'.join('-' * (w + 2) for w in widths) + '|']
-    out += [line(r) for r in rows]
-    return '\n'.join(out)
+def format_pages(image: NvsImage) -> str:
+    """Render the page map — states, sequence numbers, and how full each page is."""
+    return pages_rows(image).markdown()
 
 
 def describe_state(state: int) -> str:

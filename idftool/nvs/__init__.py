@@ -16,10 +16,10 @@ from idftool.nvs.common import (
     MAX_KEY_LEN, PAGE_SIZE, PRIMITIVES, TYPE_CODES, NvsEntry, NvsError, NvsImage, NvsPage,
     RawEntry, VARLEN,
 )
-from idftool.nvs.parser import format_entries, format_pages, parse
+from idftool.nvs.parser import entries_rows, format_entries, format_pages, pages_rows, parse
 
 __all__ = ['NvsEntry', 'NvsError', 'NvsImage', 'NvsPage', 'RawEntry', 'PAGE_SIZE', 'VARLEN',
-           'PRIMITIVES', 'TYPE_CODES', 'MAX_KEY_LEN', 'parse', 'format_entries', 'format_pages',
+           'PRIMITIVES', 'TYPE_CODES', 'MAX_KEY_LEN', 'parse', 'format_entries', 'format_pages', 'entries_rows', 'pages_rows',
            'looks_like_nvs_binary', 'fit_nvs_binary', 'generate_nvs_image', 'to_csv']
 
 NVS_PAGE_SIZE = PAGE_SIZE  # kept for callers that imported the old name
