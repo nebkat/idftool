@@ -26,6 +26,8 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 - Requires `esptool` 5.4 or later. Supports `esp-idf-nvs-partition-gen` 0.3.
 
 ### Fixed
+- `write-bundle` accepts a bundle with an empty OTA slot, as `dump-bundle` saves
+  one.
 - `make install` no longer breaks an `idftool` that's already running.
 
 ## [v0.10.0] — 2026-09-10

@@ -96,7 +96,8 @@ def write_bundle(state, input_file, **options):
             if len(data) > partition.size:
                 raise ValueError(f"Bundle entry {member} size {len(data):#x} exceeds partition {partition.name} size {partition.size:#x}")
 
-            if partition.type == APP_TYPE:
+            # An erased slot (as dump-bundle saves an unused OTA partition) has no app to check.
+            if partition.type == APP_TYPE and data.strip(b'\xff'):
                 validate_app_binary(esp, data)
 
             print(f"Writing partition {partition.name} (offset={partition.offset:#x}, size={partition.size:#x}) from bundle")
