@@ -1,0 +1,89 @@
+site_name: idftool
+site_description: An ESP-IDF partition-aware CLI built on esptool
+site_url: https://nebkat.github.io/idftool/
+repo_url: https://github.com/nebkat/idftool
+repo_name: nebkat/idftool
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  icon:
+    logo: material/chip
+    repo: fontawesome/brands/github
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - navigation.indexes
+    - search.highlight
+    - content.code.copy
+    - content.action.edit
+    - toc.follow
+
+nav:
+  - Home: index.md
+  - Installation: installation.md
+  - Guide:
+      - Choosing a device: guide/choosing-a-device.md
+      - Partitions or files: guide/partitions-or-files.md
+      - Partition addressing: guide/partition-addressing.md
+      - Global options: guide/global-options.md
+      - Write options: guide/write-options.md
+  - Commands:
+      - commands/index.md
+      - Discovery: commands/discovery.md
+      - Partition I/O: commands/partition-io.md
+      - Firmware: commands/firmware.md
+      - Boot selection: commands/boot.md
+      - Images: commands/images.md
+      - Bundles: commands/bundles.md
+      - Partition table: commands/partition-table.md
+      - NVS: commands/nvs.md
+      - Filesystems: commands/filesystems.md
+      - Misc: commands/misc.md
+  - Python library: library.md
+  - Changelog: changelog.md
+  - Contributing: contributing.md
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.snippets:
+      check_paths: true
+
+validation:
+  omitted_files: warn
+  absolute_links: warn
+  unrecognized_links: warn
+  anchors: warn

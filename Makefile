@@ -1,4 +1,4 @@
-.PHONY: build build-onefile test test-offline test-device test-device-full install install-onefile uninstall clean
+.PHONY: build build-onefile docs docs-serve test test-offline test-device test-device-full install install-onefile uninstall clean
 
 VENV         := .venv
 PYINSTALLER  := $(VENV)/bin/pyinstaller
@@ -15,6 +15,15 @@ build: $(VENV)
 
 build-onefile: $(VENV)
 	$(PYINSTALLER) --noconfirm --distpath ./dist --workpath ./build idftool.spec
+
+# Documentation site (mkdocs-material) → site/
+docs: $(VENV)
+	$(VENV)/bin/pip install -q -e ".[docs]"
+	$(VENV)/bin/mkdocs build --strict
+
+docs-serve: $(VENV)
+	$(VENV)/bin/pip install -q -e ".[docs]"
+	$(VENV)/bin/mkdocs serve
 
 test: build
 	./dist-onedir/idftool/idftool --help >/dev/null
@@ -60,7 +69,7 @@ uninstall:
 	rm -rf $(SHAREDIR)
 
 clean:
-	rm -rf build build-onedir dist dist-onedir $(VENV)
+	rm -rf build build-onedir dist dist-onedir site $(VENV)
 
 $(VENV):
 	python3 -m venv $(VENV)

@@ -34,6 +34,16 @@ make uninstall
 make clean           # remove venv, build/, dist/
 ```
 
+## Documentation
+
+The docs site is built with [Material for MkDocs](https://squidfunk.github.io/mkdocs-material/)
+from `docs/`:
+
+```bash
+make docs-serve      # live preview at http://127.0.0.1:8000
+make docs            # build into site/, failing on broken links
+```
+
 Make sure `~/.local/bin` is on your `PATH`.
 
 ## Releases

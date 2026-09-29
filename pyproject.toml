@@ -38,6 +38,8 @@
 
 [project.optional-dependencies]
     test = ["pytest>=8"]
+    # MkDocs 2.0 drops the plugin and theme system Material is built on.
+    docs = ["mkdocs>=1.6,<2", "mkdocs-material~=9.7"]
 
 [project.scripts]
     idftool = "idftool.__main__:_main"
