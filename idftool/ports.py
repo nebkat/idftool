@@ -213,12 +213,14 @@ def find_port_for_mac(mac: str, baud: int) -> str:
     raise click.ClickException(f"No device with MAC {mac} found")
 
 
-def print_rerun_hint(port: str) -> None:
-    """Print the command with ``-p`` filled in."""
+def print_rerun_hint(port: str, mac: Optional[str] = None) -> None:
+    """Print the command with ``-p`` filled in, and with ``-m`` if the MAC is known."""
     arguments = [shlex.quote(a) for a in sys.argv[1:]]
-    command = " ".join(["idftool", "-p", port, *arguments])
     click.echo(click.style("Re-run with: ", fg="cyan", bold=True)
-               + click.style(command, fg="cyan"), err=True)
+               + click.style(" ".join(["idftool", "-p", port, *arguments]), fg="cyan"), err=True)
+    if mac:
+        click.echo(click.style("         or: ", fg="cyan", bold=True)
+                   + click.style(" ".join(["idftool", "-m", mac, *arguments]), fg="cyan"), err=True)
 
 
 def kill_holders(port: str) -> None:

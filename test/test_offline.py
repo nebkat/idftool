@@ -538,7 +538,7 @@ def _picker(monkeypatch, *, ports):
         return {"port": ports[0], "chip": "ESP32-S3", "mac": None, "error": None}
 
     monkeypatch.setattr(state_module, "select_device", select_device)
-    monkeypatch.setattr(state_module, "print_rerun_hint", lambda port: None)
+    monkeypatch.setattr(state_module, "print_rerun_hint", lambda port, mac=None: None)
     return shown
 
 
@@ -833,3 +833,13 @@ def test_a_terminal_partition_table_is_boxed(capsys, monkeypatch):
     print_partition_table(_table())
     out = capsys.readouterr().out
     assert "╭" in out and "\x1b[" in out
+
+
+def test_the_rerun_hint_offers_the_mac_too(capsys, monkeypatch):
+    from idftool.ports import print_rerun_hint
+
+    monkeypatch.setattr(sys, "argv", ["idftool", "get-boot"])
+    print_rerun_hint("/dev/a", "9c:13:9e:1b:d4:6c")
+    err = capsys.readouterr().err.splitlines()
+    assert err[0].endswith("idftool -p /dev/a get-boot")
+    assert err[1].endswith("idftool -m 9c:13:9e:1b:d4:6c get-boot")

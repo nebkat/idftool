@@ -80,9 +80,9 @@ class State:
             return find_port_for_mac(self.mac, self.baud)
         if self.port or self.assume_yes or not sys.stdin.isatty():
             return self.port
-        port = select_device(self.baud)["port"]
-        print_rerun_hint(port)
-        return port
+        found = select_device(self.baud)
+        print_rerun_hint(found["port"], found.get("mac"))
+        return found["port"]
 
     def connect(self) -> ESPLoader:
         if self.esp is None:
