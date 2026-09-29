@@ -11,42 +11,7 @@ from esp_pylib.constants import ESPRESSIF_VID
 from esp_pylib.serial_ports import get_port_list
 
 from idftool.cli import cli, pass_state
-from idftool.ports import prompt_for_port, usb_port_for_mac
-
-#: ``(vid, pid)`` → adapter name; a ``None`` pid matches any product from that vendor.
-USB_ADAPTERS = {
-    (0x303A, 0x1001): "ESP USB-Serial/JTAG",
-    (0x303A, 0x0002): "ESP USB-OTG (ROM)",
-    (0x303A, None): "ESP USB",
-    (0x10C4, 0xEA60): "CP210x",
-    (0x10C4, 0xEA70): "CP2105",
-    (0x10C4, None): "Silicon Labs",
-    (0x1A86, 0x7523): "CH340",
-    (0x1A86, 0x55D3): "CH343",
-    (0x1A86, 0x55D4): "CH9102",
-    (0x1A86, None): "WCH",
-    (0x0403, 0x6001): "FT232R",
-    (0x0403, 0x6010): "FT2232H",
-    (0x0403, 0x6011): "FT4232H",
-    (0x0403, 0x6014): "FT232H",
-    (0x0403, 0x6015): "FT231X",
-    (0x0403, None): "FTDI",
-    (0x067B, 0x2303): "PL2303",
-    (0x067B, 0x23A3): "PL2303GC",
-    (0x067B, 0x23C3): "PL2303GT",
-    (0x067B, 0x23D3): "PL2303GL",
-    (0x067B, None): "PL2303",
-}
-
-
-def adapter_name(port) -> str:
-    """What kind of USB-serial adapter `port` is."""
-    if port.vid is None:
-        return port.description or ""
-    return (USB_ADAPTERS.get((port.vid, port.pid))
-            or USB_ADAPTERS.get((port.vid, None))
-            or port.product or port.description or "USB serial")
-
+from idftool.ports import adapter_name, prompt_for_port, usb_port_for_mac
 
 def list_devices():
     ports = get_port_list()

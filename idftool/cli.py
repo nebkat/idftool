@@ -70,6 +70,8 @@ click.rich_click.COMMAND_GROUPS = {
 @click.option('-p', '--port', default=None, help='Serial port device')
 @click.option('-m', '--mac', type=MAC, default=None, help='Use the device with this MAC address')
 @click.option('-b', '--baud', type=int, default=ESPLoader.ESP_ROM_BAUD, show_default=True, help='Serial port baud rate')
+@click.option('--probe', is_flag=True,
+              help='Connect to USB-serial adapter ports to identify their boards (resets them)')
 @click.option('-y', '--yes', is_flag=True, help='Do not ask which device to use')
 @click.option('--no-reset', is_flag=True, help='Do not reset the chip after operations')
 @click.option('--partition-table-file', default=None,
@@ -83,7 +85,7 @@ click.rich_click.COMMAND_GROUPS = {
 @click.option('--recovery-bootloader-offset', type=BASED_INT, default=None,
               help='Recovery bootloader offset (used when loading a table from CSV)')
 @click.pass_context
-def cli(ctx, port, mac, baud, yes, no_reset, partition_table_file, partition_table_offset,
+def cli(ctx, port, mac, baud, probe, yes, no_reset, partition_table_file, partition_table_offset,
         partition_table_size, primary_bootloader_offset, recovery_bootloader_offset):
     """Utility for flashing, provisioning, and interacting with Espressif SOCs running ESP-IDF."""
     if port and mac:
@@ -91,6 +93,7 @@ def cli(ctx, port, mac, baud, yes, no_reset, partition_table_file, partition_tab
     ctx.obj = State(
         port=port,
         mac=mac,
+        probe=probe,
         baud=baud,
         no_reset=no_reset,
         assume_yes=yes,

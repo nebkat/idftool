@@ -614,6 +614,7 @@ These flags apply to every subcommand and go **before** the command name:
 | `-p`, `--port PATH` | Serial port device. If omitted, idftool asks — see [Choosing a device](#choosing-a-device). |
 | `-m`, `--mac MAC` | Use the device with this MAC address — see [Choosing a device](#choosing-a-device). |
 | `-b`, `--baud N` | Serial baud rate (defaults to esptool's ROM baud, 115200). |
+| `--probe` | Connect to USB-serial adapter ports to identify their boards (resets them) — see [Choosing a device](#choosing-a-device). |
 | `-y`, `--yes` | Don't ask which device to use. |
 | `--no-reset` | Skip the hard reset that normally happens after a command. |
 | `--partition-table-file PATH` | Use a CSV or binary partition table from disk instead of reading it off the device. |
@@ -631,16 +632,20 @@ else needs a connected ESP.
 Without `-p`, idftool asks which device to use. `-y` skips the prompt. On
 macOS/Linux, `k` kills a process holding the selected port.
 
+The list is built from USB alone, so no board is reset. ESP USB-Serial/JTAG
+ports report the chip's MAC as their USB serial number; USB-serial adapter
+ports (CP210x, CH340, FTDI…) show the adapter only. `--probe`, or `p` in the
+list, connects to the adapter ports to identify their boards, resetting them.
+
 ```text
 ? Select device
- » /dev/cu.usbmodem1101   ESP32-S3      24:0a:c4:11:22:33
-   /dev/cu.usbserial-140  Unavailable   held by idf.py (pid 4417)
+ » /dev/cu.usbmodem1101   ESP USB-Serial/JTAG   24:0a:c4:11:22:33
+   /dev/cu.usbserial-140  CP210x                not probed
+   /dev/cu.usbserial-150  Unavailable           held by idf.py (pid 4417)
 ```
 
-`-m`/`--mac` picks a device by MAC address instead. ESP USB-Serial/JTAG
-ports report the MAC as their USB serial number, so they're matched without
-connecting; if none matches, the other ports are probed (which resets the
-boards on them).
+`-m`/`--mac` picks a device by MAC address instead, matched against the USB
+serial numbers. With `--probe`, adapter ports are connected to as well.
 
 ```text
 idftool -m 9c:13:9e:1b:d4:6c write-bundle app.zip

@@ -787,7 +787,7 @@ def test_a_mac_behind_a_bridge_is_found_by_probing_only_the_unknown_ports(monkey
     from idftool.ports import find_port_for_mac
 
     probed = _listed(monkeypatch, ("/dev/jtag", "9C:13:9E:1B:D4:6C"), ("/dev/bridge", "0001"))
-    assert find_port_for_mac("aa:bb:cc:dd:ee:ff", 115200) == "/dev/bridge"
+    assert find_port_for_mac("aa:bb:cc:dd:ee:ff", 115200, probe=True) == "/dev/bridge"
     assert probed == ["/dev/bridge"]
 
 
@@ -797,15 +797,26 @@ def test_a_missing_mac_is_an_error(monkeypatch):
     from idftool.ports import find_port_for_mac
 
     _listed(monkeypatch, ("/dev/jtag", "9C:13:9E:1B:D4:6C"))
-    with pytest.raises(click.ClickException, match="No device with MAC"):
+    with pytest.raises(click.ClickException, match="No USB-Serial/JTAG device with MAC"):
         find_port_for_mac("00:11:22:33:44:55", 115200)
+
+
+def test_a_mac_behind_a_bridge_needs_probe(monkeypatch):
+    import rich_click as click
+
+    from idftool.ports import find_port_for_mac
+
+    probed = _listed(monkeypatch, ("/dev/bridge", "0001"))
+    with pytest.raises(click.ClickException, match="--probe"):
+        find_port_for_mac("aa:bb:cc:dd:ee:ff", 115200)
+    assert probed == []
 
 
 def test_a_mac_takes_the_place_of_the_prompt(monkeypatch):
     import idftool.state as state_module
 
     shown = _picker(monkeypatch, ports=["/dev/a"])
-    monkeypatch.setattr(state_module, "find_port_for_mac", lambda mac, baud: "/dev/by-mac")
+    monkeypatch.setattr(state_module, "find_port_for_mac", lambda mac, baud, probe: "/dev/by-mac")
     assert _state(monkeypatch, mac="9c:13:9e:1b:d4:6c").resolve_port() == "/dev/by-mac"
     assert shown == []
 
@@ -864,3 +875,22 @@ def test_monitor_hands_the_chosen_port_to_esp_idf_monitor(monkeypatch, options, 
     state.no_reset = no_reset
     monitor(state, args)
     assert seen == [expected]
+
+
+def _usb_port(device, vid, pid, serial):
+    return type("Port", (), {"device": device, "vid": vid, "pid": pid, "serial_number": serial,
+                             "description": "", "product": None})()
+
+
+def test_a_usb_jtag_port_is_described_from_usb_alone():
+    from idftool.ports import device_fields, usb_record
+
+    found = usb_record(_usb_port("/dev/jtag", 0x303A, 0x1001, "9C:13:9E:1B:D4:6C"))
+    assert device_fields(found) == ("/dev/jtag", "ESP USB-Serial/JTAG", "9c:13:9e:1b:d4:6c")
+
+
+def test_an_adapter_port_is_left_unprobed():
+    from idftool.ports import device_fields, usb_record
+
+    found = usb_record(_usb_port("/dev/bridge", 0x10C4, 0xEA60, "0001"))
+    assert device_fields(found) == ("/dev/bridge", "CP210x", "not probed")
