@@ -38,12 +38,18 @@ test-device-full: $(VENV)
 	$(VENV)/bin/pip install -q -e ".[test]"
 	$(VENV)/bin/pytest test/test_device.py --port $(PORT) --chip $(CHIP)
 
+# Each build goes in its own directory behind a `current` symlink: PyInstaller reopens its
+# archive by path on every lazy import, so overwriting the files under a running idftool
+# crashes it ("Error -3 while decompressing data"). The three newest builds are kept.
 install: build
 	mkdir -p $(BINDIR)
-	rm -rf $(SHAREDIR)
-	mkdir -p $(dir $(SHAREDIR))
-	cp -R dist-onedir/idftool $(SHAREDIR)
-	ln -sf $(SHAREDIR)/idftool $(BINDIR)/idftool
+	[ -L $(SHAREDIR)/current ] || rm -rf $(SHAREDIR)
+	mkdir -p $(SHAREDIR)
+	version=$$(date +%Y%m%d-%H%M%S); \
+	cp -R dist-onedir/idftool $(SHAREDIR)/$$version && \
+	ln -sfn $$version $(SHAREDIR)/current && \
+	ln -sf $(SHAREDIR)/current/idftool $(BINDIR)/idftool && \
+	ls -1d $(SHAREDIR)/2* | sort -r | tail -n +4 | xargs rm -rf
 
 install-onefile: build-onefile
 	mkdir -p $(BINDIR)
