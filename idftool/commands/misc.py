@@ -11,7 +11,7 @@ from esp_pylib.constants import ESPRESSIF_VID
 from esp_pylib.serial_ports import get_port_list
 
 from idftool.cli import cli, pass_state
-from idftool.ports import prompt_for_port
+from idftool.ports import prompt_for_port, usb_port_for_mac
 
 #: ``(vid, pid)`` → adapter name; a ``None`` pid matches any product from that vendor.
 USB_ADAPTERS = {
@@ -80,11 +80,17 @@ def cmd_devices():
 
 
 def enter_bootloader(state):
-    port = state.port or prompt_for_port()
-    if not port:
-        raise click.UsageError("enter-bootloader requires -p/--port")
     baud, poll_interval = state.baud, 0.05
-    print(f"Waiting for {port}...", file=sys.stderr)
+    if state.mac and not state.port:
+        # Only a USB serial number can name a port that isn't there yet.
+        print(f"Waiting for {state.mac}...", file=sys.stderr)
+        while (port := usb_port_for_mac(state.mac)) is None:
+            time.sleep(poll_interval)
+    else:
+        port = state.port or prompt_for_port()
+        if not port:
+            raise click.UsageError("enter-bootloader requires -p/--port or -m/--mac")
+        print(f"Waiting for {port}...", file=sys.stderr)
     while True:
         while not os.path.exists(port):
             time.sleep(poll_interval)

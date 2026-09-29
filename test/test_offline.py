@@ -743,3 +743,68 @@ def test_kill_holders(monkeypatch, confirmed):
         holder.wait()
         os.close(master)
         os.close(slave)
+
+
+@pytest.mark.parametrize("text", ["9C:13:9E:1B:D4:6C", "9c-13-9e-1b-d4-6c", "9c139e1bd46c"])
+def test_a_mac_is_accepted_in_any_spelling(text):
+    from idftool.ports import normalize_mac
+
+    assert normalize_mac(text) == "9c:13:9e:1b:d4:6c"
+
+
+@pytest.mark.parametrize("text", [None, "", "DPEDf103Y23", "9c:13:9e:1b:d4"])
+def test_a_serial_that_is_not_a_mac_is_rejected(text):
+    from idftool.ports import normalize_mac
+
+    assert normalize_mac(text) is None
+
+
+def _listed(monkeypatch, *ports):
+    import idftool.ports as ports_module
+
+    listed = [type("Port", (), {"device": device, "serial_number": serial})()
+              for device, serial in ports]
+    monkeypatch.setattr(ports_module.serial_ports, "get_port_list", lambda: listed)
+    probed = []
+
+    def probe_port(port, baud, identify=None):
+        probed.append(port)
+        return {"port": port, "mac": "aa:bb:cc:dd:ee:ff" if port == "/dev/bridge" else None}
+
+    monkeypatch.setattr(ports_module, "probe_port", probe_port)
+    return probed
+
+
+def test_a_mac_is_found_by_usb_serial_without_probing(monkeypatch):
+    from idftool.ports import find_port_for_mac
+
+    probed = _listed(monkeypatch, ("/dev/bridge", "0001"), ("/dev/jtag", "9C:13:9E:1B:D4:6C"))
+    assert find_port_for_mac("9c:13:9e:1b:d4:6c", 115200) == "/dev/jtag"
+    assert probed == []
+
+
+def test_a_mac_behind_a_bridge_is_found_by_probing_only_the_unknown_ports(monkeypatch):
+    from idftool.ports import find_port_for_mac
+
+    probed = _listed(monkeypatch, ("/dev/jtag", "9C:13:9E:1B:D4:6C"), ("/dev/bridge", "0001"))
+    assert find_port_for_mac("aa:bb:cc:dd:ee:ff", 115200) == "/dev/bridge"
+    assert probed == ["/dev/bridge"]
+
+
+def test_a_missing_mac_is_an_error(monkeypatch):
+    import rich_click as click
+
+    from idftool.ports import find_port_for_mac
+
+    _listed(monkeypatch, ("/dev/jtag", "9C:13:9E:1B:D4:6C"))
+    with pytest.raises(click.ClickException, match="No device with MAC"):
+        find_port_for_mac("00:11:22:33:44:55", 115200)
+
+
+def test_a_mac_takes_the_place_of_the_prompt(monkeypatch):
+    import idftool.state as state_module
+
+    shown = _picker(monkeypatch, ports=["/dev/a"])
+    monkeypatch.setattr(state_module, "find_port_for_mac", lambda mac, baud: "/dev/by-mac")
+    assert _state(monkeypatch, mac="9c:13:9e:1b:d4:6c").resolve_port() == "/dev/by-mac"
+    assert shown == []

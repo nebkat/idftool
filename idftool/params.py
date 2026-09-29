@@ -31,5 +31,18 @@ class BootloaderOffsetParamType(click.ParamType):
             self.fail(f"Invalid bootloader offset or chip name: {value}", param, ctx)
         return chip.BOOTLOADER_FLASH_OFFSET
 
+class MacParamType(click.ParamType):
+    """A MAC address in any common spelling, normalised to ``aa:bb:cc:dd:ee:ff``."""
+    name = "mac"
+
+    def convert(self, value, param, ctx):
+        from idftool.ports import normalize_mac
+
+        mac = normalize_mac(value)
+        if mac is None:
+            self.fail(f"{value!r} is not a MAC address", param, ctx)
+        return mac
+
 BASED_INT = BasedIntParamType()
 BOOTLOADER_OFFSET = BootloaderOffsetParamType()
+MAC = MacParamType()

@@ -92,7 +92,7 @@ Setting boot partition to 'ota_1'...
 | Command | Description |
 |---------|-------------|
 | **Discovery** | |
-| [`devices`](#devices) | List serial ports with hardware IDs |
+| [`devices`](#devices) | List serial ports and their USB adapters |
 | [`list`](#print-table) | Print the partition table (alias of `print-table`) |
 | **Partition I/O** | |
 | [`read`](#read) | Read a partition (or slice) into a file |
@@ -142,8 +142,8 @@ Setting boot partition to 'ota_1'...
 ### Discovery
 
 #### `devices`
-List the serial ports the host can see, with their descriptions and USB
-hardware IDs.
+List the serial ports the host can see: adapter type, USB serial number
+(the MAC, on ESP USB-Serial/JTAG ports), USB ID and location.
 ```text
 idftool devices
 ```
@@ -587,8 +587,10 @@ errors (e.g. `termios.error: Device not configured` from a tty node that
 isn't fully settled) are retried silently.
 ```text
 idftool -p /dev/cu.usbmodem1101 enter-bootloader
+idftool -m 9c:13:9e:1b:d4:6c enter-bootloader
 ```
-Requires `-p`/`--port`.
+Requires `-p`/`--port` or `-m`/`--mac`. With `-m`, waits for a port whose
+USB serial number is that MAC, so only ESP USB-Serial/JTAG ports work.
 
 --
 
@@ -599,6 +601,7 @@ These flags apply to every subcommand and go **before** the command name:
 | Flag | Purpose |
 |------|---------|
 | `-p`, `--port PATH` | Serial port device. If omitted, idftool asks — see [Choosing a device](#choosing-a-device). |
+| `-m`, `--mac MAC` | Use the device with this MAC address — see [Choosing a device](#choosing-a-device). |
 | `-b`, `--baud N` | Serial baud rate (defaults to esptool's ROM baud, 115200). |
 | `-y`, `--yes` | Don't ask which device to use. |
 | `--no-reset` | Skip the hard reset that normally happens after a command. |
@@ -621,6 +624,15 @@ macOS/Linux, `k` kills a process holding the selected port.
 ? Select device
  » /dev/cu.usbmodem1101   ESP32-S3      24:0a:c4:11:22:33
    /dev/cu.usbserial-140  Unavailable   held by idf.py (pid 4417)
+```
+
+`-m`/`--mac` picks a device by MAC address instead. ESP USB-Serial/JTAG
+ports report the MAC as their USB serial number, so they're matched without
+connecting; if none matches, the other ports are probed (which resets the
+boards on them).
+
+```text
+idftool -m 9c:13:9e:1b:d4:6c write-bundle app.zip
 ```
 
 ## Write options

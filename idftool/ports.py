@@ -1,6 +1,7 @@
 """Interactive device selection."""
 import concurrent.futures
 import contextlib
+import re
 import shlex
 import shutil
 import signal
@@ -179,6 +180,37 @@ def device_labels(candidates: list[dict]) -> list[str]:
     """Column-aligned labels for `candidates`."""
     widths = device_widths(candidates)
     return [device_label(c, widths) for c in candidates]
+
+
+def normalize_mac(text: Optional[str]) -> Optional[str]:
+    """`text` as ``aa:bb:cc:dd:ee:ff`` if it is a MAC address, else None."""
+    digits = re.sub(r"[:.-]", "", text or "").lower()
+    if not re.fullmatch(r"[0-9a-f]{12}", digits):
+        return None
+    return ":".join(digits[i:i + 2] for i in range(0, 12, 2))
+
+
+def usb_port_for_mac(mac: str) -> Optional[str]:
+    """The port whose USB serial number is `mac`, as ESP USB-Serial/JTAG ports report it."""
+    return next((p.device for p in serial_ports.get_port_list()
+                 if normalize_mac(p.serial_number) == mac), None)
+
+
+def find_port_for_mac(mac: str, baud: int) -> str:
+    """The port of the device with `mac`: from USB serial numbers, else by probing the rest."""
+    port = usb_port_for_mac(mac)
+    if port is not None:
+        return port
+    # Ports whose serial number is some other MAC are known not to match.
+    others = [p.device for p in serial_ports.get_port_list()
+              if normalize_mac(p.serial_number) is None]
+    if others:
+        click.echo(f"Probing {len(others)} port(s) for {mac}…", err=True)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, len(others))) as pool:
+            for found in pool.map(lambda p: probe_port(p, baud), others):
+                if found["mac"] == mac:
+                    return found["port"]
+    raise click.ClickException(f"No device with MAC {mac} found")
 
 
 def print_rerun_hint(port: str) -> None:

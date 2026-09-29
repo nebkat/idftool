@@ -11,7 +11,7 @@ from esptool import ESPLoader
 
 from esp_idf_defs.partitions import PARTITION_TABLE_SIZE, PARTITION_TABLE_OFFSET
 
-from idftool.params import BASED_INT, BOOTLOADER_OFFSET
+from idftool.params import BASED_INT, BOOTLOADER_OFFSET, MAC
 from idftool.state import State
 
 pass_state = click.make_pass_decorator(State)
@@ -68,6 +68,7 @@ click.rich_click.COMMAND_GROUPS = {
 
 @click.group(context_settings=CONTEXT_SETTINGS)
 @click.option('-p', '--port', default=None, help='Serial port device')
+@click.option('-m', '--mac', type=MAC, default=None, help='Use the device with this MAC address')
 @click.option('-b', '--baud', type=int, default=ESPLoader.ESP_ROM_BAUD, show_default=True, help='Serial port baud rate')
 @click.option('-y', '--yes', is_flag=True, help='Do not ask which device to use')
 @click.option('--no-reset', is_flag=True, help='Do not reset the chip after operations')
@@ -82,11 +83,14 @@ click.rich_click.COMMAND_GROUPS = {
 @click.option('--recovery-bootloader-offset', type=BASED_INT, default=None,
               help='Recovery bootloader offset (used when loading a table from CSV)')
 @click.pass_context
-def cli(ctx, port, baud, yes, no_reset, partition_table_file, partition_table_offset,
+def cli(ctx, port, mac, baud, yes, no_reset, partition_table_file, partition_table_offset,
         partition_table_size, primary_bootloader_offset, recovery_bootloader_offset):
     """Utility for flashing, provisioning, and interacting with Espressif SOCs running ESP-IDF."""
+    if port and mac:
+        raise click.UsageError("-p/--port and -m/--mac are mutually exclusive")
     ctx.obj = State(
         port=port,
+        mac=mac,
         baud=baud,
         no_reset=no_reset,
         assume_yes=yes,
