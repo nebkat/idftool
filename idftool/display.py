@@ -44,15 +44,15 @@ def print_partition_table(partition_table: list[PartitionDefinition],
               if otadata is not None and otadata.slot is not None else None)
 
     table = Table(box=box.ROUNDED, border_style="dim", header_style="bold", pad_edge=True)
-    table.add_column("Name", style="bold")
-    table.add_column("Type")
-    table.add_column("Subtype")
-    table.add_column("Offset", justify="right")
-    table.add_column("Size", justify="right")
+    table.add_column("Name", style="bold", overflow="ellipsis")
+    table.add_column("Type", overflow="ellipsis")
+    table.add_column("Subtype", overflow="ellipsis")
+    table.add_column("Offset", justify="right", no_wrap=True)
+    table.add_column("Size", justify="right", no_wrap=True)
     if has_flags:
-        table.add_column("Flags")
+        table.add_column("Flags", overflow="ellipsis")
     if read:
-        table.add_column("App description")
+        table.add_column("App")
 
     for part in partition_table:
         type_name = _keyword(part.type, TYPES)

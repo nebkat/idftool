@@ -198,14 +198,19 @@ def usb_port_for_mac(mac: str) -> Optional[str]:
 
 def find_port_for_mac(mac: str, baud: int) -> str:
     """The port of the device with `mac`: from USB serial numbers, else by probing the rest."""
-    port = usb_port_for_mac(mac)
-    if port is not None:
-        return port
+    click.echo(f"Looking for {mac}…", err=True)
+    port = usb_port_for_mac(mac) or _probe_for_mac(mac, baud)
+    click.echo(click.style("Device: ", bold=True) + port, err=True)
+    return port
+
+
+def _probe_for_mac(mac: str, baud: int) -> str:
+    """The port of the device with `mac`, found by connecting to each unidentified port."""
     # Ports whose serial number is some other MAC are known not to match.
     others = [p.device for p in serial_ports.get_port_list()
               if normalize_mac(p.serial_number) is None]
     if others:
-        click.echo(f"Probing {len(others)} port(s) for {mac}…", err=True)
+        click.echo(f"Probing {len(others)} port(s)…", err=True)
         with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, len(others))) as pool:
             for found in pool.map(lambda p: probe_port(p, baud), others):
                 if found["mac"] == mac:
@@ -374,6 +379,7 @@ def _pick(listed, baud: Optional[int], *, probe: bool, message: str,
 
     repaint()
     executor = None
+    futures: list[concurrent.futures.Future] = []
     if probe and ports:
         executor = concurrent.futures.ThreadPoolExecutor(max_workers=min(8, len(ports)))
 
@@ -391,7 +397,9 @@ def _pick(listed, baud: Optional[int], *, probe: bool, message: str,
             return done
 
         for target in ports:
-            executor.submit(probe_port, target, baud, identify).add_done_callback(annotate(target))
+            future = executor.submit(probe_port, target, baud, identify)
+            future.add_done_callback(annotate(target))
+            futures.append(future)
 
     try:
         with quiet_esptool():
@@ -401,6 +409,8 @@ def _pick(listed, baud: Optional[int], *, probe: bool, message: str,
     finally:
         if executor is not None:
             # Wait for probes to release their ports before the caller connects.
+            if not all(f.done() for f in futures):
+                click.echo("Waiting for the other ports to finish identifying…", err=True)
             executor.shutdown(wait=True)
 
     if answer is KILL:
