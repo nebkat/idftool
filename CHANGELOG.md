@@ -23,6 +23,7 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 - Tables are boxed and coloured on a terminal, and plain Markdown when piped.
 - After picking a device, the re-run hint also offers the `-m` or
   `--usb-serial` form.
+- Requires `esptool` 5.4 or later. Supports `esp-idf-nvs-partition-gen` 0.3.
 
 ### Fixed
 - `make install` no longer breaks an `idftool` that's already running.

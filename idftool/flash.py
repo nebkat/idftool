@@ -22,7 +22,8 @@ from contextlib import contextmanager, redirect_stdout
 
 import rich_click as click
 from esptool.cmds import _update_image_flash_params, write_flash as esptool_write_flash
-from esptool.logger import EsptoolLogger, log
+from esp_pylib.logger import EspLog
+from esptool.logger import log
 from esptool.util import get_bytes, pad_to
 
 #: Keyword arguments of esptool's ``write_flash`` that idftool forwards. The ones without a
@@ -369,31 +370,23 @@ class Progress:
         self._shown = None
 
 
-class _QuietEsptool(EsptoolLogger):
-    """esptool's logger with its routine narration removed but nothing else.
+def _say(prefix, args, file=None):
+    print(prefix + " ".join(str(a) for a in args), file=file or sys.stdout)
 
-    `note`, `warning` and `error` are printed directly rather than through the silenced
-    `print`, so this suppresses by kind rather than by matching message text and nothing new
-    can slip past it. Installed by :func:`quiet_esptool` only for the duration of a write.
-    """
 
-    def print(self, *args, **kwargs):
-        pass
-
-    def note(self, message):
-        print(f"Note: {message}")
-
-    def warning(self, message):
-        print(f"Warning: {message}")
-
-    def error(self, message):
-        print(message, file=sys.stderr)
-
-    def progress_bar(self, *args, **kwargs):
-        pass
-
-    def stage(self, finish=False):
-        pass
+#: What :func:`quiet_esptool` overrides: routine narration and progress go, while notes,
+#: warnings and errors are printed directly rather than through the silenced `print`, so
+#: this suppresses by kind rather than by matching message text.
+_QUIET = {
+    "print": lambda self, *args, **kwargs: None,
+    "progress_bar": lambda self, *args, **kwargs: None,
+    "stage": lambda self, *args, **kwargs: None,
+    "note": lambda self, *args, **kwargs: _say("Note: ", args),
+    "warning": lambda self, *args, **kwargs: _say("Warning: ", args),
+    "warn": lambda self, *args, **kwargs: _say("Warning: ", args),
+    "error": lambda self, *args, **kwargs: _say("", args, sys.stderr),
+    "err": lambda self, *args, **kwargs: _say("", args, sys.stderr),
+}
 
 
 @contextmanager
@@ -407,12 +400,15 @@ def quiet_esptool():
     go, but only while esptool is inside a run: the bar itself is drawn between them, through
     the real logger.
     """
-    original = type(log)
-    log.__class__ = _QuietEsptool     # what esptool's own set_logger() does, but reversible
+    log.print  # noqa: B018  (esptool's `log` is a proxy; this makes sure its logger exists)
+    target = EspLog.instance
+    original = type(target)
+    # A subclass of the logger's own class, so the swap is allowed whatever that class is.
+    target.__class__ = type("_QuietEsptool", (original,), _QUIET)
     try:
         yield
     finally:
-        log.__class__ = original
+        target.__class__ = original
 
 
 def write_flash(esp, addr_data, flash_freq='keep', flash_mode='keep', flash_size='keep',
