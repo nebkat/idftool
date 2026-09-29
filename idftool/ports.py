@@ -495,8 +495,10 @@ def _pick(listed, baud: Optional[int], *, probe: bool, message: str,
         if allow_probe:
             @question.application.key_bindings.add("p", eager=True)
             def _probe(event):
+                # Every press probes again (to see if a board is back, say), unless one is
+                # already in flight for this port.
                 target = control.get_pointed_at().value
-                if target in rows and target not in to_probe:
+                if target in rows and (target in checked or target not in to_probe):
                     to_probe.add(target)
                     checked.discard(target)
                     repaint()
