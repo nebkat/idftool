@@ -27,6 +27,7 @@
         # changed shape in 1.1.4, and the picker relies on its ordering.
         "esp-pylib>=1.1.4,<2",
         "esp-idf-nvs-partition-gen>=0.1.9,<0.3",
+        "esp-idf-monitor>=1.4,<2",
         # Filesystem images. pyfatfs is used through its low-level PyFat API only, so its
         # PyFilesystem2 dependency is never imported; littlefs-python is what esp_littlefs
         # itself generates images with. SPIFFS needs no dependency — ESP-IDF's generator is

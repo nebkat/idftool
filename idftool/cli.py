@@ -61,7 +61,7 @@ click.rich_click.COMMAND_GROUPS = {
                                      'print-nvs', 'get-nvs', 'set-nvs']},
         {'name': 'Filesystems', 'commands': ['create-fs', 'write-fs', 'read-fs',
                                              'extract-fs', 'print-fs']},
-        {'name': 'Misc', 'commands': ['enter-bootloader']},
+        {'name': 'Misc', 'commands': ['monitor', 'enter-bootloader']},
     ],
 }
 

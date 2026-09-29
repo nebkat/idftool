@@ -843,3 +843,24 @@ def test_the_rerun_hint_offers_the_mac_too(capsys, monkeypatch):
     err = capsys.readouterr().err.splitlines()
     assert err[0].endswith("idftool -p /dev/a get-boot")
     assert err[1].endswith("idftool -m 9c:13:9e:1b:d4:6c get-boot")
+
+
+@pytest.mark.parametrize("options, args, expected", [
+    ({"port": "/dev/a"}, ("-b", "460800"), ["--port", "/dev/a", "-b", "460800"]),
+    ({"port": "/dev/a", "no_reset": True}, (), ["--port", "/dev/a", "--no-reset"]),
+    ({"port": "/dev/a"}, ("-p", "/dev/b"), ["-p", "/dev/b"]),
+    ({"port": "/dev/a"}, ("-h",), ["-h"]),
+])
+def test_monitor_hands_the_chosen_port_to_esp_idf_monitor(monkeypatch, options, args, expected):
+    from esp_idf_monitor import idf_monitor
+
+    from idftool.commands.misc import monitor
+
+    seen = []
+    monkeypatch.setattr(idf_monitor, "main", lambda: seen.append(sys.argv[1:]))
+    monkeypatch.setattr(sys, "argv", list(sys.argv))
+    no_reset = options.pop("no_reset", False)
+    state = _state(monkeypatch, **options)
+    state.no_reset = no_reset
+    monitor(state, args)
+    assert seen == [expected]

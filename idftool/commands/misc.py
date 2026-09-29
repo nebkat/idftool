@@ -1,4 +1,4 @@
-"""Discovery and one-off commands: ``devices`` and ``enter-bootloader``."""
+"""Discovery and one-off commands: ``devices``, ``monitor`` and ``enter-bootloader``."""
 import os.path
 import sys
 import time
@@ -77,6 +77,29 @@ def list_devices():
 @cli.command('devices', help='List serial ports and their USB adapters')
 def cmd_devices():
     return list_devices()
+
+
+def monitor(state, monitor_args=()):
+    """Run esp-idf-monitor on the device chosen by ``-p``, ``-m`` or the picker."""
+    from esp_idf_monitor import idf_monitor
+
+    argv = list(monitor_args)
+    # Help needs no device, and a port given to the monitor itself wins.
+    if not {"-h", "--help", "-p", "--port"} & set(argv) and (port := state.resolve_port()):
+        argv = ["--port", port, *argv]
+    if state.no_reset:
+        argv.append("--no-reset")
+    sys.argv = ["idftool monitor", *argv]
+    idf_monitor.main()
+
+
+@cli.command('monitor', help='Open esp-idf-monitor on the selected device. Arguments after '
+                             '`monitor` go to esp-idf-monitor (`idftool monitor -h` lists them)',
+             context_settings=dict(ignore_unknown_options=True, help_option_names=[]))
+@click.argument('monitor_args', nargs=-1, type=click.UNPROCESSED)
+@pass_state
+def cmd_monitor(state, monitor_args):
+    return monitor(state, monitor_args)
 
 
 def enter_bootloader(state):

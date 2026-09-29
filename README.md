@@ -137,6 +137,7 @@ Setting boot partition to 'ota_1'...
 | [`extract-fs`](#extract-fs) | Extract a filesystem image file to a directory |
 | [`print-fs`](#print-fs) | List the contents of a filesystem partition or image |
 | **Misc** | |
+| [`monitor`](#monitor) | Open esp-idf-monitor on the selected device |
 | [`enter-bootloader`](#enter-bootloader) | Drop the chip into ROM bootloader mode |
 
 ### Discovery
@@ -577,6 +578,16 @@ idftool print-fs -f storage.bin      # from a file, offline
 ```
 
 ### Misc
+
+#### `monitor`
+Run [esp-idf-monitor](https://github.com/espressif/esp-idf-monitor) on the
+device chosen by `-p`, `-m` or the picker. Everything after `monitor` goes
+to esp-idf-monitor; `idftool monitor -h` lists its options. `--no-reset` is
+passed through.
+```text
+idftool monitor
+idftool -m 9c:13:9e:1b:d4:6c monitor build/app.elf
+```
 
 #### `enter-bootloader`
 Wait for a serial port to appear, then run the BOOT0+RESET dance to drop
