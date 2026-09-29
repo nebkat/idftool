@@ -29,8 +29,14 @@ CAN_KILL = sys.platform != "win32"
 
 def _style():
     return questionary.Style([
+        # Matches `idftool devices`: bold green ports, ESP USB in cyan, adapter chips in yellow.
         ("meta", "bold fg:cyan"),
-        ("node", "fg:green"),
+        ("node", "bold fg:green"),
+        ("native", "fg:cyan"),
+        ("adapter", "fg:yellow"),
+        ("chip", "bold"),
+        ("pending", "fg:ansibrightblack"),
+        ("detail", ""),
         ("bad", "fg:red"),
     ])
 
@@ -86,8 +92,9 @@ def adapter_name(port) -> str:
 def usb_record(port) -> dict:
     """What USB says about `port`, without opening it: an ESP USB-Serial/JTAG port's
     serial number is the chip's MAC."""
+    native = port.vid == ESPRESSIF_VID
     return {"port": port.device, "chip": None,
-            "mac": normalize_mac(port.serial_number) if port.vid == ESPRESSIF_VID else None,
+            "mac": normalize_mac(port.serial_number) if native else None, "native": native,
             "adapter": adapter_name(port), "description": port.description, "error": None}
 
 
@@ -192,42 +199,43 @@ def probe_port(port: str, baud: int, identify: Optional[Identify] = None) -> dic
             _release(esp)
 
 
-def device_fields(candidate: dict) -> tuple[str, str, str]:
-    """``(port, name, detail)`` for display."""
-    port = candidate["port"]
+def device_fields(candidate: dict) -> tuple[str, str, str, str]:
+    """``(port, adapter, name, detail)`` for display; `name` is empty until probed."""
+    port, adapter = candidate["port"], candidate.get("adapter") or ""
     if candidate.get("error"):
-        return port, "Unavailable", candidate["error"]
+        return port, adapter, "Unavailable", candidate["error"]
     chip, mac = candidate.get("chip"), candidate.get("mac")
     if chip is None:
-        if candidate.get("adapter"):
-            return port, candidate["adapter"], mac or "not probed"
-        return port, "Unidentified", candidate.get("description") or ""
+        if adapter:
+            return port, adapter, "", mac or ""
+        return port, adapter, "Unidentified", candidate.get("description") or ""
     if candidate.get("identity") is not None:
-        return port, str(candidate["identity"]), " · ".join(filter(None, [chip, mac]))
+        return port, adapter, str(candidate["identity"]), " · ".join(filter(None, [chip, mac]))
     if candidate.get("identify_error"):
-        return port, chip, " · ".join(filter(None, [
+        return port, adapter, chip, " · ".join(filter(None, [
             mac, f"could not identify: {candidate['identify_error']}"]))
-    return port, chip, mac or candidate.get("description") or ""
+    return port, adapter, chip, mac or ""
 
 
-def device_label(candidate: dict, widths: Optional[tuple[int, int]] = None) -> str:
+def _columns(cells, widths) -> str:
+    """`cells` padded to `widths`, skipping columns no candidate fills."""
+    return "   ".join(f"{c:<{w}}" for c, w in zip(cells, widths) if w).rstrip()
+
+
+def device_label(candidate: dict, widths: Optional[tuple[int, int, int]] = None) -> str:
     """A device as one line, padded to `widths` if given."""
-    port, what, detail = device_fields(candidate)
+    port, adapter, what, detail = device_fields(candidate)
     if widths is not None:
-        port_width, what_width = widths
-        return f"{port:<{port_width}}   {what:<{what_width}}   {detail}".rstrip()
-    if not detail:
-        return f"{port} — {what}"
+        return _columns((port, adapter, what, detail), (*widths, 1))
     if candidate.get("error"):
         return f"{port} — {what}: {detail}"
-    return f"{port} — {what} ({detail})"
+    return f"{port} — " + " · ".join(filter(None, [what, adapter, detail]))
 
 
-def device_widths(candidates: list[dict]) -> tuple[int, int]:
-    """Port and name column widths for `candidates`."""
+def device_widths(candidates: list[dict]) -> tuple[int, int, int]:
+    """Port, adapter and name column widths for `candidates`."""
     rows = [device_fields(c) for c in candidates]
-    return (max((len(r[0]) for r in rows), default=0),
-            max((len(r[1]) for r in rows), default=0))
+    return tuple(max((len(r[i]) for r in rows), default=0) for i in range(3))
 
 
 def device_labels(candidates: list[dict]) -> list[str]:
@@ -419,27 +427,36 @@ def _pick(listed, baud: Optional[int], *, probe: bool, message: str,
     checked: set[str] = set()
 
     def repaint() -> None:
-        def cells(port: str) -> tuple[str, str]:
+        def cells(port: str) -> tuple[str, str, str]:
+            _, adapter, what, detail = device_fields(results[port])
             if port in to_probe and port not in checked:
-                return "identifying…", results[port]["description"] or ""
-            _, what, detail = device_fields(results[port])
-            return what, detail
+                return adapter, "identifying…", detail
+            return adapter, what, detail
 
         painted = {p: cells(p) for p in ports}
         port_width = max([len(p) for p in ports] or [0])
-        what_width = max([len(what) for what, _ in painted.values()] or [0])
-        room = shutil.get_terminal_size().columns - port_width - what_width - 10
+        adapter_width = max([len(a) for a, _, _ in painted.values()] or [0])
+        what_width = max([len(w) for _, w, _ in painted.values()] or [0])
+        room = (shutil.get_terminal_size().columns - port_width - adapter_width - what_width
+                - 13)
         for port, row in rows.items():
-            what, detail = painted[port]
+            adapter, what, detail = painted[port]
             failed = port in checked and results[port]["error"]
+            pending = port in to_probe and port not in checked
             if len(detail) > room > 1:
                 detail = detail[:room - 1] + "…"
-            row.title = [
-                ("class:node", f"{port:<{port_width}}"),
-                ("", "   "),
-                ("class:bad" if failed else "class:meta", f"{what:<{what_width}}"),
-                ("class:meta", f"   {detail}" if detail else ""),
-            ]
+            title = [("class:node", f"{port:<{port_width}}")]
+            if adapter_width:
+                title += [("", "   "),
+                          ("class:native" if results[port].get("native") else "class:adapter",
+                           f"{adapter:<{adapter_width}}")]
+            if what_width:
+                title += [("", "   "),
+                          ("class:bad" if failed else "class:pending" if pending else "class:chip",
+                           f"{what:<{what_width}}")]
+            if detail:
+                title += [("", "   "), ("class:bad" if failed else "class:detail", detail)]
+            row.title = title
 
     repaint()
     executor = None

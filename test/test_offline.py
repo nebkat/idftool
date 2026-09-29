@@ -660,7 +660,7 @@ def test_identify_names_the_device_and_rides_along(fake_chip):
 
     assert seen == [fake_chip]
     assert found["identity"] is board
-    assert device_fields(found) == ("/dev/x", "Harvest Controller v3", "ESP32-S3 · 24:0a:c4:11:22:33")
+    assert device_fields(found) == ("/dev/x", "", "Harvest Controller v3", "ESP32-S3 · 24:0a:c4:11:22:33")
     assert fake_chip.reset and fake_chip.closed
 
 
@@ -668,7 +668,7 @@ def test_identify_returning_none_falls_back_to_the_chip(fake_chip):
     from idftool.ports import device_fields, probe_port
 
     found = probe_port("/dev/x", 115200, lambda esp: None)
-    assert device_fields(found) == ("/dev/x", "ESP32-S3", "24:0a:c4:11:22:33")
+    assert device_fields(found) == ("/dev/x", "", "ESP32-S3", "24:0a:c4:11:22:33")
 
 
 def test_a_failing_identify_leaves_the_device_usable(fake_chip):
@@ -680,7 +680,7 @@ def test_a_failing_identify_leaves_the_device_usable(fake_chip):
     found = probe_port("/dev/x", 115200, identify)
     assert found["error"] is None and found["identity"] is None
     assert device_fields(found) == (
-        "/dev/x", "ESP32-S3", "24:0a:c4:11:22:33 · could not identify: nvs_ro has no device_type")
+        "/dev/x", "", "ESP32-S3", "24:0a:c4:11:22:33 · could not identify: nvs_ro has no device_type")
     assert fake_chip.closed
 
 
@@ -886,11 +886,24 @@ def test_a_usb_jtag_port_is_described_from_usb_alone():
     from idftool.ports import device_fields, usb_record
 
     found = usb_record(_usb_port("/dev/jtag", 0x303A, 0x1001, "9C:13:9E:1B:D4:6C"))
-    assert device_fields(found) == ("/dev/jtag", "ESP USB-Serial/JTAG", "9c:13:9e:1b:d4:6c")
+    assert device_fields(found) == ("/dev/jtag", "ESP USB-Serial/JTAG", "", "9c:13:9e:1b:d4:6c")
 
 
 def test_an_adapter_port_is_left_unprobed():
     from idftool.ports import device_fields, usb_record
 
     found = usb_record(_usb_port("/dev/bridge", 0x10C4, 0xEA60, "0001"))
-    assert device_fields(found) == ("/dev/bridge", "CP210x", "not probed")
+    assert device_fields(found) == ("/dev/bridge", "CP210x", "", "")
+
+
+def test_a_probed_port_keeps_its_adapter():
+    from idftool.ports import device_label, device_labels, usb_record
+
+    jtag = {**usb_record(_usb_port("/dev/jtag", 0x303A, 0x1001, "9C:13:9E:1B:D4:6C")),
+            "chip": "ESP32-S3"}
+    bridge = usb_record(_usb_port("/dev/bridge", 0x10C4, 0xEA60, "0001"))
+    assert device_labels([jtag, bridge]) == [
+        "/dev/jtag     ESP USB-Serial/JTAG   ESP32-S3   9c:13:9e:1b:d4:6c",
+        "/dev/bridge   CP210x",
+    ]
+    assert device_label(jtag) == "/dev/jtag — ESP32-S3 · ESP USB-Serial/JTAG · 9c:13:9e:1b:d4:6c"
