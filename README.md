@@ -614,7 +614,7 @@ These flags apply to every subcommand and go **before** the command name:
 | `-p`, `--port PATH` | Serial port device. If omitted, idftool asks — see [Choosing a device](#choosing-a-device). |
 | `-m`, `--mac MAC` | Use the device with this MAC address — see [Choosing a device](#choosing-a-device). |
 | `-b`, `--baud N` | Serial baud rate (defaults to esptool's ROM baud, 115200). |
-| `--probe` | Connect to USB-serial adapter ports to identify their boards (resets them) — see [Choosing a device](#choosing-a-device). |
+| `--probe` | Connect to every port to identify its board (resets them) — see [Choosing a device](#choosing-a-device). |
 | `-y`, `--yes` | Don't ask which device to use. |
 | `--no-reset` | Skip the hard reset that normally happens after a command. |
 | `--partition-table-file PATH` | Use a CSV or binary partition table from disk instead of reading it off the device. |
@@ -634,8 +634,9 @@ macOS/Linux, `k` kills a process holding the selected port.
 
 The list is built from USB alone, so no board is reset. ESP USB-Serial/JTAG
 ports report the chip's MAC as their USB serial number; USB-serial adapter
-ports (CP210x, CH340, FTDI…) show the adapter only. `--probe`, or `p` in the
-list, connects to the adapter ports to identify their boards, resetting them.
+ports (CP210x, CH340, FTDI…) show the adapter only. `p` connects to the
+highlighted port to identify its chip, resetting that board; `--probe` does it
+for every port up front.
 
 ```text
 ? Select device

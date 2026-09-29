@@ -22,7 +22,6 @@ REFRESH = "\0refresh"
 MANUAL = "\0manual"
 QUIT = "\0quit"
 KILL = "\0kill"
-PROBE = "\0probe"
 
 #: Whether `k` can kill a process holding a port.
 CAN_KILL = sys.platform != "win32"
@@ -320,9 +319,9 @@ def select_device(baud: int, *, identify: Optional[Identify] = None,
     """Ask the user to pick a device; returns its :func:`usb_record` or :func:`probe_port`
     record.
 
-    Ports are described from USB alone, so no board is reset, unless `probe` is set (or
-    ``p`` pressed): then the USB-serial adapter ports are connected to and identified.
-    `identify` needs a connection, so it probes every port."""
+    Ports are described from USB alone, so no board is reset. ``p`` connects to the
+    highlighted port to identify its board; `probe` does that for every port up front, as
+    does `identify`, which needs a connection."""
     if not sys.stdin.isatty():
         return None
 
@@ -330,9 +329,6 @@ def select_device(baud: int, *, identify: Optional[Identify] = None,
         answer, found = _pick(serial_ports.get_port_list(), baud, probe=probe,
                               identify=identify, message=message)
         if answer is REFRESH:
-            continue
-        if answer is PROBE:
-            probe = True
             continue
         if answer is KILL:
             kill_holders(found["port"])
@@ -381,11 +377,8 @@ def _pick(listed, baud: Optional[int], *, probe: bool, message: str,
 
     ports = [p.device for p in listed]
     results: dict[str, dict] = {p.device: usb_record(p) for p in listed}
-    # Which ports to connect to; the rest are only checked for a process holding them.
-    to_probe = {p for p in ports
-                if identify is not None or (probe and results[p]["mac"] is None)}
-    can_probe = (allow_probe and not probe and identify is None
-                 and any(results[p]["mac"] is None for p in ports))
+    # Ports being connected to; the rest are only checked for a process holding them.
+    to_probe = set(ports) if probe or identify is not None else set()
 
     choices = [questionary.Choice(title="", value=p) for p in ports]
     if not ports:
@@ -398,9 +391,9 @@ def _pick(listed, baud: Optional[int], *, probe: bool, message: str,
 
     question = questionary.select(
         message, choices=choices, style=_style(),
-        instruction="(↑↓ move · ↵ select · r refresh"
-                    + (" · p probe" if can_probe else "")
-                    + (" · k kill holder" if CAN_KILL else "") + " · q quit)")
+        instruction="(↑↓ move · ↵ select"
+                    + (" · p probe" if allow_probe else "") + " · r refresh"
+                    + (" · k kill" if CAN_KILL else "") + " · q quit)")
     question.application.erase_when_done = True
     control = next(c for c in question.application.layout.find_all_controls()
                    if isinstance(c, InquirerControl))
@@ -413,11 +406,6 @@ def _pick(listed, baud: Optional[int], *, probe: bool, message: str,
     @question.application.key_bindings.add("q", eager=True)
     def _quit(event):
         event.app.exit(result=QUIT)
-
-    if can_probe:
-        @question.application.key_bindings.add("p", eager=True)
-        def _probe(event):
-            event.app.exit(result=PROBE)
 
     to_kill = {}
 
@@ -458,9 +446,12 @@ def _pick(listed, baud: Optional[int], *, probe: bool, message: str,
     futures: list[concurrent.futures.Future] = []
     if ports:
         executor = concurrent.futures.ThreadPoolExecutor(max_workers=min(8, len(ports)))
+        latest: dict[str, concurrent.futures.Future] = {}
 
         def annotate(target: str):
             def done(future):
+                if latest.get(target) is not future:
+                    return  # superseded by a probe started with `p`
                 try:
                     results[target] = {**results[target], **future.result()}
                 except Exception as error:  # noqa: BLE001
@@ -472,13 +463,27 @@ def _pick(listed, baud: Optional[int], *, probe: bool, message: str,
                     question.application.invalidate()
             return done
 
-        for target in ports:
-            if target in to_probe:
-                future = executor.submit(probe_port, target, baud, identify)
-            else:
-                future = executor.submit(lambda t: {"error": held_reason(t)}, target)
+        def submit(task, target: str) -> None:
+            future = executor.submit(task, target)
+            latest[target] = future
             future.add_done_callback(annotate(target))
             futures.append(future)
+
+        for target in ports:
+            if target in to_probe:
+                submit(lambda t: probe_port(t, baud, identify), target)
+            else:
+                submit(lambda t: {"error": held_reason(t)}, target)
+
+        if allow_probe:
+            @question.application.key_bindings.add("p", eager=True)
+            def _probe(event):
+                target = control.get_pointed_at().value
+                if target in rows and target not in to_probe:
+                    to_probe.add(target)
+                    checked.discard(target)
+                    repaint()
+                    submit(lambda t: probe_port(t, baud, identify), target)
 
     try:
         with quiet_esptool():
@@ -494,7 +499,7 @@ def _pick(listed, baud: Optional[int], *, probe: bool, message: str,
 
     if answer is KILL:
         return KILL, {"port": to_kill["port"]}
-    if answer in (REFRESH, MANUAL, QUIT, PROBE) or answer is None:
+    if answer in (REFRESH, MANUAL, QUIT) or answer is None:
         return answer, None
     chosen = results[answer]
     if chosen["error"]:

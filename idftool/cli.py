@@ -71,7 +71,7 @@ click.rich_click.COMMAND_GROUPS = {
 @click.option('-m', '--mac', type=MAC, default=None, help='Use the device with this MAC address')
 @click.option('-b', '--baud', type=int, default=ESPLoader.ESP_ROM_BAUD, show_default=True, help='Serial port baud rate')
 @click.option('--probe', is_flag=True,
-              help='Connect to USB-serial adapter ports to identify their boards (resets them)')
+              help='Connect to every port to identify its board (resets them)')
 @click.option('-y', '--yes', is_flag=True, help='Do not ask which device to use')
 @click.option('--no-reset', is_flag=True, help='Do not reset the chip after operations')
 @click.option('--partition-table-file', default=None,
