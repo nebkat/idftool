@@ -5,7 +5,9 @@ from typing import Callable
 from esptool import ESPLoader
 
 from esp_idf_defs import ImageMetadata, ChipId
-from esp_idf_defs.partitions import PartitionTable, PartitionDefinition, APP_TYPE, print_partition_table
+from esp_idf_defs.partitions import PartitionTable, PartitionDefinition, APP_TYPE
+
+from idftool.display import print_partition_table
 
 def validate_app_binary(esp: ESPLoader, app_binary: bytes) -> tuple[bytes, ImageMetadata]:
     try:

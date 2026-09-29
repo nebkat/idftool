@@ -808,3 +808,28 @@ def test_a_mac_takes_the_place_of_the_prompt(monkeypatch):
     monkeypatch.setattr(state_module, "find_port_for_mac", lambda mac, baud: "/dev/by-mac")
     assert _state(monkeypatch, mac="9c:13:9e:1b:d4:6c").resolve_port() == "/dev/by-mac"
     assert shown == []
+
+
+def _table():
+    from idftool.partitions import parse_partition_table_csv
+
+    return parse_partition_table_csv((SAMPLES / "partitions.csv").read_text(), "sample",
+                                     0x8000, None, None)
+
+
+def test_a_piped_partition_table_stays_plain(capsys, monkeypatch):
+    from idftool.display import print_partition_table
+
+    monkeypatch.delenv("FORCE_COLOR", raising=False)
+    print_partition_table(_table())
+    out = capsys.readouterr().out
+    assert out.splitlines()[1].startswith("|---") and "\x1b" not in out
+
+
+def test_a_terminal_partition_table_is_boxed(capsys, monkeypatch):
+    from idftool.display import print_partition_table
+
+    monkeypatch.setenv("FORCE_COLOR", "1")
+    print_partition_table(_table())
+    out = capsys.readouterr().out
+    assert "╭" in out and "\x1b[" in out

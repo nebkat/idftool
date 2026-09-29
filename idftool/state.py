@@ -14,11 +14,12 @@ from esptool import ESPLoader, flash_size_bytes
 from esptool.cmds import detect_chip, detect_flash_size
 
 from esp_idf_defs.otadata import OtaDataParameters
-from esp_idf_defs.partitions import PartitionTable, print_partition_table, PartitionDefinition, \
+from esp_idf_defs.partitions import PartitionTable, PartitionDefinition, \
     BOOTLOADER_TYPE, SUBTYPES, PARTITION_TABLE_TYPE
 
 from esp_pylib.serial_ports import get_port_names
 
+from idftool.display import print_partition_table
 from idftool.partitions import check_image_file, check_write_bundle_has_partition_table, \
     load_partition_table_file, parse_partition_table_csv, read_otadata, require_partitions
 from idftool.ports import find_port_for_mac, print_rerun_hint, select_device

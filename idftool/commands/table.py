@@ -6,9 +6,8 @@ import rich_click as click
 from esptool import flash_size_bytes
 from esptool.cmds import detect_flash_size
 
-from esp_idf_defs.partitions import print_partition_table
-
 from idftool.cli import cli, pass_state
+from idftool.display import print_partition_table
 from idftool.flash import write_flash
 from idftool.partitions import load_partition_table_file, resolve_partition_table_format, \
     write_partition_table_file
