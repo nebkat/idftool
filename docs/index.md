@@ -10,6 +10,25 @@ with. idftool does that for you.
 
 <div class="grid cards" markdown>
 
+-   :material-usb: **Device selection**
+
+    ---
+
+    Pick a board from a list of connected devices, or address it by MAC
+    address. The list comes from USB, so no board is reset.
+
+    [:octicons-arrow-right-24: Choosing a device](guide/choosing-a-device.md)
+
+-   :material-swap-horizontal: **Firmware flashing**
+
+    ---
+
+    Flash factory or the next OTA slot and switch to it, skipping what's
+    already there. See and change the boot slot without touching otadata by
+    hand.
+
+    [:octicons-arrow-right-24: Firmware](commands/firmware.md)
+
 -   :material-tag-text-outline: **Partition-name addressing**
 
     ---
@@ -19,23 +38,14 @@ with. idftool does that for you.
 
     [:octicons-arrow-right-24: Partition addressing](guide/partition-addressing.md)
 
--   :material-swap-horizontal: **OTA slot management**
-
-    ---
-
-    See the active slot, switch slots, or fall back to factory without
-    computing otadata offsets.
-
-    [:octicons-arrow-right-24: Boot selection](commands/boot.md)
-
 -   :material-shield-check-outline: **Safety checks**
 
     ---
 
-    Writes can't overflow their partition, and app binaries are checked
-    against the connected chip before flashing.
+    Writes can't overflow their partition, app binaries are checked against
+    the chip, and a file passed as a partition is caught before connecting.
 
-    [:octicons-arrow-right-24: Firmware](commands/firmware.md)
+    [:octicons-arrow-right-24: Partitions or files](guide/partitions-or-files.md)
 
 -   :material-package-variant-closed: **Bundles and images**
 
@@ -44,25 +54,18 @@ with. idftool does that for you.
     Pack several partitions into one ZIP and flash them in one go, or dump
     and restore a whole flash image.
 
-    [:octicons-arrow-right-24: Bundles](commands/bundles.md)
+    [:octicons-arrow-right-24: Bundles](commands/bundles.md) ·
+    [Images](commands/images.md)
 
--   :material-folder-outline: **Filesystems, both ways**
-
-    ---
-
-    Build FAT, littlefs, or SPIFFS images from a directory and flash them, or
-    pull one off the device and extract it.
-
-    [:octicons-arrow-right-24: Filesystems](commands/filesystems.md)
-
--   :material-key-outline: **NVS editing**
+-   :material-folder-key-outline: **Filesystems and NVS**
 
     ---
 
-    Generate NVS images from CSV, read single keys into a shell, or change a
-    key on a live device without rebuilding the partition.
+    Build FAT, littlefs, or SPIFFS images from a directory, or pull them off
+    the device. Generate NVS from CSV, or change a key on a live device.
 
-    [:octicons-arrow-right-24: NVS](commands/nvs.md)
+    [:octicons-arrow-right-24: Filesystems](commands/filesystems.md) ·
+    [NVS](commands/nvs.md)
 
 </div>
 

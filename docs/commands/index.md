@@ -12,8 +12,8 @@ Run `idftool COMMAND --help` for every option of a command.
 | [`erase`](partition-io.md#erase) | Erase a partition (or slice) |
 | [`view`](partition-io.md#view) | Pretty-print a partition's contents |
 | **[Firmware](firmware.md)** | |
-| [`ota`](firmware.md#ota) | Push an app to the next OTA slot and switch to it |
 | [`factory`](firmware.md#factory) | Flash an app to the factory partition |
+| [`ota`](firmware.md#ota) | Push an app to the next OTA slot and switch to it |
 | [`app-info`](firmware.md#app-info) | Print the app description from an application binary |
 | **[Boot selection](boot.md)** | |
 | [`get-boot`](boot.md#get-boot) | Show the currently-active OTA slot |

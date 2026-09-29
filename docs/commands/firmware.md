@@ -3,19 +3,6 @@
 App images are checked against the connected chip before they're written, so a
 build for the wrong target is refused rather than flashed.
 
-## `ota`
-
-Write an app to the **next** OTA slot and make it the boot slot. idftool reads
-otadata to find the next slot, writes the image, and bumps the OTA sequence
-number: what an OTA update from the firmware would do, over USB.
-
-```bash
-idftool ota build/my-app.bin
-```
-
-`--skip-flashed` and `--diff` are on by default, so flashing the same build
-again only switches the slot. See [Write options](../guide/write-options.md).
-
 ## `factory`
 
 Write an app to the factory partition and erase otadata, so the bootloader
@@ -26,7 +13,21 @@ goes to `ota_0` instead.
 idftool factory build/my-app.bin
 ```
 
-`--skip-flashed` and `--diff` are on by default here too.
+`--skip-flashed` and `--diff` are on by default, so flashing the same build
+again skips the write. See [Write options](../guide/write-options.md).
+
+## `ota`
+
+Write an app to the **next** OTA slot and make it the boot slot. idftool reads
+otadata to find the next slot, writes the image, and bumps the OTA sequence
+number: what an OTA update from the firmware would do, over USB.
+
+```bash
+idftool ota build/my-app.bin
+```
+
+`--skip-flashed` and `--diff` are on by default here too, so flashing the same
+build again only switches the slot.
 
 ## `app-info`
 
