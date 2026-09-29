@@ -29,13 +29,32 @@ name, without working out offsets by hand.
 
 ### Device selection on connection
 
-Without `-p`, `idftool` lists the connected devices and asks which to use. No
-more guessing which device is on which port. Or name a board by its MAC
-address, wherever it's plugged in:
+No more guessing which device is on which port. Run any command without `-p`
+and `idftool` lists the connected devices and asks which to use:
 
-```bash
-idftool -m 9c:13:9e:1b:d4:6c ota build/app.bin
+```console
+$ idftool ota build/app.bin
+? Select device (↑↓ move · ↵ select · p probe · r refresh · k kill · q quit)
+ » /dev/cu.usbmodem11401         ESP USB-Serial/JTAG   7c:2c:67:92:79:c0
+   /dev/cu.usbmodem2101          ESP USB-Serial/JTAG   b8:f8:62:49:ea:14
+   /dev/cu.PL2303G-USBtoUART10   PL2303GT
+   ✎ Enter a port manually…
+   ↻ Refresh
+   ✕ Quit
 ```
+
+Pick one, and it tells you how to skip the question next time:
+
+```console
+Device: /dev/cu.usbmodem11401 — ESP USB-Serial/JTAG · 7c:2c:67:92:79:c0
+Re-run with: idftool -p /dev/cu.usbmodem11401 ota build/app.bin
+         or: idftool -m 7c:2c:67:92:79:c0 ota build/app.bin
+...
+Writing 'my-app v1.2.0' to partition 'ota_1'...
+Setting boot partition to 'ota_1'...
+```
+
+The `-m` form finds the board by its MAC address, wherever it's plugged in.
 
 ### Firmware flashing
 
