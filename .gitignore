@@ -66,3 +66,7 @@ pip-selfcheck.json
 # macOS
 .DS_Store
 site/
+.coverage
+.coverage.*
+coverage.lcov
+htmlcov/
