@@ -4,12 +4,35 @@ All notable changes to this project are documented here. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [v1.0.0] — 2026-09-29
+
+### Added
+- [Documentation site](https://nebkat.github.io/idftool/).
+- `monitor` runs `esp-idf-monitor` on the selected device.
+- `-m`/`--mac` selects a device by MAC address, `--usb-serial` by USB serial
+  number.
+- `ota` and `factory` skip writes already in flash, and rewrite only the
+  sectors that changed. `--skip-flashed` and `--diff` do the same for the
+  other write commands.
+- `devices --probe` adds each port's chip and MAC. `ports` is an alias.
+
+### Changed
+- The device picker no longer resets boards to list them. `p` identifies the
+  highlighted port's chip; `--probe` identifies every port.
+- `devices` shows the adapter type, USB serial number and location.
+- Tables are boxed and coloured on a terminal, and plain Markdown when piped.
+- After picking a device, the re-run hint also offers the `-m` or
+  `--usb-serial` form.
+
+### Fixed
+- `make install` no longer breaks an `idftool` that's already running.
+
 ## [v0.10.0] — 2026-09-10
 
 ### Added
 - `app-info` (alias `print-app`) prints the app description of a bare
   application binary.
-- Without `-p`, idftool asks which device to use. `-y` skips the prompt.
+- Without `-p`, `idftool` asks which device to use. `-y` skips the prompt.
 - `k` in the device picker kills a process holding the port (macOS/Linux).
 - `idftool.ports.select_device()`, with an `identify` hook.
 
@@ -40,7 +63,7 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 
 - Port discovery — which devices are hidden, how they are ranked, and the
   vid/pid/name/serial filters — is now whatever esp-pylib does, shared with
-  esptool, rather than a copy maintained here.
+  `esptool`, rather than a copy maintained here.
 
 ### Added
 - `esp-pylib` is now a dependency (`>=1.1.4,<2`).
@@ -48,13 +71,13 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 ## [v0.8.1] — 2026-08-27
 
 ### Fixed
-- Dependency pins no longer fight the ESP-IDF Python environment. idftool is
+- Dependency pins no longer fight the ESP-IDF Python environment. `idftool` is
   installed into that env, which pins `esptool` and `esp-idf-nvs-partition-gen`
-  itself — IDF 6.0 and 6.1 both ship esptool 5.3.1 and nvs-partition-gen 0.1.9,
+  itself — IDF 6.0 and 6.1 both ship `esptool` 5.3.1 and nvs-partition-gen 0.1.9,
   so the compatible-release pins (`~=5.2.0`, `~=0.2.0`) were reported as
   conflicts on every pip operation there, and IDF wins the tie. Both are now
   ranges wide enough to hold whatever IDF installs (`esptool>=5.2,<6`,
-  `esp-idf-nvs-partition-gen>=0.1.9,<0.3`); the API idftool actually uses is
+  `esp-idf-nvs-partition-gen>=0.1.9,<0.3`); the API `idftool` actually uses is
   present across them. nvs-partition-gen 0.1.9 and 0.2.0 differ only by an error
   message, and the ceiling stops short of 0.3.0, which replaces the argparse
   entry point `generate(args)` is reached through.
@@ -90,7 +113,7 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 - NVS partitions can now be read and edited, not just generated. ESP-IDF's
-  `nvs_partition_gen` can only build an image from scratch, so idftool has its
+  `nvs_partition_gen` can only build an image from scratch, so `idftool` has its
   own NVS parser and entry encoder in `idftool.nvs`; the encoder is pinned to
   the generator's output byte for byte by the test suite, blob chunking
   included.
@@ -112,20 +135,20 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 
   Encrypted NVS partitions are not supported yet.
 - Every command that writes to flash — `write`, `write-image`, `write-nvs`,
-  `write-fs`, `write-bundle`, `factory`, `ota`, `set-nvs` — now passes esptool's
+  `write-fs`, `write-bundle`, `factory`, `ota`, `set-nvs` — now passes `esptool`'s
   `write_flash` options through, as flags (`--skip-flashed`,
   `--compress`/`--no-compress`, `--encrypt`, `--force`,
   `--ignore-flash-enc-efuse`, `--no-progress`) and as keyword arguments on the
   matching library function, which also reach the ones that take images rather
   than a yes/no (`diff_with`, `no_diff_verify`, `encrypt_files`, `erase_all`).
 
-  `--skip-flashed` is the interesting one: esptool compares the MD5 of what is
+  `--skip-flashed` is the interesting one: `esptool` compares the MD5 of what is
   already in flash against the data about to be written and skips the writes
   that would change nothing, so re-flashing an up-to-date partition costs a
   checksum instead of a write. The check is per file, not per sector, so it is
   all-or-nothing for each one.
 
-  An option esptool does not know is rejected rather than ignored. It reads its
+  An option `esptool` does not know is rejected rather than ignored. It reads its
   keyword arguments with `kwargs.get`, so a misspelled one would otherwise be a
   write that quietly did something else.
 - `dump-image` learned `--size`, which reads only the first N bytes instead of the
@@ -144,7 +167,7 @@ this project adheres to [Semantic Versioning](https://semver.org/).
   actually added native command aliases. The declared `>=1.8` floor allowed
   1.8.9 to be installed, where the `aliases=` kwarg on a command raises
   `TypeError: Command.__init__() got an unexpected keyword argument 'aliases'`
-  at import time, so every idftool invocation failed.
+  at import time, so every `idftool` invocation failed.
 
 ## [v0.7.0] — 2026-08-18
 
@@ -176,7 +199,7 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 - New dependencies: `pyfatfs` (used through its low-level `PyFat` API, so its
   PyFilesystem2 dependency is never imported) and `littlefs-python` (the same
   library `esp_littlefs` generates images with). SPIFFS needs no dependency:
-  ESP-IDF's `spiffsgen` is vendored, and idftool adds the reader ESP-IDF does
+  ESP-IDF's `spiffsgen` is vendored, and `idftool` adds the reader ESP-IDF does
   not ship. The backends are imported lazily, so no other command pays for
   them at startup.
 
@@ -201,13 +224,13 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 - A flash read that fails while printing the partition table no longer aborts
   the command before it starts. The otadata read (used only to mark the active
   app partition) now reports a warning and carries on, and unreadable app
-  slots render as `<READ ERROR>` in the table instead of raising esptool's
+  slots render as `<READ ERROR>` in the table instead of raising `esptool`'s
   `FatalError` out of the printer — requires `esp-idf-defs` v0.1.5.
 
 ## [v0.6.0] — 2026-08-02
 
 ### Added
-- idftool is now importable as a library, esptool-style: every command's
+- `idftool` is now importable as a library, esptool-style: every command's
   logic is exposed as a plain function (`write_image`, `factory`, `ota`,
   `read_partition`, `write_partitions`, `dump_bundle`, …) that takes a
   `State` — which owns the serial connection — plus the same arguments as
@@ -239,7 +262,7 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 - The CLI is rebuilt on [click](https://click.palletsprojects.com/) and
-  [rich-click](https://github.com/ewels/rich-click) (like esptool): `--help`,
+  [rich-click](https://github.com/ewels/rich-click) (like `esptool`): `--help`,
   usage, and errors now render in boxed panels, and commands are grouped into
   labelled sections. Command names, arguments, options, aliases (`reflash`,
   `list`), and behaviour are unchanged — only the help/usage and error
@@ -341,6 +364,7 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 ### Added
 - Initial release.
 
+[v1.0.0]: https://github.com/nebkat/idftool/releases/tag/v1.0.0
 [v0.10.0]: https://github.com/nebkat/idftool/releases/tag/v0.10.0
 [v0.9.0]: https://github.com/nebkat/idftool/releases/tag/v0.9.0
 [v0.8.1]: https://github.com/nebkat/idftool/releases/tag/v0.8.1
