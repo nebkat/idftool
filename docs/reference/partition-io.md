@@ -22,7 +22,7 @@ partition before anything is written.
 idftool write ota_0 build/app.bin storage build/spiffs.bin
 ```
 
-Takes the [write options](../guide/write-options.md).
+Takes the [write options](write-options.md).
 
 ## `erase`
 

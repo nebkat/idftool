@@ -2,7 +2,7 @@
 
 === "pipx (recommended)"
 
-    [pipx](https://pipx.pypa.io) installs idftool into its own environment and
+    [pipx](https://pipx.pypa.io) installs `idftool` into its own environment and
     puts it on your `PATH`:
 
     ```bash

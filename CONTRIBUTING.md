@@ -46,18 +46,6 @@ make docs            # build into site/, failing on broken links
 
 Make sure `~/.local/bin` is on your `PATH`.
 
-## Releases
-
-Tag a commit on `main` with `vX.Y.Z` and push the tag — CI builds the
-binaries, attaches them to a GitHub Release, and publishes the Python
-package to PyPI (requires manual approval in the `pypi` GitHub
-environment).
-
-```bash
-git tag vX.Y.Z
-git push origin main vX.Y.Z
-```
-
 ## Issues and pull requests
 
 File issues and PRs on the

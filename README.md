@@ -1,19 +1,37 @@
-# idftool
+# `idftool`
 
-A CLI built on [esptool](https://github.com/espressif/esptool) that understands
-the ESP-IDF partition table. Flash apps, switch OTA slots, and read or write
-partitions by name, without working out offsets by hand.
+[![PyPI](https://img.shields.io/pypi/v/idftool.svg)](https://pypi.org/project/idftool/) [![CI](https://github.com/nebkat/idftool/actions/workflows/ci.yml/badge.svg)](https://github.com/nebkat/idftool/actions/workflows/ci.yml) [![Coverage status](https://coveralls.io/repos/github/nebkat/idftool/badge.svg?branch=main)](https://coveralls.io/github/nebkat/idftool?branch=main) [![Docs](https://img.shields.io/badge/docs-latest-blue.svg)](https://nebkat.github.io/idftool/)
+
+The ultimate CLI tool for interacting with Espressif devices. Built on
+[`esptool`](https://docs.espressif.com/projects/esptool/en/latest/esp32/) and aware of the ESP-IDF
+partition table: flash apps, switch OTA slots, and read or write partitions by
+name, without working out offsets by hand.
 
 **[Documentation](https://nebkat.github.io/idftool/)**
+
+> [!TIP]
+> **Install `idftool` with [pipx](https://pipx.pypa.io)**
+>
+> ```bash
+> pipx install idftool
+> ```
+>
+> Or download a binary from [Releases](https://github.com/nebkat/idftool/releases).
+> See [Installation](https://nebkat.github.io/idftool/latest/installation/) for more.
+
+> [!NOTE]
+> **Or use it in the browser**
+>
+> [esp-web-toolkit](https://nebkat.github.io/esp-web-toolkit/) is the
+> browser-based equivalent: the same tools with a UI, nothing to install.
 
 ## Highlights
 
 ### Device selection on connection
 
-Without `-p`, idftool lists the connected devices and asks which to use. The
-list comes from USB, so no board is reset by looking at it; ESP
-USB-Serial/JTAG ports show their MAC straight away, and `p` probes a port for
-its chip. Or name a board by MAC address, wherever it's plugged in:
+Without `-p`, `idftool` lists the connected devices and asks which to use. No
+more guessing which device is on which port. Or name a board by its MAC
+address, wherever it's plugged in:
 
 ```bash
 idftool -m 9c:13:9e:1b:d4:6c ota build/app.bin
@@ -21,9 +39,9 @@ idftool -m 9c:13:9e:1b:d4:6c ota build/app.bin
 
 ### Firmware flashing
 
-Flash the factory partition, or the next OTA slot and switch to it, the way an
-OTA update from the firmware would. Writes that match what's already in flash
-are skipped, and only changed sectors are rewritten.
+Flash to the default (factory) or next available (OTA) app partition, with no
+offsets to memorise. An OTA flash switches to the new slot the way a real
+update would, and only the sectors that changed are rewritten.
 
 ```bash
 idftool factory build/app.bin
@@ -43,9 +61,12 @@ idftool view 'log[-0x1000:]'
 
 ### Safety checks
 
-Writes can't overflow their partition, app binaries are checked against the
-connected chip, and a file passed where a partition belongs is caught before
-connecting.
+Everything is checked before flash is touched:
+
+- Data has to fit the partition it's written to.
+- Apps have to be valid images, built for the connected chip.
+- A file name given where a partition name belongs is caught before
+  connecting, with the corrected command.
 
 ### Bundles and images
 
@@ -60,7 +81,8 @@ idftool write-bundle release.zip
 ### Filesystems and NVS
 
 Build FAT, littlefs, or SPIFFS images from a directory and flash them, or pull
-them off the device. Generate NVS from CSV, read a key into a shell, or change
+them off the device. The filesystem type comes from the partition table, so
+you don't need to say which. Generate NVS from CSV, read a key into a shell, or change
 one on a live device.
 
 ```bash
@@ -68,16 +90,6 @@ idftool write-fs storage assets/
 serial=$(idftool get-nvs nvs storage:serial)
 idftool set-nvs nvs storage:serial=SN-0001
 ```
-
-## Installation
-
-```bash
-pipx install idftool
-```
-
-Or download a binary from the
-[Releases](https://github.com/nebkat/idftool/releases) page. See
-[Installation](https://nebkat.github.io/idftool/installation/) for more.
 
 ## Contributing
 

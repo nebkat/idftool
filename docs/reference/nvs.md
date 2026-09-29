@@ -1,17 +1,30 @@
 # NVS
 
-idftool builds NVS (Non-Volatile Storage) images from the same CSV format as
+`idftool` builds NVS (Non-Volatile Storage) images from the same CSV format as
 ESP-IDF's
 [`nvs_partition_gen.py`](https://docs.espressif.com/projects/esp-idf/en/latest/api-reference/storage/nvs_partition_gen.html),
 and reads, queries, and edits them on the device or as files.
 
-```csv title="nvs.csv"
+The CSV has one row per namespace or key, under a
+`key,type,encoding,value` header:
+
+- A `namespace` row starts a namespace. The keys below it belong to it.
+- A `data` row is a key with an encoding (`u8` to `u64`, `i8` to `i64`,
+  `string`, `hex2bin`, `base64`, or `binary`) and its value.
+- A `file` row is the same, but the value is read from the file named.
+
+This example makes a namespace `storage` holding three keys:
+
+```csv title="example.csv"
 key,type,encoding,value
 storage,namespace,,
 device_name,data,string,My Device
 device_id,data,u32,12345
 api_key,data,string,abc123def456
 ```
+
+Don't pad the columns with spaces: `nvs_partition_gen` doesn't accept them in
+the header.
 
 !!! note
     Encrypted NVS isn't supported yet. Every command here works on plaintext
@@ -24,8 +37,8 @@ Build an NVS image from a CSV, offline. Needs a size: `--size`, or
 `--partition-table-file` or a device).
 
 ```bash
-idftool create-nvs nvs.csv -o nvs.bin --size 0x6000
-idftool --partition-table-file partitions.csv create-nvs nvs.csv -o nvs.bin --partition nvs
+idftool create-nvs example.csv -o nvs.bin --size 0x6000
+idftool --partition-table-file partitions.csv create-nvs example.csv -o nvs.bin --partition nvs
 ```
 
 ## `write-nvs`
@@ -33,10 +46,10 @@ idftool --partition-table-file partitions.csv create-nvs nvs.csv -o nvs.bin --pa
 Build an NVS image from a CSV and flash it to a partition.
 
 ```bash
-idftool write-nvs nvs nvs.csv
+idftool write-nvs nvs example.csv
 ```
 
-Takes the [write options](../guide/write-options.md).
+Takes the [write options](write-options.md).
 
 ## `print-nvs`
 
@@ -48,6 +61,30 @@ written or erased. Alias: `list-nvs`.
 idftool print-nvs nvs                 # from the device
 idftool print-nvs -f nvs.bin          # from a file
 idftool print-nvs -f nvs.bin --pages
+```
+
+```console
+$ idftool print-nvs -f nvs.bin --pages
+'nvs.bin': NVS version 2, 0x6000 bytes
+╭──────┬─────┬───────────────┬───────┬─────────────────────╮
+│ Page │ Seq │ State         │ Used  │ Entries             │
+├──────┼─────┼───────────────┼───────┼─────────────────────┤
+│ 0    │ 0   │ active        │ 6/126 │ 6 written, 0 erased │
+│ 1    │ -   │ uninitialised │       │                     │
+│ 2    │ -   │ uninitialised │       │                     │
+│ 3    │ -   │ uninitialised │       │                     │
+│ 4    │ -   │ uninitialised │       │                     │
+│ 5    │ -   │ uninitialised │       │                     │
+╰──────┴─────┴───────────────┴───────┴─────────────────────╯
+
+╭───────────┬─────────────┬────────┬──────────╮
+│ Namespace │ Key         │ Type   │ Value    │
+├───────────┼─────────────┼────────┼──────────┤
+│ config    │ sample_rate │ u32    │ 100      │
+│ config    │ serial      │ string │ SN-0042  │
+│ config    │ wifi_ssid   │ string │ Workshop │
+╰───────────┴─────────────┴────────┴──────────╯
+3 entries in 1 namespace, 21 bytes of data
 ```
 
 ## `extract-nvs` / `read-nvs`

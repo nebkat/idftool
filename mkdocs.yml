@@ -1,5 +1,5 @@
 site_name: idftool
-site_description: An ESP-IDF partition-aware CLI built on esptool
+site_description: The ultimate CLI tool for interacting with Espressif devices
 site_url: https://nebkat.github.io/idftool/
 repo_url: https://github.com/nebkat/idftool
 repo_name: nebkat/idftool
@@ -26,39 +26,58 @@ theme:
         icon: material/weather-sunny
         name: Switch to light mode
   features:
+    - navigation.tabs
+    - navigation.tabs.sticky
     - navigation.sections
     - navigation.top
     - navigation.footer
-    - navigation.indexes
     - search.highlight
     - content.code.copy
     - content.action.edit
     - toc.follow
 
 nav:
-  - Home: index.md
-  - Installation: installation.md
-  - Guide:
-      - Choosing a device: guide/choosing-a-device.md
-      - Partitions or files: guide/partitions-or-files.md
-      - Partition addressing: guide/partition-addressing.md
-      - Global options: guide/global-options.md
-      - Write options: guide/write-options.md
-  - Commands:
-      - commands/index.md
-      - Discovery: commands/discovery.md
-      - Partition I/O: commands/partition-io.md
-      - Firmware: commands/firmware.md
-      - Boot selection: commands/boot.md
-      - Images: commands/images.md
-      - Bundles: commands/bundles.md
-      - Partition table: commands/partition-table.md
-      - NVS: commands/nvs.md
-      - Filesystems: commands/filesystems.md
-      - Misc: commands/misc.md
-  - Python library: library.md
+  - Home:
+      - idftool: index.md
+      - Installation: installation.md
+      - Guide:
+          - Getting started: guide/getting-started.md
+          - Choosing a device: guide/choosing-a-device.md
+          - Flashing firmware: guide/flashing-firmware.md
+          - Monitoring a device: guide/monitoring.md
+          - Provisioning devices: guide/provisioning.md
+          - Backups and releases: guide/backups-and-releases.md
+      - Advanced:
+          - Partition addressing: guide/partition-addressing.md
+          - Partitions or files: guide/partitions-or-files.md
+          - Scripting: guide/scripting.md
+          - Python library: library.md
+  - Reference:
+      - Overview: reference/index.md
+      - Commands:
+          - Discovery: reference/discovery.md
+          - Firmware: reference/firmware.md
+          - Monitor: reference/monitor.md
+          - Partition I/O: reference/partition-io.md
+          - Images: reference/images.md
+          - Bundles: reference/bundles.md
+          - Partition table: reference/partition-table.md
+          - NVS: reference/nvs.md
+          - Filesystems: reference/filesystems.md
+          - Misc: reference/misc.md
+      - Options:
+          - Global options: reference/global-options.md
+          - Write options: reference/write-options.md
   - Changelog: changelog.md
   - Contributing: contributing.md
+
+extra:
+  version:
+    provider: mike
+    default: latest
+
+extra_css:
+  - stylesheets/extra.css
 
 markdown_extensions:
   - admonition

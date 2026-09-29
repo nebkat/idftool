@@ -1,6 +1,6 @@
 # Python library
 
-Like esptool, every command is also a plain function. Each takes a `State`,
+Like [`esptool`](https://docs.espressif.com/projects/esptool/en/latest/esp32/esptool/scripting.html), every command is also a plain function. Each takes a `State`,
 which holds the serial connection and the global options, plus the same
 arguments as the CLI command. Reuse one `State` to run several operations over
 a single connection.
@@ -27,7 +27,7 @@ Names are imported lazily, so `import idftool` has no side effects.
 
 ## Write options
 
-The [write options](guide/write-options.md) are keyword arguments, with the
+The [write options](reference/write-options.md) are keyword arguments, with the
 flag's name in snake case:
 
 ```python
@@ -37,10 +37,12 @@ write_image(state, "flash.img", erase=False, diff=True)
 write_nvs(state, "nvs", "provision.csv", no_progress=True)
 ```
 
-esptool options that take data rather than a yes/no are available here only:
-`diff_with`, `no_diff_verify`, `encrypt_files`, `erase_all`.
+`esptool` options that take data rather than a yes/no are available here only:
+`diff_with` and `no_diff_verify` (`esptool`'s
+[fast reflashing](https://docs.espressif.com/projects/esptool/en/latest/esp32/esptool/basic-commands.html#fast-reflashing)),
+`encrypt_files`, and `erase_all`.
 
-An unknown option raises `TypeError` rather than being ignored. esptool reads
+An unknown option raises `TypeError` rather than being ignored. `esptool` reads
 its options with `kwargs.get`, so a misspelled one would otherwise be a write
 that quietly did something else.
 
@@ -73,8 +75,8 @@ next to it.
 | Group | Functions |
 |--------|-----------|
 | Discovery | `list_devices`, `monitor`, `enter_bootloader` |
-| Partition I/O | `read_partition`, `write_partitions`, `erase_partition`, `view_partition` |
 | Firmware | `factory`, `ota`, `get_boot`, `set_boot`, `clear_boot` |
+| Partition I/O | `read_partition`, `write_partitions`, `erase_partition`, `view_partition` |
 | Images | `create_image`, `dump_image`, `write_image`, `print_image` |
 | Bundles | `create_bundle`, `dump_bundle`, `write_bundle`, `print_bundle` |
 | Partition table | `print_table`, `create_table`, `dump_table`, `write_table` |

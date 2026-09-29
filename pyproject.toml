@@ -4,7 +4,7 @@
 
 [project]
     name = "idftool"
-    description = "Utility for flashing, provisioning, and interacting with Espressif SOCs running ESP-IDF"
+    description = "The ultimate CLI tool for interacting with Espressif devices"
     readme = "README.md"
     license = "Apache-2.0"
     requires-python = ">=3.10"
@@ -39,7 +39,7 @@
 [project.optional-dependencies]
     test = ["pytest>=8", "pytest-cov>=7", "coverage>=7.10"]
     # MkDocs 2.0 drops the plugin and theme system Material is built on.
-    docs = ["mkdocs>=1.6,<2", "mkdocs-material~=9.7"]
+    docs = ["mkdocs>=1.6,<2", "mkdocs-material~=9.7", "mike>=2"]
 
 [project.scripts]
     idftool = "idftool.__main__:_main"

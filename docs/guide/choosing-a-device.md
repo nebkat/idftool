@@ -1,17 +1,18 @@
 # Choosing a device
 
-Every command that talks to a device needs a port. There are three ways to give
+Every command that talks to a device needs a port. There are four ways to give
 it one.
 
 | How | When |
 |-----|------|
+| Default | `idftool` lists the connected devices and asks. |
 | `-p PORT` | You know the port. |
-| `-m MAC` | You know the board. Survives replugging into a different socket. |
-| Neither | idftool lists the connected devices and asks. |
+| `-m MAC` | You know the chip. Survives replugging into a different socket. |
+| `--usb-serial SERIAL` | The board has a USB-serial adapter with its own serial number. |
 
 ## The picker
 
-Without `-p` or `-m`, idftool shows the serial ports and asks which to use:
+Without `-p` or `-m`, `idftool` shows the serial ports and asks which to use:
 
 ```text
 ? Select device (↑↓ move · ↵ select · p probe · r refresh · k kill · q quit)
@@ -41,7 +42,7 @@ The list comes from USB alone, so no board is reset by looking at it:
 `--probe` connects to every port up front instead, so the chip column is filled
 for all of them.
 
-After you pick, idftool prints how to skip the picker next time:
+After you pick, `idftool` prints how to skip the picker next time:
 
 ```text
 Device: /dev/cu.usbmodem11401 — ESP32-S3 · ESP USB-Serial/JTAG · 7c:2c:67:92:79:c0
@@ -50,7 +51,7 @@ Re-run with: idftool -p /dev/cu.usbmodem11401 get-boot
 ```
 
 `-y` skips the picker, as does running without a terminal (in a script or CI).
-esptool then picks the port itself.
+`esptool` then picks the port itself.
 
 ## By MAC address
 
@@ -66,13 +67,23 @@ A board behind a USB-serial adapter has no MAC in its USB descriptors. Add
 `--probe` to connect to the adapter ports and read the MAC from the chip, which
 resets those boards.
 
-## Port names on macOS
+## By USB serial number
 
-`/dev/cu.usbmodem*` names come from where the device is plugged in, not from
-the device: `usbmodem11401` is bus 1 → hub port 1 → port 4. The same socket
-gives the same name to whatever is plugged into it, and moving a board changes
-its name. The `LOCATION` column of [`idftool devices`](../commands/discovery.md#devices)
-shows that path.
+A board with a USB-serial adapter soldered on can be named by the adapter's
+serial number instead, as shown in the "USB serial #" column of
+[`idftool devices`](../reference/discovery.md#devices):
 
-Use the `cu.*` nodes, not `tty.*`. Opening a `tty.*` node waits for a modem
-carrier signal that never comes.
+```bash
+idftool --usb-serial A50285BI write-bundle release.zip
+```
+
+Unlike `-m`, this never connects to anything. It needs an adapter with a unique
+serial number: FTDI and CP2102N chips have one, while many CH340 and older
+CP2102 chips have none or share `0001`. If two ports share the number,
+`idftool` stops and asks for `-p`.
+
+On Windows, FTDI's driver adds a channel letter to the serial number
+(`A50285BIA`). The number without it still matches.
+
+For boards on their built-in USB port the serial number is the MAC, so `-m` and
+`--usb-serial` find the same port.

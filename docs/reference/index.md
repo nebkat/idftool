@@ -1,24 +1,27 @@
-# Commands
+# Reference
 
-Run `idftool COMMAND --help` for every option of a command.
+Every command, by group. Run `idftool COMMAND --help` for all of a command's
+options. The options shared by every command are under
+[Global options](global-options.md) and [Write options](write-options.md).
 
 | Command | Description |
 |---------|-------------|
 | **[Discovery](discovery.md)** | |
-| [`devices`](discovery.md#devices) | List serial ports and their USB adapters |
+| [`devices`](discovery.md#devices) | List serial ports and their USB adapters (alias `ports`) |
+| **[Firmware](firmware.md)** | |
+| [`factory`](firmware.md#factory) | Flash an app to the factory partition |
+| [`ota`](firmware.md#ota) | Push an app to the next OTA slot and switch to it |
+| [`get-boot`](firmware.md#get-boot) | Show the currently-active OTA slot |
+| [`set-boot`](firmware.md#set-boot) | Force the next boot to a specific OTA partition |
+| [`clear-boot`](firmware.md#clear-boot) | Erase otadata and let the bootloader fall back |
+| [`app-info`](firmware.md#app-info) | Print the app description from an application binary |
+| **[Monitor](monitor.md)** | |
+| [`monitor`](monitor.md#monitor) | Open [`esp-idf-monitor`](https://github.com/espressif/esp-idf-monitor) on the selected device |
 | **[Partition I/O](partition-io.md)** | |
 | [`read`](partition-io.md#read) | Read a partition (or slice) into a file |
 | [`write`](partition-io.md#write) | Write one or more files to named partitions |
 | [`erase`](partition-io.md#erase) | Erase a partition (or slice) |
 | [`view`](partition-io.md#view) | Pretty-print a partition's contents |
-| **[Firmware](firmware.md)** | |
-| [`factory`](firmware.md#factory) | Flash an app to the factory partition |
-| [`ota`](firmware.md#ota) | Push an app to the next OTA slot and switch to it |
-| [`app-info`](firmware.md#app-info) | Print the app description from an application binary |
-| **[Boot selection](boot.md)** | |
-| [`get-boot`](boot.md#get-boot) | Show the currently-active OTA slot |
-| [`set-boot`](boot.md#set-boot) | Force the next boot to a specific OTA partition |
-| [`clear-boot`](boot.md#clear-boot) | Erase otadata and let the bootloader fall back |
 | **[Images](images.md)** | |
 | [`create-image`](images.md#create-image) | Merge partition binaries into a single flash image |
 | [`dump-image`](images.md#dump-image) | Dump the entire flash to an image file |
@@ -49,5 +52,4 @@ Run `idftool COMMAND --help` for every option of a command.
 | [`extract-fs`](filesystems.md#extract-fs) | Extract a filesystem image file to a directory |
 | [`print-fs`](filesystems.md#print-fs) | List the contents of a filesystem partition or image |
 | **[Misc](misc.md)** | |
-| [`monitor`](misc.md#monitor) | Open esp-idf-monitor on the selected device |
 | [`enter-bootloader`](misc.md#enter-bootloader) | Drop the chip into ROM bootloader mode |

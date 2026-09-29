@@ -1,6 +1,6 @@
 # Partition table
 
-These work on the partition table itself. That's different from the global
+These work on the [partition table](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-guides/partition-tables.html) itself. That's different from the global
 `--partition-table-file` option, which sets the layout *other* commands use to
 find partitions by name.
 
@@ -21,7 +21,7 @@ idftool print-table -f partitions.bin      # from a file
 idftool --partition-table-file partitions.csv print-table
 ```
 
-From a device, idftool also reads each app partition's description and marks
+From a device, `idftool` also reads each app partition's description and marks
 the running OTA slot. Next to otadata it shows which copy is in use: `ota (A)`,
 `ota (B)`, or `ota (invalid)` when otadata is erased.
 

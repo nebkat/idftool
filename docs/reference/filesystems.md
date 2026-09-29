@@ -1,6 +1,6 @@
 # Filesystems
 
-idftool builds, flashes, lists, and extracts the three filesystems ESP-IDF
+`idftool` builds, flashes, lists, and extracts the three filesystems ESP-IDF
 mounts from a data partition.
 
 | Filesystem | Partition subtype | Built with |
@@ -16,7 +16,7 @@ subtype, otherwise from what the image looks like. So
 
 **Wear levelling.** ESP-IDF mounts a `fat` partition through its wear
 levelling layer, which reserves sectors and shifts the filesystem as writes
-accumulate. idftool wraps FAT images in that layer by default and unwraps them
+accumulate. `idftool` wraps FAT images in that layer by default and unwraps them
 on read, including images the device has written to. `--no-fat-wear-levelling`
 gives a bare image, e.g. for a partition mounted with
 `esp_vfs_fat_spiflash_mount_ro`.
@@ -44,8 +44,9 @@ idftool --partition-table-file partitions.csv create-fs assets/ -o storage.bin -
 ## `write-fs`
 
 Build a filesystem image from a directory and flash it, sized to fill the
-partition. A file that's already a filesystem image is flashed as-is, padded to
-the partition.
+partition. The filesystem comes from the partition's subtype unless `--type`
+says otherwise; see [which filesystem](#filesystems). A file that's already a
+filesystem image is flashed as-is, padded to the partition.
 
 ```bash
 idftool write-fs storage assets/
@@ -53,7 +54,7 @@ idftool write-fs storage prebuilt-storage.bin
 idftool write-fs storage assets/ --type littlefs
 ```
 
-Takes the [write options](../guide/write-options.md).
+Takes the [write options](write-options.md).
 
 ## `read-fs`
 
@@ -78,4 +79,17 @@ List the contents of a filesystem partition or image. Alias: `list-fs`.
 ```bash
 idftool print-fs storage              # from the device
 idftool print-fs -f storage.bin       # from a file
+```
+
+```console
+$ idftool print-fs -f storage.bin
+'storage.bin': littlefs, 0x10000 bytes
+╭────────────────┬───────╮
+│ Path           │  Size │
+├────────────────┼───────┤
+│ config.json    │     8 │
+│ www            │ <dir> │
+│ www/index.html │    12 │
+╰────────────────┴───────╯
+2 files, 20 bytes, 1 directory
 ```
