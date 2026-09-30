@@ -16,7 +16,8 @@ idftool read 'storage[-0x1000:]' tail.bin
 
 Write files to partitions. Arguments come in `PARTITION FILE` pairs; repeat
 them to flash several partitions in one go. Each file is checked to fit its
-partition before anything is written.
+partition before anything is written, and a `bootloader` file is checked
+against the chip.
 
 ```bash
 idftool write ota_0 build/app.bin storage build/spiffs.bin

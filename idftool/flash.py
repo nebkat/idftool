@@ -21,7 +21,8 @@ import time
 from contextlib import contextmanager, redirect_stdout
 
 import rich_click as click
-from esptool.cmds import _update_image_flash_params, write_flash as esptool_write_flash
+from esptool.cmds import _update_image_flash_params, detect_flash_size, \
+    write_flash as esptool_write_flash
 from esp_pylib.logger import EspLog
 from esptool.logger import log
 from esptool.util import get_bytes, pad_to
@@ -108,12 +109,12 @@ def flash_options(f):
                      help='Skip each file whose partition already holds it. Compared on the '
                           'device in chunks, one sector first, so a difference usually costs '
                           'a few milliseconds to find. All-or-nothing per file, not per '
-                          'sector  [default: on for app writes]'),
+                          'sector  [default: on, except write-image]'),
         click.option('--diff/--no-diff', default=None,
                      help='Rewrite only the flash sectors that differ, found by hashing the '
                           'region a sector at a time. Abandoned for a whole-region write '
                           'once too much of it has been seen to differ for the scan to pay '
-                          'for itself  [default: on for app writes]'),
+                          'for itself  [default: on, except write-image]'),
         click.option('--compress/--no-compress', default=None,
                      help='Compress the data on the way to the device  '
                           '[default: on, unless the flasher stub is disabled]'),
@@ -435,6 +436,9 @@ def write_flash(esp, addr_data, flash_freq='keep', flash_mode='keep', flash_size
         if unavailable:
             print(f"Note: not checking what is already in flash, {unavailable}")
         else:
+            if flash_size == 'detect':
+                # The comparison needs the bootloader header esptool will write.
+                flash_size = detect_flash_size(esp) or '4MB'
             addr_data = _plan_writes(esp, addr_data, diff, flash_freq, flash_mode,
                                      flash_size, kwargs)
             if not addr_data:

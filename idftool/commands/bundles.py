@@ -6,9 +6,10 @@ from zipfile import BadZipFile, ZipFile
 import rich_click as click
 
 
-from esp_idf_defs.partitions import APP_TYPE
+from esp_idf_defs.partitions import APP_TYPE, BOOTLOADER_TYPE
 
-from idftool.apps import print_partition_table_and_apps, validate_app_binary
+from idftool.apps import parse_bootloader, print_partition_table_and_apps, validate_app_binary, \
+    validate_bootloader_binary
 from idftool.cli import cli, pass_state
 from idftool.flash import flash_options, option_group, write_flash, write_flash_options
 from idftool.partitions import get_partition, parse_partition_table_csv
@@ -67,6 +68,11 @@ def dump_bundle(state, output_file):
             print(f"Reading partition {partition.name} (offset={partition.offset:#x}, size={partition.size:#x})")
             data = esp.read_flash(partition.offset, partition.size)
             zf.writestr(f"{partition.name}.bin", data)
+        # A table with its own bootloader row already dumped it above.
+        bootloader = loaded.bootloader_entry
+        if bootloader is not None and bootloader not in partition_table:
+            print(f"Reading bootloader (offset={bootloader.offset:#x}, size={bootloader.size:#x})")
+            zf.writestr("bootloader.bin", esp.read_flash(bootloader.offset, bootloader.size))
         zf.writestr("partition_table.csv", partition_table.to_csv())
         print(f"Adding partition table CSV to bundle")
 
@@ -99,6 +105,8 @@ def write_bundle(state, input_file, **options):
             # An erased slot (as dump-bundle saves an unused OTA partition) has no app to check.
             if partition.type == APP_TYPE and data.strip(b'\xff'):
                 validate_app_binary(esp, data)
+            if partition.type == BOOTLOADER_TYPE:
+                validate_bootloader_binary(esp, data)
 
             print(f"Writing partition {partition.name} (offset={partition.offset:#x}, size={partition.size:#x}) from bundle")
             addr_data.append((partition.offset, data))
@@ -116,7 +124,7 @@ def write_bundle(state, input_file, **options):
             esp=esp,
             addr_data=addr_data,
             flash_size='detect',
-            **write_flash_options(options),
+            **write_flash_options(options, skip_flashed=True, diff=True),
         )
 
 
@@ -164,11 +172,16 @@ def print_bundle(state, bundle_file):
                     return chunk
             return b"\xff" * length
 
+        # A table with its own bootloader row names where it goes; otherwise it's the chip's.
+        row = next((p for p in partition_table if p.type == BOOTLOADER_TYPE), None)
+        bootloader = parse_bootloader(partition_data.get(row.name if row else 'bootloader', b''),
+                                      row.offset if row else None)
+
         included = sorted(partition_data.keys())
         print(f"Bundle: {bundle_file} ({bundle_size:#x} bytes)")
         print(f"Partitions included: {', '.join(included) if included else '(none)'}")
         print()
-        print_partition_table_and_apps(partition_table, read)
+        print_partition_table_and_apps(partition_table, read, bootloader)
 
 
 @cli.command('print-bundle', help='Print partition table and app info from a bundle ZIP')

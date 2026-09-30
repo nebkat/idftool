@@ -68,6 +68,7 @@ Print the app description of a bare application binary, without a device:
 project name, version, IDF version, compile time, ELF SHA-256, and target
 chip. The same block [`print-image`](images.md#print-image) and
 [`print-bundle`](bundles.md#print-bundle) print for each app partition.
+Given a bootloader, it prints which chip it's for.
 Alias: `print-app`.
 
 ```console

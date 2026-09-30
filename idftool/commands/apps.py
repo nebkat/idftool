@@ -5,7 +5,7 @@ import rich_click as click
 
 from esp_idf_defs import ImageMetadata
 
-from idftool.apps import print_app_info
+from idftool.apps import parse_bootloader, print_app_info, print_bootloader
 from idftool.cli import cli
 
 
@@ -20,7 +20,13 @@ def app_info(app_binary_file: str):
     try:
         image_metadata = ImageMetadata.from_bytes(app_binary, app_required=True)
     except ValueError as e:
-        raise RuntimeError(f"Invalid application binary: {e}")
+        # No app descriptor: a bootloader is an image too.
+        bootloader = parse_bootloader(app_binary)
+        if bootloader is None:
+            raise RuntimeError(f"Invalid application binary: {e}")
+        print(f"File: {app_binary_file} ({len(app_binary):#x} bytes)")
+        print_bootloader(bootloader)
+        return
 
     print(f"App: {app_binary_file} ({len(app_binary):#x} bytes)")
     print_app_info(image_metadata.app_description, image_metadata.header)

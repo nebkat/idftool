@@ -268,6 +268,7 @@ def test_print_image(run_offline, assets):
     out = run_offline(f"print-image -f {assets / 'flash-image.bin'}")
     assert "factory" in out
     assert "idftool_test" in out  # the app descriptor was parsed
+    assert "Bootloader: ESP32S3 (offset=0x0)" in out
 
 
 def test_partition_by_offset_no_match_is_clear(run_offline, tmp_path):

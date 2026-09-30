@@ -64,13 +64,15 @@ Takes the [write options](write-options.md).
 
 ## `print-image`
 
-Inspect a flash image without a device: the partition table inside it and, for
-each app partition holding a valid app, its project name, version, IDF version,
-compile time, ELF SHA-256, and target chip.
+Inspect a flash image without a device: which chip its bootloader is for, the
+partition table inside it and, for each app partition holding a valid app, its
+project name, version, IDF version, compile time, ELF SHA-256, and target chip.
 
 ```console
 $ idftool print-image -f build/full-flash.img
 Image: build/full-flash.img (0xc0000 bytes)
+
+Bootloader: ESP32S3 (offset=0x0)
 
 ╭──────────┬──────┬─────────┬─────────┬──────┬───────────────╮
 │ Name     │ Type │ Subtype │  Offset │ Size │ App           │

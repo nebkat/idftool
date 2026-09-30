@@ -8,6 +8,7 @@ import zipfile
 
 import pytest
 from click.testing import CliRunner
+from esptool.targets import ESP32S3ROM
 
 from conftest import FIXTURES
 
@@ -30,6 +31,10 @@ class VirtualEsp:
     CHIP_NAME = "ESP32-S3"
     IMAGE_CHIP_ID = 9
     BOOTLOADER_FLASH_OFFSET = 0x0
+    ESP_IMAGE_MAGIC = ESP32S3ROM.ESP_IMAGE_MAGIC
+    BOOTLOADER_IMAGE = ESP32S3ROM.BOOTLOADER_IMAGE
+    FLASH_SIZES = ESP32S3ROM.FLASH_SIZES
+    parse_flash_size_arg = ESP32S3ROM.parse_flash_size_arg
     FLASH_SECTOR_SIZE = 0x1000
     secure_download_mode = False
 
@@ -102,7 +107,7 @@ def esp(monkeypatch):
             f.write(device.region(address, size))
 
     monkeypatch.setattr(state, "detect_chip", lambda port, **_: device)
-    for module in (state, table, images):
+    for module in (state, table, images, flash):
         monkeypatch.setattr(module, "detect_flash_size", lambda esp: "4MB")
     monkeypatch.setattr(flash, "esptool_write_flash", write_flash)
     monkeypatch.setattr(images, "read_flash", read_flash)
@@ -225,6 +230,19 @@ def test_an_app_for_another_chip_is_refused(run, esp):
     assert esp.region(*OTA_0) == b"\xff" * OTA_0[1]
 
 
+def test_rewriting_a_partition_writes_nothing(run, tmp_path, esp):
+    (tmp_path / "same.bin").write_bytes(esp.region(*STORAGE))
+    run("write", "storage", "same.bin")
+    assert not esp.writes
+
+
+def test_a_bootloader_for_another_chip_is_refused(run, esp):
+    esp.IMAGE_CHIP_ID = 0  # pretend the device is an ESP32
+    before = esp.region(0, 0x8000)
+    run("write", "bootloader", CHIP / "bootloader.bin", ok=False)
+    assert esp.region(0, 0x8000) == before
+
+
 def test_set_boot_and_clear_boot(run, esp):
     run("ota", CHIP / "app-v1.bin")
     run("ota", CHIP / "app-v2.bin")
@@ -244,6 +262,11 @@ def test_dump_image_then_write_image_restores_the_flash(run, tmp_path, esp):
     assert esp.region(0, 0x100000) == original
 
 
+def test_rewriting_the_same_image_with_diff_writes_nothing(run, esp):
+    run("write-image", "--no-erase", "--diff", CHIP / "flash-image.bin")
+    assert not esp.writes
+
+
 def test_dump_image_is_named_after_the_chip_and_mac(run, tmp_path):
     run("dump-image", "--size", 0x10000)
     assert [p.name for p in tmp_path.glob("esp32-s3-7c2c679279c0-*.img")]
@@ -260,6 +283,20 @@ def test_dump_bundle_then_write_bundle_restores_the_partitions(run, tmp_path, es
 
 
 # --- NVS and filesystems --------------------------------------------------------------------
+
+def test_dump_bundle_includes_the_bootloader(run, esp):
+    run("dump-bundle", "backup.zip")
+    with zipfile.ZipFile("backup.zip") as zf:
+        assert zf.read("bootloader.bin") == esp.region(0, 0x8000)
+    assert "Bootloader: ESP32S3 (offset=0x0)" in run("print-bundle", "-f", "backup.zip")
+
+
+def test_write_bundle_checks_the_bootloader_before_writing(run, esp):
+    run("dump-bundle", "backup.zip")
+    esp.IMAGE_CHIP_ID = 0  # pretend the device is an ESP32
+    run("write-bundle", "backup.zip", ok=False)
+    assert not esp.writes
+
 
 def test_nvs_on_the_device(run, tmp_path, esp):
     (tmp_path / "example.csv").write_text(
@@ -341,6 +378,13 @@ def test_app_info_describes_a_binary():
 
     out = CliRunner().invoke(cli, ["app-info", "-f", str(CHIP / "app-v1.bin")]).output
     assert "idftool_test" in out and "1.0.0" in out and "ESP32S3" in out
+
+
+def test_app_info_describes_a_bootloader():
+    from idftool.cli import cli
+
+    out = CliRunner().invoke(cli, ["app-info", "-f", str(CHIP / "bootloader.bin")]).output
+    assert "Bootloader: ESP32S3 (offset=0x0)" in out
 
 
 def test_app_info_refuses_a_non_app(tmp_path):

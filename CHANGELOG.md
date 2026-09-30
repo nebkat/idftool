@@ -4,6 +4,21 @@ All notable changes to this project are documented here. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- `dump-bundle` includes the bootloader, and `write-bundle` and `write` check
+  it against the chip.
+- `print-image`, `print-bundle` and `app-info` show which chip the bootloader
+  is for.
+
+### Changed
+- Every write skips what's already in flash and rewrites only the sectors that
+  changed, not just `ota` and `factory`. `write-image` is unchanged.
+
+### Fixed
+- `write-image --no-erase --diff` works when the bootloader is part of the image.
+
 ## [v1.1.0] — 2026-09-30
 
 ### Added

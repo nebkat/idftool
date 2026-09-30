@@ -185,7 +185,7 @@ def write_fs(state, partition, source, fs_type, **options):
     print(f"Writing {fs_type} image to partition '{part.name}' "
           f"(offset={part.offset:#x}, size={part.size:#x})")
     write_flash(esp=loaded.esp, addr_data=[(part.offset, image)], flash_size='detect',
-                **write_flash_options(flash))
+                **write_flash_options(flash, skip_flashed=True, diff=True))
 
 
 @cli.command('write-fs', help='Build a filesystem image from a directory and flash it')

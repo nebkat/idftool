@@ -104,7 +104,8 @@ def write_table(state, table_file, force):
     print(f"Writing partition table ({len(binary):#x} bytes) to offset {state.partition_table_offset:#x}...")
     print("Note: this replaces only the partition map; existing partition data on flash is not moved, "
           "resized, or erased. A table that no longer matches the flash contents can make the device unbootable.")
-    write_flash(esp=esp, addr_data=[(state.partition_table_offset, binary)], flash_size='detect')
+    write_flash(esp=esp, addr_data=[(state.partition_table_offset, binary)], flash_size='detect',
+                skip_flashed=True, diff=True)
     print("Partition table written")
 
 

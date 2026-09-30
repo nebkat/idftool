@@ -80,7 +80,7 @@ def write_nvs(state, partition, csv_file, **options):
         image = generate_nvs_image(csv_file, partition.size)
     print(f"Writing NVS image to partition '{partition.name}' (offset={partition.offset:#x}, size={partition.size:#x})")
     write_flash(esp=loaded.esp, addr_data=[(partition.offset, image)], flash_size='detect',
-                **write_flash_options(options))
+                **write_flash_options(options, skip_flashed=True, diff=True))
 
 
 @cli.command('write-nvs', help='Generate an NVS image from CSV and flash it')
@@ -416,7 +416,7 @@ def set_nvs(state, args, image_file, deletes, namespace, output_file, do_rewrite
         print(f"Writing {total:#x} bytes to partition '{part.name}' in "
               f"{len(writes)} run{'' if len(writes) == 1 else 's'}")
         write_flash(esp=state.esp, addr_data=writes, flash_size='detect',
-                    **write_flash_options(options))
+                    **write_flash_options(options, skip_flashed=True, diff=True))
     else:
         target = output_file or image_file
         with open(target, 'wb') as f:

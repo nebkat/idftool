@@ -22,9 +22,9 @@ idftool write storage build/spiffs.bin --diff --no-progress
 
 ## Skipping what's already there
 
-`ota` and `factory` turn on `--skip-flashed` and `--diff` by default, so
-reflashing the same build is nearly instant and a small change rewrites only
-the sectors it touched. Other commands leave both off unless asked.
+`--skip-flashed` and `--diff` are on by default for every command except
+`write-image`, so reflashing the same thing is nearly instant and a small
+change rewrites only the sectors it touched.
 
 `--skip-flashed`
 :   Hashes the partition on the device and compares it with the file, like
@@ -42,8 +42,8 @@ the sectors it touched. Other commands leave both off unless asked.
 `--skip-flashed` unless the erase is off: nothing can match a chip that was
 just wiped. See [`write-image`](images.md#write-image).
 
-`write-table` doesn't take these. Its `--force` already means "flash a table
-that failed verification".
+`write-table` doesn't take these, and always skips a table that's already in
+flash. Its `--force` already means "flash a table that failed verification".
 
 From Python, the same names work as keyword arguments. See
 [Python library](../library.md#write-options).

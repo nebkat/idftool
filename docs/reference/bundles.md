@@ -1,7 +1,7 @@
 # Bundles
 
 A bundle is a plain ZIP with one `.bin` per partition, named after the
-partition, and optionally a `partition_table.csv`. Use them to hand a build
+partition, and optionally a `bootloader.bin` and a `partition_table.csv`. Use them to hand a build
 from CI to whoever flashes it, or to archive exactly what shipped.
 
 ```text
@@ -25,7 +25,7 @@ idftool --partition-table-file partitions.csv create-bundle \
 ## `dump-bundle`
 
 Read every partition off the device into a bundle, always with
-`partition_table.csv`. Without a filename it's named
+`bootloader.bin` and `partition_table.csv`. Without a filename it's named
 `{chip}-{mac}-{timestamp}.zip`.
 
 ```bash
@@ -37,7 +37,8 @@ idftool dump-bundle my-backup.zip
 
 Flash every binary in a bundle. If the bundle has a `partition_table.csv`,
 `idftool` uses it instead of the device's table, and rewrites the device's table
-to match.
+to match. Apps and the bootloader are checked against the chip before
+anything is written.
 
 ```bash
 idftool write-bundle release.zip
@@ -47,13 +48,15 @@ Takes the [write options](write-options.md).
 
 ## `print-bundle`
 
-Inspect a bundle without a device: its partition table and, for each app
-partition present, the app description.
+Inspect a bundle without a device: its bootloader's chip, its partition table
+and, for each app partition present, the app description.
 
 ```console
 $ idftool print-bundle -f release.zip
 Bundle: release.zip (0x2828d bytes)
 Partitions included: ota_0
+
+Bootloader: none
 
 ╭──────────┬──────┬─────────┬─────────┬──────┬───────────────╮
 │ Name     │ Type │ Subtype │  Offset │ Size │ App           │

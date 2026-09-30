@@ -10,7 +10,7 @@ from esptool.cmds import read_flash, merge_bin, detect_flash_size
 from esp_idf_defs import ImageMetadata, ChipId
 from esp_idf_defs.partitions import PartitionTable
 
-from idftool.apps import print_partition_table_and_apps
+from idftool.apps import find_bootloader, print_partition_table_and_apps
 from idftool.cli import cli, pass_state
 from idftool.flash import flash_options, option_group, write_flash, write_flash_options
 from idftool.params import BASED_INT
@@ -203,7 +203,8 @@ def print_image(state, image_file):
 
         print(f"Image: {image_file} ({image_size:#x} bytes)")
         print()
-        print_partition_table_and_apps(partition_table, read)
+        print_partition_table_and_apps(
+            partition_table, read, find_bootloader(read, state.partition_table_offset))
 
 
 @cli.command('print-image', help='Print partition table and app info from a flash image file')
