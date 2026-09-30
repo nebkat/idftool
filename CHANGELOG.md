@@ -7,18 +7,11 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
-- `idf.py` runs ESP-IDF's `idf.py`, asking which device to use for actions that
-  need one. Alias `idf.py` to `idftool idf.py` to use it everywhere.
-- The device list offers **No device** for `idf.py`, which then picks a port
-  itself.
-- Plugins: an installed package can name devices its own way, from eFuses or
-  flash, by registering an `idftool.identify` entry point. The name shows when
-  a board is probed.
+- `idf.py` runs ESP-IDF's `idf.py` on the selected device.
+- Plugins define how devices are named, from custom probing (e.g. eFuse, NVS).
 
 ### Changed
 - `monitor` and `idf.py` use `-b` when it's given.
-- `select_device(identify=…, probe=False)` no longer probes every port;
-  `identify` then runs only on the ports probed with `p`.
 
 ## [v1.0.0] — 2026-09-29
 
