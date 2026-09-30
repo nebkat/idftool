@@ -7,6 +7,7 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- `IDFTOOL_PROBE=1` probes by default; `--no-probe` skips it.
 - `dump-bundle` includes the bootloader, and `write-bundle` and `write` check
   it against the chip.
 - `print-image`, `print-bundle` and `app-info` show which chip the bootloader

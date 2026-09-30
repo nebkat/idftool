@@ -100,11 +100,11 @@ def list_devices(state=None, probe=False):
 
 
 @cli.command('devices', aliases=['ports'], help='List serial ports and their USB adapters')
-@click.option('--probe', is_flag=True,
+@click.option('--probe/--no-probe', default=None,
               help='Connect to each port to add its chip and MAC (resets the boards)')
 @pass_state
 def cmd_devices(state, probe):
-    return list_devices(state, probe or state.probe)
+    return list_devices(state, state.probe if probe is None else probe)
 
 
 def _has_option(args, *names) -> bool:

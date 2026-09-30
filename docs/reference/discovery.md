@@ -33,12 +33,12 @@ Location
 Piped, it prints plain space-separated columns instead of a box, for `awk` and
 friends.
 
-### `--probe`
+### `--probe`, `--no-probe`
 
 Connect to every port to add each board's chip and MAC, including boards behind
 a USB-serial adapter. This resets the boards. With a
 [plugin](../guide/plugins.md) installed, a Device column shows what it names
-each board.
+each board. Defaults to the global `--probe`, or `IDFTOOL_PROBE`.
 
 ```console
 $ idftool devices --probe

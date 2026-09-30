@@ -40,7 +40,8 @@ The list comes from USB alone, so no board is reset by looking at it:
 | ++q++ | Quit |
 
 `--probe` connects to every port up front instead, so the chip column is filled
-for all of them.
+for all of them. Set `IDFTOOL_PROBE=1` to make that the default, and pass
+`--no-probe` to skip it for one run.
 
 After you pick, `idftool` prints how to skip the picker next time:
 

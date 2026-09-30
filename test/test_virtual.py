@@ -505,6 +505,22 @@ def test_devices_lists_ports_and_probes_them(monkeypatch):
     assert "Device" not in out
 
 
+def test_probe_defaults_to_env_and_no_probe_overrides(monkeypatch):
+    from click.testing import CliRunner
+
+    import idftool.commands.misc as misc
+    from idftool.cli import cli
+
+    seen = []
+    monkeypatch.setattr(misc, "list_devices", lambda state, probe: seen.append(probe))
+    env = {"IDFTOOL_PROBE": "1"}
+    for args, probe in ([["devices"], True], [["--no-probe", "devices"], False],
+                        [["devices", "--no-probe"], False]):
+        seen.clear()
+        CliRunner().invoke(cli, args, env=env)
+        assert seen == [probe], args
+
+
 def test_devices_probe_shows_what_a_plugin_names_the_device(monkeypatch):
     import idftool.commands.misc as misc
     import idftool.plugins as plugins
