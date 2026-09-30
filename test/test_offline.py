@@ -923,6 +923,10 @@ def test_the_rerun_hint_offers_the_mac_too(capsys, monkeypatch):
     ({"port": "/dev/a", "no_reset": True}, (), ["--port", "/dev/a", "--no-reset"]),
     ({"port": "/dev/a"}, ("-p", "/dev/b"), ["-p", "/dev/b"]),
     ({"port": "/dev/a"}, ("-h",), ["-h"]),
+    ({"port": "/dev/a", "baud_explicit": True}, (), ["--baud", "115200", "--port", "/dev/a"]),
+    ({"port": "/dev/a", "baud_explicit": True}, ("-b921600",), ["--port", "/dev/a", "-b921600"]),
+    ({"port": "/dev/a", "baud_explicit": True}, ("--baud=921600",),
+     ["--port", "/dev/a", "--baud=921600"]),
 ])
 def test_monitor_hands_the_chosen_port_to_esp_idf_monitor(monkeypatch, options, args, expected):
     from esp_idf_monitor import idf_monitor

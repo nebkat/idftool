@@ -17,7 +17,7 @@ its options. A `-p` given there is used as-is, without the picker.
 `--no-reset` is passed through, so combined with the picker (which doesn't
 reset boards) you can attach to a running device without rebooting it.
 
-`idftool`'s `-b` is the flashing baud rate and isn't passed on. Give the
-monitor's own after `monitor`: `idftool monitor -b 460800`.
+`-b` sets the monitor's baud rate, the same as giving it after `monitor`:
+`idftool -b 460800 monitor`. Without it, the monitor uses its own default.
 
 Quit with ++ctrl+bracket-right++.

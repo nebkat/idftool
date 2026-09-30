@@ -498,5 +498,30 @@ def test_idf_py_keeps_a_port_it_was_given(idf_py):
         ["idf.py", "-p", "/dev/b", "flash"]
 
 
+def test_idf_py_is_given_b_only_when_idftool_was(idf_py):
+    assert idf_py("-b", "921600", "idf.py", "flash", port="/dev/a") == \
+        ["idf.py", "-b", "921600", "-p", "/dev/a", "flash"]
+    assert idf_py("-b", "921600", "idf.py", "-b", "460800", "flash", port="/dev/a") == \
+        ["idf.py", "-p", "/dev/a", "-b", "460800", "flash"]
+    assert idf_py("idf.py", "flash", port="/dev/a") == ["idf.py", "-p", "/dev/a", "flash"]
+
+
+def test_monitor_is_given_b_only_when_idftool_was(monkeypatch):
+    import sys
+
+    import idftool.state as state
+    from esp_idf_monitor import idf_monitor
+    from idftool.cli import cli
+
+    seen = []
+    monkeypatch.setattr(idf_monitor, "main", lambda: seen.append(sys.argv[1:]))
+    monkeypatch.setattr(sys, "argv", list(sys.argv))
+    monkeypatch.setattr(state.State, "resolve_port", lambda self, allow_none=False: "/dev/a")
+    for args in (["-b", "921600", "monitor"], ["monitor"], ["-b", "115200", "monitor"]):
+        assert CliRunner().invoke(cli, args).exit_code == 0
+    assert seen == [["--baud", "921600", "--port", "/dev/a"], ["--port", "/dev/a"],
+                    ["--baud", "115200", "--port", "/dev/a"]]
+
+
 def test_idf_py_passes_help_through(idf_py):
     assert idf_py("idf.py", "--help") == ["idf.py", "--help"]

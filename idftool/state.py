@@ -58,7 +58,8 @@ class State:
 
     def __init__(self, *, port, baud, no_reset, partition_table_file, partition_table_offset,
                  partition_table_size, primary_bootloader_offset, recovery_bootloader_offset,
-                 assume_yes=False, mac=None, usb_serial=None, probe=False, identify=None):
+                 assume_yes=False, mac=None, usb_serial=None, probe=False, identify=None,
+                 baud_explicit=False):
         self.port = port
         self.mac = mac
         self.usb_serial = usb_serial
@@ -66,6 +67,9 @@ class State:
         #: Names a probed device; see :func:`idftool.ports.probe_port`.
         self.identify = identify
         self.baud = baud
+        #: Whether `baud` was asked for rather than defaulted; only then is it passed on to
+        #: the tools (``monitor``, ``idf.py``), whose own defaults may differ.
+        self.baud_explicit = baud_explicit
         self.no_reset = no_reset
         self.assume_yes = assume_yes
         self.partition_table_file = partition_table_file

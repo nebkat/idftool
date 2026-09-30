@@ -11,6 +11,8 @@ idftool idf.py build flash monitor
 idftool -m 9c:13:9e:1b:d4:6c idf.py app-flash
 ```
 
+`-b`, if given, is passed on as `idf.py -b`, the flashing baud rate.
+
 Alias it to run every `idf.py` through `idftool`:
 
 ```bash

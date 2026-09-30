@@ -106,14 +106,25 @@ def cmd_devices(state, probe):
     return list_devices(state, probe or state.probe)
 
 
+def _has_option(args, *names) -> bool:
+    """Whether `args` give any of the options `names`, in any spelling (``-b 1``, ``-b1``,
+    ``--baud=1``)."""
+    return any(arg == name or arg.startswith(name + "=")
+               or (len(name) == 2 and arg.startswith(name) and not arg.startswith("--"))
+               for arg in args for name in names)
+
+
 def monitor(state, monitor_args=()):
-    """Run esp-idf-monitor on the device chosen by ``-p``, ``-m`` or the picker."""
+    """Run esp-idf-monitor on the device chosen by ``-p``, ``-m`` or the picker, at ``-b``'s
+    baud rate if given."""
     from esp_idf_monitor import idf_monitor
 
     argv = list(monitor_args)
-    # Help needs no device, and a port given to the monitor itself wins.
-    if not {"-h", "--help", "-p", "--port"} & set(argv) and (port := state.resolve_port()):
+    # Help needs no device, and options given to the monitor itself win.
+    if not _has_option(argv, "-h", "--help", "-p", "--port") and (port := state.resolve_port()):
         argv = ["--port", port, *argv]
+    if state.baud_explicit and not _has_option(argv, "-b", "--baud"):
+        argv = ["--baud", str(state.baud), *argv]
     if state.no_reset:
         argv.append("--no-reset")
     sys.argv = ["idftool monitor", *argv]
@@ -174,11 +185,13 @@ def _exec(argv):
 
 def idf_py(state, idf_py_args=()):
     """Run idf.py, adding ``-p`` for the device chosen by ``-p``, ``-m``, ``--usb-serial`` or
-    the picker when an action needs one."""
+    the picker when an action needs one, and ``-b`` if given."""
     args = list(idf_py_args)
-    if not {"-p", "--port"} & set(args) and idf_py_needs_device(args):
+    if not _has_option(args, "-p", "--port") and idf_py_needs_device(args):
         if port := state.resolve_port(allow_none=True):
             args = ["-p", port, *args]
+    if state.baud_explicit and not _has_option(args, "-b", "--baud"):
+        args = ["-b", str(state.baud), *args]
     _exec([*_idf_py(), *args])
 
 

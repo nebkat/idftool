@@ -6,6 +6,7 @@ import contextlib
 import sys
 
 import rich_click as click
+from click.core import ParameterSource
 
 from esptool import ESPLoader
 
@@ -101,6 +102,7 @@ def cli(ctx, port, mac, usb_serial, baud, probe, yes, no_reset, partition_table_
         probe=probe,
         identify=plugins.identify,
         baud=baud,
+        baud_explicit=ctx.get_parameter_source('baud') is not ParameterSource.DEFAULT,
         no_reset=no_reset,
         assume_yes=yes,
         partition_table_file=partition_table_file,

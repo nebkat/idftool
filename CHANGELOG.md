@@ -16,6 +16,7 @@ this project adheres to [Semantic Versioning](https://semver.org/).
   a board is probed.
 
 ### Changed
+- `monitor` and `idf.py` use `-b` when it's given.
 - `select_device(identify=…, probe=False)` no longer probes every port;
   `identify` then runs only on the ports probed with `p`.
 
