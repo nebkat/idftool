@@ -3,7 +3,7 @@
 ## `espefuse`
 
 Run [`espefuse`](https://docs.espressif.com/projects/esptool/en/latest/esp32/espefuse/)
-on the device picked by `-p`, `-m`, or the [picker](../guide/choosing-a-device.md).
+using `idftool`'s [device selection](../guide/choosing-a-device.md).
 
 ```bash
 idftool espefuse summary

@@ -2,9 +2,10 @@
 
 ## `idf.py`
 
-ESP-IDF's [`idf.py`](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-guides/tools/idf-py.html)
-with device selection: actions like `flash` and `monitor` ask which device to
-use, while `build` or `menuconfig` run straight away.
+Run [`idf.py`](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-guides/tools/idf-py.html)
+using `idftool`'s [device selection](../guide/choosing-a-device.md).
+Actions that don't need a device, like `build` or `menuconfig`, run straight
+away.
 
 ```bash
 idftool idf.py build flash monitor

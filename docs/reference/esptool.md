@@ -2,10 +2,10 @@
 
 ## `esptool`
 
-Run [`esptool`](https://docs.espressif.com/projects/esptool/en/latest/esp32/) on
-the device picked by `-p`, `-m`, or the [picker](../guide/choosing-a-device.md).
-Commands that don't need a device, like `merge-bin` or `image-info`, run straight
-away.
+Run [`esptool`](https://docs.espressif.com/projects/esptool/en/latest/esp32/)
+using `idftool`'s [device selection](../guide/choosing-a-device.md).
+Commands that don't need a device, like `merge-bin` or `image-info`, run
+straight away.
 
 ```bash
 idftool esptool chip-id
