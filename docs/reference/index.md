@@ -56,9 +56,7 @@ options. The options shared by every command are under
 
 Espressif's tools, run on the selected device.
 
-| Command |
-|---------|
-| [`monitor`](monitor.md#monitor) |
-| [`idf.py`](idf-py.md#idfpy) |
-| [`esptool`](esptool.md#esptool) |
-| [`espefuse`](espefuse.md#espefuse) |
+- [`monitor`](monitor.md#monitor) (aliases `esp-idf-monitor`, `idf-monitor`)
+- [`idf.py`](idf-py.md#idfpy)
+- [`esptool`](esptool.md#esptool)
+- [`espefuse`](espefuse.md#espefuse)

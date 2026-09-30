@@ -523,5 +523,21 @@ def test_monitor_is_given_b_only_when_idftool_was(monkeypatch):
                     ["--baud", "115200", "--port", "/dev/a"]]
 
 
+@pytest.mark.parametrize("name", ["esp-idf-monitor", "idf-monitor"])
+def test_monitor_aliases(monkeypatch, name):
+    import sys
+
+    import idftool.state as state
+    from esp_idf_monitor import idf_monitor
+    from idftool.cli import cli
+
+    seen = []
+    monkeypatch.setattr(idf_monitor, "main", lambda: seen.append(sys.argv[1:]))
+    monkeypatch.setattr(sys, "argv", list(sys.argv))
+    monkeypatch.setattr(state.State, "resolve_port", lambda self, allow_none=False: "/dev/a")
+    assert CliRunner().invoke(cli, [name, "--timestamps"]).exit_code == 0
+    assert seen == [["--port", "/dev/a", "--timestamps"]]
+
+
 def test_idf_py_passes_help_through(idf_py):
     assert idf_py("idf.py", "--help") == ["idf.py", "--help"]

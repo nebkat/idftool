@@ -4,6 +4,7 @@
 
 Run [`esp-idf-monitor`](https://github.com/espressif/esp-idf-monitor) on the
 device picked by `-p`, `-m`, or the [picker](../guide/choosing-a-device.md).
+Aliases: `esp-idf-monitor`, `idf-monitor`.
 
 ```bash
 idftool monitor

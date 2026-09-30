@@ -1,6 +1,7 @@
 """Discovery, the tools run on the chosen device (``monitor``, ``idf.py``, ``esptool``,
 ``espefuse``), and ``enter-bootloader``."""
 import concurrent.futures
+import copy
 import os.path
 import sys
 import time
@@ -137,6 +138,13 @@ def monitor(state, monitor_args=()):
 @pass_state
 def cmd_monitor(state, monitor_args):
     return monitor(state, monitor_args)
+
+
+# Hidden rather than `aliases=`: help's name column can't fit all three names.
+for _alias in ('esp-idf-monitor', 'idf-monitor'):
+    _command = copy.copy(cmd_monitor)
+    _command.hidden = True
+    cli.add_command(_command, _alias)
 
 
 #: idf.py actions that talk to a device, besides any ``*-flash`` and ``efuse-*`` one.
