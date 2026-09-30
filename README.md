@@ -33,7 +33,7 @@ No more guessing which device is on which port. Run any command without `-p`
 and `idftool` lists the connected devices and asks which to use:
 
 ```console
-$ idftool ota build/app.bin
+$ idftool monitor
 ? Select device (↑↓ move · ↵ select · p probe · r refresh · k kill · q quit)
  » /dev/cu.usbmodem11401         ESP USB-Serial/JTAG   7c:2c:67:92:79:c0
    /dev/cu.usbmodem2101          ESP USB-Serial/JTAG   b8:f8:62:49:ea:14
@@ -47,11 +47,10 @@ Pick one, and it tells you how to skip the question next time:
 
 ```console
 Device: /dev/cu.usbmodem11401 — ESP USB-Serial/JTAG · 7c:2c:67:92:79:c0
-Re-run with: idftool -p /dev/cu.usbmodem11401 ota build/app.bin
-         or: idftool -m 7c:2c:67:92:79:c0 ota build/app.bin
-...
-Writing 'my-app v1.2.0' to partition 'ota_1'...
-Setting boot partition to 'ota_1'...
+Re-run with: idftool -p /dev/cu.usbmodem11401 monitor
+         or: idftool -m 7c:2c:67:92:79:c0 monitor
+--- esp-idf-monitor 1.10.0 on /dev/cu.usbmodem11401 115200
+--- Quit: Ctrl+] | Menu: Ctrl+T | Help: Ctrl+T followed by Ctrl+H
 ```
 
 The `-m` form finds the board by its MAC address, wherever it's plugged in.

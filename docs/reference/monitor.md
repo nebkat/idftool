@@ -1,4 +1,4 @@
-# Monitor
+# esp-idf-monitor
 
 ## `monitor`
 

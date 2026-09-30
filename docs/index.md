@@ -102,7 +102,7 @@ with. `idftool` does that for you.
 Run any command without `-p`, and `idftool` asks which device to use:
 
 ```console
-$ idftool ota build/my-app.bin
+$ idftool monitor
 ? Select device (↑↓ move · ↵ select · p probe · r refresh · k kill · q quit)
  » /dev/cu.usbmodem11401         ESP USB-Serial/JTAG   7c:2c:67:92:79:c0
    /dev/cu.usbmodem2101          ESP USB-Serial/JTAG   b8:f8:62:49:ea:14

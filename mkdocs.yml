@@ -59,8 +59,6 @@ nav:
       - Commands:
           - Discovery: reference/discovery.md
           - Firmware: reference/firmware.md
-          - Monitor: reference/monitor.md
-          - idf.py: reference/idf-py.md
           - Partition I/O: reference/partition-io.md
           - Images: reference/images.md
           - Bundles: reference/bundles.md
@@ -68,6 +66,9 @@ nav:
           - NVS: reference/nvs.md
           - Filesystems: reference/filesystems.md
           - Misc: reference/misc.md
+      - Tools:
+          - esp-idf-monitor: reference/monitor.md
+          - idf.py: reference/idf-py.md
       - Options:
           - Global options: reference/global-options.md
           - Write options: reference/write-options.md

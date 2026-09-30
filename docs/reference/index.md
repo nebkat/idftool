@@ -15,10 +15,6 @@ options. The options shared by every command are under
 | [`set-boot`](firmware.md#set-boot) | Force the next boot to a specific OTA partition |
 | [`clear-boot`](firmware.md#clear-boot) | Erase otadata and let the bootloader fall back |
 | [`app-info`](firmware.md#app-info) | Print the app description from an application binary |
-| **[Monitor](monitor.md)** | |
-| [`monitor`](monitor.md#monitor) | Open [`esp-idf-monitor`](https://github.com/espressif/esp-idf-monitor) on the selected device |
-| **[idf.py](idf-py.md)** | |
-| [`idf.py`](idf-py.md#idfpy) | Run ESP-IDF's `idf.py`, asking which device to use |
 | **[Partition I/O](partition-io.md)** | |
 | [`read`](partition-io.md#read) | Read a partition (or slice) into a file |
 | [`write`](partition-io.md#write) | Write one or more files to named partitions |
@@ -55,3 +51,12 @@ options. The options shared by every command are under
 | [`print-fs`](filesystems.md#print-fs) | List the contents of a filesystem partition or image |
 | **[Misc](misc.md)** | |
 | [`enter-bootloader`](misc.md#enter-bootloader) | Drop the chip into ROM bootloader mode |
+
+## Tools
+
+Espressif's own tools, run on the device you pick.
+
+| Command | Description |
+|---------|-------------|
+| [`monitor`](monitor.md#monitor) | Open [`esp-idf-monitor`](https://github.com/espressif/esp-idf-monitor) on the selected device |
+| [`idf.py`](idf-py.md#idfpy) | Run ESP-IDF's `idf.py`, asking which device to use |
