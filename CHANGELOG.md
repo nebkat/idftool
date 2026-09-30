@@ -4,7 +4,7 @@ All notable changes to this project are documented here. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [v1.1.0] — 2026-09-30
 
 ### Added
 - `idf.py`, `esptool` and `espefuse` run Espressif's tools on the selected device.
@@ -376,6 +376,7 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 ### Added
 - Initial release.
 
+[v1.1.0]: https://github.com/nebkat/idftool/releases/tag/v1.1.0
 [v1.0.0]: https://github.com/nebkat/idftool/releases/tag/v1.0.0
 [v0.10.0]: https://github.com/nebkat/idftool/releases/tag/v0.10.0
 [v0.9.0]: https://github.com/nebkat/idftool/releases/tag/v0.9.0
