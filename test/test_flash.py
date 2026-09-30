@@ -316,11 +316,11 @@ def test_write_flash_says_why_it_did_not_check(monkeypatch, capsys):
 
 
 def test_app_commands_skip_by_default():
-    """factory and ota ask for the check themselves; everything else leaves it off."""
+    """factory and ota ask for the check themselves."""
     import inspect
     import idftool.commands.firmware as firmware
 
-    for name in ('factory', 'ota'):
+    for name in ('flash_factory', 'flash_ota'):
         source = inspect.getsource(getattr(firmware, name))
         assert 'skip_flashed=True' in source, name
 
@@ -553,7 +553,7 @@ def test_app_commands_diff_by_default():
     import inspect
     import idftool.commands.firmware as firmware
 
-    for name in ('factory', 'ota'):
+    for name in ('flash_factory', 'flash_ota'):
         assert 'diff=True' in inspect.getsource(getattr(firmware, name)), name
 
 

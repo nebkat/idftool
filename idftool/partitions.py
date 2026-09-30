@@ -7,7 +7,6 @@ binary. Everything here works on a table plus, where a device is involved, an
 import os.path
 import re
 from typing import Optional, Literal
-from zipfile import BadZipFile, ZipFile
 
 from esptool import ESPLoader
 
@@ -157,6 +156,11 @@ def require_partitions(partition_table: PartitionTable, source: str) -> Partitio
     """Raise a clear error if a parsed partition table contains no partitions."""
     if len(partition_table) == 0:
         raise RuntimeError(f"Partition table from {source} is empty (no partitions defined)")
+    for partition in partition_table:
+        if partition.name.startswith('@'):
+            # Bundles reserve '@' for role files (@factory.bin, @ota.bin).
+            raise RuntimeError(f"Partition name '{partition.name}' in {source} starts with '@', "
+                               f"which is reserved")
     return partition_table
 
 
@@ -246,17 +250,6 @@ def write_partition_table_file(partition_table: PartitionTable, output_file: str
     with open(output_file, 'wb') as f:
         f.write(data)
     print(f"Wrote {output_format} partition table ({len(data):#x} bytes) to {output_file}")
-
-
-def check_write_bundle_has_partition_table(file: str) -> bool:
-    if os.path.getsize(file) == 0:
-        raise RuntimeError(f"Bundle '{file}' is empty")
-    try:
-        bundle_zip = ZipFile(file, 'r')
-    except BadZipFile as e:
-        raise RuntimeError(f"Bundle '{file}' is not a valid ZIP archive") from e
-    with bundle_zip as zf:
-        return any(m == 'partition_table.csv' for m in zf.namelist())
 
 
 def _extract_csv_bootloader_offsets(csv_text: str) -> tuple[Optional[int], Optional[int]]:

@@ -188,6 +188,52 @@ def write_fs(state, partition, source, fs_type, **options):
                 **write_flash_options(flash, skip_flashed=True, diff=True))
 
 
+def edit_fs_partition(esp, part, put, delete, options):
+    """Rebuild filesystem partition `part` on the device with files put (path → bytes) and
+    deleted, writing back only what changes."""
+    import shutil
+    import tempfile
+    from pathlib import Path
+
+    import idftool.fs as fs
+
+    print(f"Reading partition {part.name} (offset={part.offset:#x}, size={part.size:#x})")
+    data = esp.read_flash(part.offset, part.size)
+    fs_type = fs.resolve_type(partition=part, image=data, what=f"partition '{part.name}'")
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp).resolve()
+        with fs.mount(fs_type, data) as volume:
+            fs.extract(volume, tmp)
+
+        def inside(path):
+            target = (root / path.lstrip('/')).resolve()
+            if target == root or not target.is_relative_to(root):
+                raise fs.FsError(f"'{path}' is not a path inside the filesystem")
+            return target
+
+        for path in delete:
+            target = inside(path)
+            if target.is_dir():
+                shutil.rmtree(target)
+            elif target.exists():
+                target.unlink()
+            else:
+                print(f"  {path} was not there to delete")
+                continue
+            print(f"  - {path}")
+        for path, content in put.items():
+            target = inside(path)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(content)
+            print(f"  + {path} ({len(content)} bytes)")
+        image = fs.create(fs_type, tmp, part.size)
+
+    print(f"Writing {fs_type} image to partition '{part.name}' "
+          f"(offset={part.offset:#x}, size={part.size:#x})")
+    write_flash(esp=esp, addr_data=[(part.offset, image)], flash_size='detect',
+                **write_flash_options(options, skip_flashed=True, diff=True))
+
+
 @cli.command('write-fs', help='Build a filesystem image from a directory and flash it')
 @click.argument('partition')
 @click.argument('source')

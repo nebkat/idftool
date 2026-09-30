@@ -77,7 +77,8 @@ click.rich_click.COMMAND_GROUPS = {
 @click.option('-b', '--baud', type=int, default=ESPLoader.ESP_ROM_BAUD, show_default=True, help='Serial port baud rate')
 @click.option('--probe', is_flag=True,
               help='Connect to every port to identify its board (resets them)')
-@click.option('-y', '--yes', is_flag=True, help='Do not ask which device to use')
+@click.option('-y', '--yes', is_flag=True,
+              help="Don't ask which device to use, or before updating a bundle's partition table")
 @click.option('--no-reset', is_flag=True, help='Do not reset the chip after operations')
 @click.option('--partition-table-file', default=None,
               help='Path to a partition table CSV or binary file to use instead of reading from the device')

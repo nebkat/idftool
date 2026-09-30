@@ -26,28 +26,32 @@ def factory(state, app_binary_file, **options):
     :data:`idftool.flash.WRITE_FLASH_OPTIONS`)."""
     loaded = state.setup()
     esp, partition_table = loaded.esp, loaded.partition_table
-    partition = next(
-        (part for part in partition_table if part.type == APP_TYPE and part.subtype == SUBTYPES[APP_TYPE]['factory']),
-        None
-    )
-    if not partition:
-        partition = next(
-            (part for part in partition_table if part.type == APP_TYPE and part.subtype == SUBTYPES[APP_TYPE]['ota_0']),
-            None
-        )
-    if not partition:
-        raise ValueError("No factory or OTA partition found")
-
+    partition = factory_partition(partition_table)
     app_binary, image_metadata = load_app_binary(esp, app_binary_file, partition)
+    flash_factory(esp, partition_table, partition, app_binary, image_metadata, options)
 
+
+def factory_partition(partition_table):
+    """The partition a factory flash writes: factory, else ota_0."""
+    for subtype in ('factory', 'ota_0'):
+        partition = next((p for p in partition_table
+                          if p.type == APP_TYPE and p.subtype == SUBTYPES[APP_TYPE][subtype]), None)
+        if partition:
+            return partition
+    raise ValueError("No factory or OTA partition found")
+
+
+def otadata_partition_of(partition_table):
+    return next((p for p in partition_table
+                 if p.type == DATA_TYPE and p.subtype == SUBTYPES[DATA_TYPE]['ota']), None)
+
+
+def flash_factory(esp, partition_table, partition, app_binary, image_metadata, options):
     print(f"Writing '{image_metadata.app_description.title}' to partition '{partition.name}'...")
     write_flash(esp=esp, addr_data=[(partition.offset, app_binary)],
                 **write_flash_options(options, skip_flashed=True, diff=True))
 
-    otadata_partition = next(
-        (p for p in partition_table if p.type == DATA_TYPE and p.subtype == SUBTYPES[DATA_TYPE]['ota']),
-        None
-    )
+    otadata_partition = otadata_partition_of(partition_table)
     if otadata_partition:
         print("Erasing 'otadata' partition...")
         esp.erase_region(offset=otadata_partition.offset, size=otadata_partition.size)
@@ -73,8 +77,14 @@ def ota(state, app_binary_file, **options):
     :data:`idftool.flash.WRITE_FLASH_OPTIONS`)."""
     loaded = state.setup()
     esp, partition_table = loaded.esp, loaded.partition_table
-    otadata_partition, otadata = read_otadata(esp, partition_table)
+    partition = ota_partition(esp, partition_table)
+    app_binary, image_metadata = load_app_binary(esp, app_binary_file, partition)
+    flash_ota(esp, partition_table, partition, app_binary, image_metadata, options)
 
+
+def ota_partition(esp, partition_table):
+    """The next OTA slot, from the device's otadata."""
+    _, otadata = read_otadata(esp, partition_table)
     next_slot = otadata.next_slot
     partition = next(
         (p for p in partition_table if p.type == APP_TYPE and p.subtype == SUBTYPES[APP_TYPE]['ota_0'] + next_slot),
@@ -82,9 +92,12 @@ def ota(state, app_binary_file, **options):
     )
     if not partition:
         raise ValueError(f"Partition ota_{next_slot} not found")
+    return partition
 
-    app_binary, image_metadata = load_app_binary(esp, app_binary_file, partition)
 
+def flash_ota(esp, partition_table, partition, app_binary, image_metadata, options):
+    otadata_partition, otadata = read_otadata(esp, partition_table)
+    next_slot = partition.subtype - SUBTYPES[APP_TYPE]['ota_0']
     print(f"Writing '{image_metadata.app_description.title}' to partition '{partition.name}'...")
     write_flash(esp=esp, addr_data=[(partition.offset, app_binary)],
                 **write_flash_options(options, skip_flashed=True, diff=True))
@@ -120,10 +133,13 @@ def cmd_get_boot(state):
 
 def set_boot(state, partition):
     loaded = state.setup()
-    otadata_partition, otadata = read_otadata(loaded.esp, loaded.partition_table)
+    boot_partition(loaded.esp, loaded.partition_table, partition)
 
-    label = partition
-    partition = loaded.partition_table[label]
+
+def boot_partition(esp, partition_table, label):
+    """Set otadata to boot the OTA partition `label` next."""
+    otadata_partition, otadata = read_otadata(esp, partition_table)
+    partition = partition_table[label]
     if partition.type != APP_TYPE:
         raise ValueError(f"Partition {label} is not an app partition")
     if partition.subtype < SUBTYPES[APP_TYPE]['ota_0'] or partition.subtype > SUBTYPES[APP_TYPE]['ota_15']:
@@ -133,7 +149,7 @@ def set_boot(state, partition):
     print(f"Setting boot partition to '{partition.name}'...")
     otadata = otadata.incremented_and_swapped(ota_slot)
     otadata.otadata.ota_state = OtaImageState.VALID
-    write_otadata(loaded.esp, otadata_partition, otadata)
+    write_otadata(esp, otadata_partition, otadata)
 
 
 @cli.command('set-boot', help='Force the next boot to a specific OTA partition')
@@ -145,15 +161,17 @@ def cmd_set_boot(state, partition):
 
 def clear_boot(state):
     loaded = state.setup()
-    otadata_partition = next(
-        (p for p in loaded.partition_table if p.type == DATA_TYPE and p.subtype == SUBTYPES[DATA_TYPE]['ota']),
-        None
-    )
+    clear_boot_partition(loaded.esp, loaded.partition_table)
+
+
+def clear_boot_partition(esp, partition_table):
+    """Erase otadata so the factory app boots."""
+    otadata_partition = otadata_partition_of(partition_table)
     if not otadata_partition:
         raise ValueError("No otadata partition found") # TODO Better error type
 
     print("Clearing boot partition...")
-    loaded.esp.erase_region(offset=otadata_partition.offset, size=otadata_partition.size)
+    esp.erase_region(offset=otadata_partition.offset, size=otadata_partition.size)
 
 
 @cli.command('clear-boot', help='Erase otadata and let the bootloader fall back')

@@ -28,8 +28,8 @@ options. The options shared by every command are under
 | **[Bundles](bundles.md)** | |
 | [`create-bundle`](bundles.md#create-bundle) | Pack partition images into a ZIP bundle |
 | [`dump-bundle`](bundles.md#dump-bundle) | Pack every partition from the device into a ZIP |
-| [`write-bundle`](bundles.md#write-bundle) | Flash every binary in a bundle ZIP |
-| [`print-bundle`](bundles.md#print-bundle) | Print partition table and app info from a bundle ZIP |
+| [`write-bundle`](bundles.md#write-bundle) | Flash a bundle ZIP |
+| [`print-bundle`](bundles.md#print-bundle) | Print what a bundle ZIP holds and what flashing it does |
 | **[Partition table](partition-table.md)** | |
 | [`print-table`](partition-table.md#print-table) | Print a partition table from a file or the device (alias `list`) |
 | [`create-table`](partition-table.md#create-table) | Convert a partition table between CSV and binary |

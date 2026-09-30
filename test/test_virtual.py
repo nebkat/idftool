@@ -85,6 +85,7 @@ class VirtualEsp:
 
 @pytest.fixture
 def esp(monkeypatch):
+    import idftool.commands.bundles as bundles
     import idftool.commands.images as images
     import idftool.commands.partition_io as partition_io
     import idftool.commands.table as table
@@ -107,7 +108,7 @@ def esp(monkeypatch):
             f.write(device.region(address, size))
 
     monkeypatch.setattr(state, "detect_chip", lambda port, **_: device)
-    for module in (state, table, images, flash):
+    for module in (state, table, images, flash, bundles):
         monkeypatch.setattr(module, "detect_flash_size", lambda esp: "4MB")
     monkeypatch.setattr(flash, "esptool_write_flash", write_flash)
     monkeypatch.setattr(images, "read_flash", read_flash)
@@ -131,6 +132,7 @@ def run(esp, tmp_path, monkeypatch):
             assert result.exit_code == 0, result.output + repr(result.exception)
         else:
             assert result.exit_code != 0, result.output
+            return result.output + str(result.exception)
         return result.output
 
     return invoke
@@ -296,6 +298,167 @@ def test_write_bundle_checks_the_bootloader_before_writing(run, esp):
     esp.IMAGE_CHIP_ID = 0  # pretend the device is an ESP32
     run("write-bundle", "backup.zip", ok=False)
     assert not esp.writes
+
+
+def bundle(path, entries):
+    """Write a bundle ZIP: name → bytes, or a dict for manifest.json."""
+    import json
+    with zipfile.ZipFile(path, "w") as zf:
+        for name, data in entries.items():
+            zf.writestr(name, json.dumps(data) if isinstance(data, dict) else data)
+    return path
+
+
+TABLE = (CHIP / "partitions.csv").read_text()
+
+
+def test_an_ota_role_file_writes_the_next_slot_and_boots_it(run, esp):
+    bundle("b.zip", {"@ota.bin": app(2)})
+    run("write-bundle", "b.zip")
+    assert esp.region(OTA_0[0], len(app(2))) == app(2)
+    assert "OTA slot 'ota_0'" in run("get-boot")
+
+
+def test_a_factory_role_file_writes_factory_and_clears_otadata(run, esp):
+    run("ota", CHIP / "app-v1.bin")
+    bundle("b.zip", {"@factory.bin": app(2)})
+    run("write-bundle", "b.zip")
+    assert esp.region(FACTORY[0], len(app(2))) == app(2)
+    assert esp.region(*OTADATA) == b"\xff" * OTADATA[1]
+
+
+@pytest.mark.parametrize("entries, message", [
+    ({"@ota.bin": app(2), "@factory.bin": app(2)}, "both"),
+    ({"@foo.bin": app(2)}, "Unknown role file"),
+    ({"@ota.bin": app(2), "ota_1.bin": app(1)}, "may pick it"),
+    ({"@factory.bin": app(2), "factory.bin": app(1)}, "by name and by @factory.bin"),
+    ({"nope.bin": b"x"}, "'nope' is not a partition"),
+    ({"manifest.json": {"ops": [{"op": "frobnicate"}]}}, "op 1: unknown op"),
+    ({"manifest.json": {"ops": [{"op": "write", "partition": "storage", "file": "files/x"}]}},
+     "'files/x' is not in the bundle"),
+    ({"manifest.json": {"chip": "esp32c3", "ops": [{"op": "clear-boot"}]}}, "is for esp32c3"),
+    ({"manifest.json": {"ops": [{"op": "set-boot", "partition": "factory"}]}}, "not an OTA app"),
+])
+def test_a_bad_bundle_is_refused_before_anything_is_written(run, esp, entries, message):
+    bundle("b.zip", entries)
+    assert message in run("write-bundle", "b.zip", ok=False)
+    assert not esp.writes
+
+
+def test_a_partition_name_may_not_start_with_an_at(run, tmp_path):
+    (tmp_path / "t.csv").write_text("@x, data, nvs, 0x9000, 0x6000,\n")
+    assert "reserved" in run("print-table", "-f", "t.csv", ok=False)
+
+
+def test_manifest_ops_run_after_the_files(run, tmp_path, esp):
+    (tmp_path / "example.csv").write_text(
+        "key,type,encoding,value\ncfg,namespace,,\nchannel,data,string,beta\n")
+    run("write-nvs", "nvs", "example.csv")
+    (tmp_path / "assets").mkdir()
+    (tmp_path / "assets" / "old.txt").write_text("old")
+    run("write-fs", "storage", "assets")
+    run("ota", CHIP / "app-v1.bin")
+    esp.writes.clear()
+
+    bundle("b.zip", {"ota_1.bin": app(2), "files/config.json": b'{"a": 1}', "manifest.json": {
+        "name": "Test update",
+        "chip": "ESP32-S3",
+        "ops": [
+            {"op": "set-nvs", "set": {"cfg:channel": "stable", "cfg:count": "u8:3"}},
+            {"op": "edit-fs", "partition": "storage", "put": {"/config.json": "files/config.json"},
+             "delete": ["old.txt"]},
+            {"op": "set-boot", "partition": "ota_1"},
+        ]}})
+    out = run("write-bundle", "b.zip")
+    assert "Bundle: Test update" in out
+    assert "OTA slot 'ota_1'" in run("get-boot")
+    nvs = run("print-nvs", "nvs")
+    assert "stable" in nvs and "count" in nvs
+    listing = run("print-fs", "storage")
+    assert "config.json" in listing and "old.txt" not in listing
+
+
+def test_erase_and_clear_boot_ops(run, esp):
+    run("ota", CHIP / "app-v1.bin")
+    bundle("b.zip", {"manifest.json": {"ops": [
+        {"op": "erase", "partition": "ota_0"}, {"op": "clear-boot"}]}})
+    run("write-bundle", "b.zip")
+    assert esp.region(*OTA_0) == b"\xff" * OTA_0[1]
+    assert esp.region(*OTADATA) == b"\xff" * OTADATA[1]
+
+
+def test_a_matching_table_is_not_written(run, esp):
+    bundle("b.zip", {"partition_table.csv": TABLE, "storage.bin": b"x"})
+    assert "already matches" in run("write-bundle", "b.zip")
+    assert not [w for w in esp.writes if w[0] == 0x8000]
+
+
+MOVED = TABLE.replace("storage,    data, spiffs,   0xb0000", "storage,    data, spiffs,   0xc0000")
+
+
+def test_a_differing_table_is_written_by_default(run, esp):
+    bundle("b.zip", {"partition_table.csv": MOVED})
+    out = run("write-bundle", "b.zip")
+    assert "storage: moved 0xb0000 → 0xc0000" in out
+    assert [w for w in esp.writes if w[0] == 0x8000]
+
+
+def test_require_refuses_a_differing_table(run, esp):
+    bundle("b.zip", {"partition_table.csv": MOVED, "manifest.json": {"table": "require",
+                                                                     "ops": [{"op": "clear-boot"}]}})
+    assert "different from the one this bundle requires" in run("write-bundle", "b.zip", ok=False)
+    assert not esp.writes
+
+
+def test_require_used_keeps_a_layout_that_differs_elsewhere(run, esp):
+    bundle("b.zip", {"partition_table.csv": MOVED, "ota_0.bin": app(1), "manifest.json": {
+        "table": "require", "tableMatch": "used"}})
+    assert "the device's is kept" in run("write-bundle", "b.zip")
+    assert not [w for w in esp.writes if w[0] == 0x8000]
+    assert esp.region(OTA_0[0], len(app(1))) == app(1)
+
+
+def test_require_used_refuses_a_layout_that_differs_where_it_writes(run, esp):
+    bundle("b.zip", {"partition_table.csv": MOVED, "storage.bin": b"x", "manifest.json": {
+        "table": "require", "tableMatch": "used"}})
+    assert "differs where this bundle writes" in run("write-bundle", "b.zip", ok=False)
+
+
+def test_ask_needs_an_answer(run, esp):
+    from click.testing import CliRunner
+    from idftool.cli import cli
+
+    bundle("b.zip", {"partition_table.csv": MOVED, "manifest.json": {"table": "ask",
+                                                                     "ops": [{"op": "clear-boot"}]}})
+    assert "pass -y" in run("write-bundle", "b.zip", ok=False)
+    assert not esp.writes
+    result = CliRunner().invoke(cli, ["-y", "-p", "/dev/virtual", "write-bundle", "b.zip"])
+    assert result.exit_code == 0, result.output
+    assert [w for w in esp.writes if w[0] == 0x8000]
+
+
+def test_create_bundle_with_a_role_file_and_a_manifest(run_offline, tmp_path):
+    import json
+    (tmp_path / "files").mkdir()
+    (tmp_path / "files" / "config.json").write_text("{}")
+    (tmp_path / "manifest.json").write_text(json.dumps({"ops": [
+        {"op": "edit-fs", "partition": "storage", "put": {"/config.json": "files/config.json"}}]}))
+    out = tmp_path / "b.zip"
+    run_offline(f"--partition-table-file {CHIP / 'partitions.csv'} create-bundle -o {out} "
+                f"--manifest {tmp_path / 'manifest.json'} @ota {CHIP / 'app-v2.bin'}")
+    with zipfile.ZipFile(out) as zf:
+        assert sorted(zf.namelist()) == ["@ota.bin", "files/config.json", "manifest.json"]
+
+
+def test_print_bundle_without_a_table(run_offline, tmp_path):
+    bundle(tmp_path / "b.zip", {"@ota.bin": app(2), "manifest.json": {
+        "name": "Field update", "ops": [{"op": "clear-boot"}]}})
+    out = run_offline(f"print-bundle -f {tmp_path / 'b.zip'}")
+    assert "Name: Field update" in out
+    assert "Partition table: none, uses the device's" in out
+    assert "Write @ota.bin to the next OTA slot" in out
+    assert "Clear the OTA selection" in out
+    assert "2.0.0" in out
 
 
 def test_nvs_on_the_device(run, tmp_path, esp):

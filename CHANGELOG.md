@@ -11,8 +11,16 @@ this project adheres to [Semantic Versioning](https://semver.org/).
   it against the chip.
 - `print-image`, `print-bundle` and `app-info` show which chip the bootloader
   is for.
+- Bundles take `@factory.bin` and `@ota.bin`, which flash like `factory` and
+  `ota`.
+- Bundles take an optional `manifest.json`: a name, the target chip, and ops
+  that set NVS keys, edit files, erase partitions and set the boot slot.
+- `write-bundle` checks every partition name before writing, and writes the
+  partition table only if it differs. A manifest can ask first, or refuse a
+  device whose layout differs.
 
 ### Changed
+- Partition names can't start with `@`.
 - Every write skips what's already in flash and rewrites only the sectors that
   changed, not just `ota` and `factory`. `write-image` is unchanged.
 

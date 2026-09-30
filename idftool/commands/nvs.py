@@ -198,16 +198,21 @@ With `--namespace` set, `key=value` and `:key:type=value` work too — a leading
 second one also names a type the spec is rejected rather than guessed at."""
 
 
-def _parse_value(type_name, text):
-    """Turn the text after the ``=`` into the value the entry will hold."""
+def _read_host_file(path):
+    try:
+        return open(path, 'rb').read()
+    except OSError as e:
+        raise click.UsageError(f"Cannot read value file '{path}': {e}")
+
+
+def _parse_value(type_name, text, read_file=_read_host_file):
+    """Turn the text after the ``=`` into the value the entry will hold. ``@path`` values
+    come from `read_file`."""
     from idftool.nvs import NvsError
 
     if text.startswith('@'):
         path = text[1:]
-        try:
-            raw = open(path, 'rb').read()
-        except OSError as e:
-            raise click.UsageError(f"Cannot read value file '{path}': {e}")
+        raw = read_file(path)
         if type_name == 'blob':
             return raw
         if type_name == 'string':
@@ -229,7 +234,7 @@ def _parse_value(type_name, text):
         raise NvsError(f"'{text}' is not a valid {type_name} value")
 
 
-def _parse_set(spec, default_namespace):
+def _parse_set(spec, default_namespace, read_file=_read_host_file):
     """Parse a ``--set`` spec into an Edit."""
     from idftool.nvs import PRIMITIVES, NvsError
     from idftool.nvs.edit import Edit
@@ -274,7 +279,7 @@ def _parse_set(spec, default_namespace):
 
     # With no type given the value can only be decoded once the existing entry is known, so
     # hand the raw text through and let the editor resolve it.
-    value = _parse_value(type_name, text) if type_name else text
+    value = _parse_value(type_name, text, read_file) if type_name else text
     return Edit(namespace, key, type_name, value)
 
 
@@ -295,7 +300,7 @@ def _parse_delete(spec, default_namespace):
     return Edit(namespace, key)
 
 
-def _resolve_untyped(image, edits):
+def _resolve_untyped(image, edits, read_file=_read_host_file):
     """Fill in the type of any ``--set`` that didn't give one, from the entry it replaces."""
     from idftool.nvs.edit import Edit
 
@@ -313,7 +318,7 @@ def _resolve_untyped(image, edits):
                 f"inferred — write it as {edit.namespace}:{edit.key}:<type>={edit.value} "
                 f"(types: {known})")
         resolved.append(Edit(edit.namespace, edit.key, existing.type,
-                             _parse_value(existing.type, edit.value)))
+                             _parse_value(existing.type, edit.value, read_file)))
     return resolved
 
 
@@ -346,6 +351,54 @@ def _describe(change):
 def _short(value, limit=48):
     text = value.hex() if isinstance(value, bytes) else str(value)
     return text if len(text) <= limit else f'{text[:limit]}…'
+
+
+def _write_pages(esp, part, result, dirty, options):
+    # Only the pages that actually differ go back to the device. Flash erases in 4 KiB
+    # sectors and a page is exactly one sector, so a partial write is safe here.
+    writes = _contiguous_writes(part.offset, result, dirty)
+    total = sum(len(d) for _, d in writes)
+    print(f"Writing {total:#x} bytes to partition '{part.name}' in "
+          f"{len(writes)} run{'' if len(writes) == 1 else 's'}")
+    write_flash(esp=esp, addr_data=writes, flash_size='detect',
+                **write_flash_options(options, skip_flashed=True, diff=True))
+
+
+def manifest_edits(set_values, deletes, read_file):
+    """Edits from a bundle manifest's ``set-nvs`` op: ``ns:key`` → ``type:value`` (or a bare
+    value for a key that exists), and ``ns:key`` deletes."""
+    from idftool.nvs import PRIMITIVES
+
+    known = list(PRIMITIVES) + ['string', 'blob']
+    edits = []
+    for qualified, value in set_values.items():
+        value = str(value)
+        prefix, colon, rest = value.partition(':')
+        # The value's prefix is a type only when it names one, so text with a colon still works.
+        if colon and prefix in known and len(qualified.split(':')) < 3:
+            spec = f"{qualified}:{prefix}={rest}"
+        else:
+            spec = f"{qualified}={value}"
+        edits.append(_parse_set(spec, None, read_file))
+    return edits + [_parse_delete(d, None) for d in deletes]
+
+
+def edit_nvs_partition(esp, part, edits, options, read_file=_read_host_file):
+    """Apply `edits` to NVS partition `part` on the device, writing only the pages that change."""
+    import idftool.nvs as nvs
+    from idftool.nvs.edit import apply
+
+    print(f"Reading partition {part.name} (offset={part.offset:#x}, size={part.size:#x})")
+    data = esp.read_flash(part.offset, part.size)
+    image = nvs.parse(data)
+    _report_errors(image)
+    result, changes, dirty, _ = apply(data, _resolve_untyped(image, edits, read_file))
+    for change in changes:
+        print(_describe(change))
+    if not dirty:
+        print("Nothing changed.")
+        return
+    _write_pages(esp, part, result, dirty, options)
 
 
 def _split_target(args, image_file, what):
@@ -409,14 +462,7 @@ def set_nvs(state, args, image_file, deletes, namespace, output_file, do_rewrite
         return
 
     if part is not None:
-        # Only the pages that actually differ go back to the device. Flash erases in 4 KiB
-        # sectors and a page is exactly one sector, so a partial write is safe here.
-        writes = _contiguous_writes(part.offset, result, dirty)
-        total = sum(len(d) for _, d in writes)
-        print(f"Writing {total:#x} bytes to partition '{part.name}' in "
-              f"{len(writes)} run{'' if len(writes) == 1 else 's'}")
-        write_flash(esp=state.esp, addr_data=writes, flash_size='detect',
-                    **write_flash_options(options, skip_flashed=True, diff=True))
+        _write_pages(state.esp, part, result, dirty, options)
     else:
         target = output_file or image_file
         with open(target, 'wb') as f:

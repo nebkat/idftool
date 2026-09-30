@@ -6,7 +6,6 @@ and returns a ``Loaded`` for the command to work with."""
 import sys
 from dataclasses import dataclass
 from typing import Optional
-from zipfile import ZipFile
 
 import rich_click as click
 
@@ -20,8 +19,8 @@ from esp_idf_defs.partitions import PartitionTable, PartitionDefinition, \
 from esp_pylib.serial_ports import get_port_names
 
 from idftool.display import print_partition_table
-from idftool.partitions import check_image_file, check_write_bundle_has_partition_table, \
-    load_partition_table_file, parse_partition_table_csv, read_otadata, require_partitions
+from idftool.partitions import check_image_file, load_partition_table_file, read_otadata, \
+    require_partitions
 from idftool.ports import find_port_for_mac, find_port_for_usb_serial, print_rerun_hint, \
     select_device
 
@@ -108,9 +107,9 @@ class State:
                 self.primary_bootloader_offset = self.esp.BOOTLOADER_FLASH_OFFSET
         return self.esp
 
-    def _load_partition_table(self, image_file, bundle_file) -> PartitionTable:
-        # Load from the most specific source available, matching the original precedence:
-        # image file > --partition-table-file > bundle CSV > the connected device.
+    def _load_partition_table(self, image_file) -> PartitionTable:
+        # Load from the most specific source available:
+        # image file > --partition-table-file > the connected device.
         if image_file is not None:
             check_image_file(image_file, self.partition_table_offset)
             with open(image_file, 'rb') as f:
@@ -123,16 +122,6 @@ class State:
                 primary_bootloader_offset=self.primary_bootloader_offset,
                 recovery_bootloader_offset=self.recovery_bootloader_offset,
             )
-        elif bundle_file is not None and check_write_bundle_has_partition_table(bundle_file):
-            with ZipFile(bundle_file, 'r') as tar:
-                partition_table_csv = tar.read('partition_table.csv')
-                if not partition_table_csv:
-                    raise RuntimeError("Partition table could not be loaded from bundle")
-                partition_table = parse_partition_table_csv(
-                    partition_table_csv.decode('utf-8'), f"bundle '{bundle_file}'",
-                    self.partition_table_offset, self.primary_bootloader_offset,
-                    self.recovery_bootloader_offset,
-                )
         else:
             try:
                 binary = self.esp.read_flash(offset=self.partition_table_offset, length=self.partition_table_size)
@@ -141,22 +130,18 @@ class State:
                 raise RuntimeError("Partition table could not be loaded") from e
         return require_partitions(partition_table, "the loaded source")
 
-    def setup(self, *, needs_device=True, image_file=None, bundle_file=None) -> 'Loaded':
+    def setup(self, *, needs_device=True, image_file=None) -> 'Loaded':
         """Connect if required, load and print the partition table, and build the virtual
         partition-table/bootloader entries the command handlers expect.
 
         Returns a ``Loaded`` whose ``esp`` is ``None`` for commands that ran entirely from a file.
         """
-        table_from_file = (
-            image_file is not None
-            or bool(self.partition_table_file)
-            or (bundle_file is not None and check_write_bundle_has_partition_table(bundle_file))
-        )
+        table_from_file = image_file is not None or bool(self.partition_table_file)
         if needs_device or not table_from_file:
             self.connect()
         esp = self.esp
 
-        partition_table = self._load_partition_table(image_file, bundle_file)
+        partition_table = self._load_partition_table(image_file)
 
         # Read otadata so the printed table can mark the active app partition
         otadata_params: Optional[OtaDataParameters] = None
@@ -173,6 +158,23 @@ class State:
         if esp:
             partition_table.verify_size_fits(flash_size_bytes(detect_flash_size(esp)))
 
+        return Loaded(esp, partition_table, *self.virtual_entries(partition_table))
+
+    def read_device_table(self) -> Optional[PartitionTable]:
+        """The device's table (or --partition-table-file's), or None if the device has none."""
+        if self.partition_table_file:
+            return self._load_partition_table(None)
+        binary = self.connect().read_flash(offset=self.partition_table_offset,
+                                           length=self.partition_table_size)
+        try:
+            table = PartitionTable.from_binary(binary)
+        except (RuntimeError, ValueError):  # blank or corrupt
+            return None
+        return table if len(table) else None
+
+    def virtual_entries(self, partition_table):
+        """The partition-table and bootloader entries names resolve to, as the table's own rows
+        or at the configured offsets."""
         # Add a virtual partition table entry if not present
         partition_table_entry = next(
             (e for e in partition_table if e.type == PARTITION_TABLE_TYPE and e.subtype == SUBTYPES[e.type]['primary']),
@@ -190,5 +192,4 @@ class State:
                 size=self.partition_table_offset - self.primary_bootloader_offset,
             ) if self.primary_bootloader_offset is not None else None
         )
-
-        return Loaded(esp, partition_table, partition_table_entry, bootloader_entry)
+        return partition_table_entry, bootloader_entry

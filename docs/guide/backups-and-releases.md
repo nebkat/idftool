@@ -34,7 +34,8 @@ This reads the whole chip, which can take a long time on a large flash.
 idftool write-bundle esp32-s3-7c2c679279c0-20260929-143000.zip
 ```
 
-This writes every partition and the partition table from the bundle.
+This writes every partition, the bootloader and the partition table from the
+bundle, skipping what's already there.
 
 From an image:
 
@@ -70,6 +71,11 @@ idftool write-bundle release.zip
 
 `--flash-partition-table` includes the partition table, so a device with an
 older layout is updated to match.
+
+For a field update, name the app `@ota` instead of a partition, so it goes to
+whichever OTA slot is next. A [manifest](../reference/bundles.md#manifest) can
+also set NVS keys, edit files, and control when the partition table may
+change.
 
 ## Clone a device
 

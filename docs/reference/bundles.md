@@ -1,20 +1,79 @@
 # Bundles
 
-A bundle is a plain ZIP with one `.bin` per partition, named after the
-partition, and optionally a `bootloader.bin` and a `partition_table.csv`. Use them to hand a build
+A bundle is a ZIP whose filenames say what to flash. Use them to hand a build
 from CI to whoever flashes it, or to archive exactly what shipped.
+
+| File | Flashing it |
+|------|-------------|
+| `partition_table.csv` or `.bin` | Replaces the partition table, if it differs. Written first. |
+| `bootloader.bin` | Writes the bootloader. |
+| `@factory.bin` | Flashes the app to the factory partition (or `ota_0`) and clears otadata, like [`factory`](firmware.md#factory). |
+| `@ota.bin` | Writes the app to the next OTA slot and boots it, like [`ota`](firmware.md#ota). |
+| `<name>.bin` | Writes the partition called `name`. |
+| `manifest.json` | Optional: a name, the target chip, table rules and extra ops. See [Manifest](#manifest). |
 
 ```text
 release.zip
 ├── partition_table.csv
-├── ota_0.bin
+├── @ota.bin
 └── storage.bin
 ```
 
+They're written in that order. A bundle can't have both `@factory.bin` and
+`@ota.bin`, or name a partition the role file may write. Partition names can't
+start with `@`. Files in subdirectories are only used by manifest ops.
+
+Before anything is written, every app and bootloader is checked against the
+chip, and every partition the bundle names must exist in the table it will
+meet: the bundle's own, else the device's.
+
+## Manifest
+
+```json
+{
+  "name": "MS5 v0.17.0",
+  "description": "Field update: new app, reset the channel",
+  "chip": "esp32s3",
+  "ops": [
+    {"op": "set-nvs", "partition": "nvs_cfg", "set": {"cfg:channel": "string:stable"}},
+    {"op": "edit-fs", "partition": "storage", "put": {"/config.json": "files/config.json"}},
+    {"op": "clear-boot"}
+  ]
+}
+```
+
+All fields are optional. `chip` is checked against the device. `ops` run in
+order after the files:
+
+| Op | Fields | Does |
+|----|--------|------|
+| `write` | `partition`, `file` | Write a file to a partition. |
+| `erase` | `partition` | Erase a partition. |
+| `write-fs` | `partition`, `file` | Write a filesystem image. |
+| `edit-fs` | `partition`, `put`, `delete` | Put files (path → file in the bundle) in the filesystem, and delete paths. |
+| `set-nvs` | `partition`, `set`, `delete` | Set keys (`ns:key` → `type:value`, or a bare value for a key that exists) and delete them. Without `partition`, the first NVS partition. |
+| `set-boot` | `partition` | Boot that OTA slot next. |
+| `clear-boot` | | Clear otadata so the factory app boots. |
+
+### Partition table rules
+
+A table that already matches the device's isn't written. `table` says what
+happens when it differs:
+
+- `update` (default): write it.
+- `ask`: show the differences and ask. `-y` answers yes.
+- `require`: never write it, and refuse the device.
+
+`tableMatch` says which differences count: `exact` (default) for any, or `used`
+for only the partitions the bundle writes, erases, edits or boots. With `used`,
+a device that differs elsewhere keeps its own table.
+
 ## `create-bundle`
 
-Pack partition binaries into a bundle. `--flash-partition-table` includes the
-partition table CSV so [`write-bundle`](#write-bundle) flashes it too.
+Pack partition binaries into a bundle. `@factory` and `@ota` add a role file.
+`--flash-partition-table` includes the partition table CSV so
+[`write-bundle`](#write-bundle) flashes it too. `--manifest` adds a
+`manifest.json` and the files its ops name, relative to it.
 
 ```bash
 idftool --partition-table-file partitions.csv create-bundle \
@@ -35,10 +94,8 @@ idftool dump-bundle my-backup.zip
 
 ## `write-bundle`
 
-Flash every binary in a bundle. If the bundle has a `partition_table.csv`,
-`idftool` uses it instead of the device's table, and rewrites the device's table
-to match. Apps and the bootloader are checked against the chip before
-anything is written.
+Flash a bundle. It prints the steps first, then checks everything against the
+device before the first write.
 
 ```bash
 idftool write-bundle release.zip
@@ -48,12 +105,17 @@ Takes the [write options](write-options.md).
 
 ## `print-bundle`
 
-Inspect a bundle without a device: its bootloader's chip, its partition table
-and, for each app partition present, the app description.
+Inspect a bundle without a device: its manifest, the steps flashing it takes,
+its bootloader's chip, its partition table if it has one, and the app
+descriptions.
 
 ```console
 $ idftool print-bundle -f release.zip
 Bundle: release.zip (0x2828d bytes)
+Partition table: partition_table.csv
+Steps:
+  1. Write the partition table (partition_table.csv) if it differs
+  2. Write ota_0.bin to partition 'ota_0'
 Partitions included: ota_0
 
 Bootloader: none
