@@ -17,8 +17,8 @@ from idftool.ports import adapter_name, probe_port, prompt_for_port, quiet_espto
     usb_port_for_mac, usb_ports_for_serial
 
 def list_devices(state=None, probe=False):
-    """List the serial ports. With `probe`, connect to each to add its chip and MAC, which
-    resets the boards."""
+    """List the serial ports. With `probe`, connect to each to add its chip and MAC, and
+    what ``state.identify`` names it, which resets the boards."""
     from rich import box
     from rich.console import Console
     from rich.table import Table
@@ -32,12 +32,18 @@ def list_devices(state=None, probe=False):
     if probe:
         click.echo(f"Probing {len(ports)} port(s)…", err=True)
         baud = state.baud if state is not None else 115200
+        identify = state.identify if state is not None else None
         with quiet_esptool(), concurrent.futures.ThreadPoolExecutor(
                 max_workers=min(8, len(ports))) as pool:
-            for found in pool.map(lambda p: probe_port(p.device, baud), ports):
+            for found in pool.map(lambda p: probe_port(p.device, baud, identify), ports):
                 probed[found["port"]] = found
 
+    # Only when something named a device, or tried to.
+    identified = any(f.get("identity") is not None or f.get("identify_error")
+                     for f in probed.values())
     header = ["Port"]
+    if identified:
+        header += ["Device"]
     if probe:
         header += ["Chip", "MAC"]
     header += ["Type", "USB serial #", "USB ID", "Location"]
@@ -48,6 +54,10 @@ def list_devices(state=None, probe=False):
         style = [{"fg": "green", "bold": True}]
         if probe:
             found = probed[p.device]
+            if identified:
+                identity = found.get("identity")
+                row += ["" if identity is None else str(identity)]
+                style += [{"bold": True}]
             row += [found["chip"] or "unavailable", found["mac"] or ""]
             style += [{"bold": True} if found["chip"] else {"fg": "red"}, {}]
         row += [adapter_name(p), p.serial_number or "",
@@ -64,7 +74,7 @@ def list_devices(state=None, probe=False):
         # Drop columns from the right (Location, USB ID, and with a MAC column, the serial
         # number) rather than squeeze every column on a narrow terminal.
         shown = len(header)
-        while shown > (4 if probe else 3) and (
+        while shown > (4 if probe else 3) + identified and (
                 sum(max(len(r[i]) for r in [header, *rows]) + 3 for i in range(shown)) + 1
                 > console.width):
             shown -= 1
@@ -80,7 +90,8 @@ def list_devices(state=None, probe=False):
         widths = [max(len(r[i]) for r in [header, *rows]) for i in range(len(header))]
         for row in [header, *rows]:
             print("  ".join(f"{c:<{w}}" for c, w in zip(row, widths)).rstrip())
-    failures = [(port, found["error"]) for port, found in probed.items() if found["error"]]
+    failures = [(port, found["error"] or f"could not identify: {found['identify_error']}")
+                for port, found in probed.items() if found["error"] or found.get("identify_error")]
     if failures:
         click.echo()
         for port, error in failures:

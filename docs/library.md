@@ -67,8 +67,40 @@ state.port = found["port"]
 ```
 
 `identify` needs a connection, so every port is probed (and reset) when it's
-given. If it raises, the device is still listed and usable, with the error
-next to it.
+given, unless `probe=False`: then it runs only on ports probed with `p`. If it
+raises, the device is still listed and usable, with the error next to it.
+
+`State(identify=...)` uses it in the picker the same way as the CLI uses
+[plugins](#plugins).
+
+## Plugins
+
+A package can name devices for the `idftool` CLI too, by registering an
+`identify` function in its `pyproject.toml`:
+
+```toml
+[project.entry-points."idftool.identify"]
+harvest = "harvest_tools.idftool:identify"
+```
+
+```python
+def identify(esp):
+    fields = read_board_efuses(esp)
+    if not fields.programmed:
+        return None  # not one of ours: shown as the chip
+    return f"{fields.board} rev {fields.revision}"
+```
+
+It runs whenever a board is probed (`--probe`, or `p` in the picker), and
+`devices` shows it in a Device column. It never runs otherwise, so installing a
+plugin resets no extra boards.
+
+With several plugins, the first to return something other than `None` names the
+device. One that fails to import or raises is shown as the device's error,
+unless another names it.
+
+Plugins load from the environment `idftool` is installed in, so they don't
+reach the standalone binaries.
 
 ## Available functions
 

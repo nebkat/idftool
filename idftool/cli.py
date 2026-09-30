@@ -11,6 +11,7 @@ from esptool import ESPLoader
 
 from esp_idf_defs.partitions import PARTITION_TABLE_SIZE, PARTITION_TABLE_OFFSET
 
+from idftool import plugins
 from idftool.params import BASED_INT, BOOTLOADER_OFFSET, MAC
 from idftool.state import State
 
@@ -97,6 +98,7 @@ def cli(ctx, port, mac, usb_serial, baud, probe, yes, no_reset, partition_table_
         mac=mac,
         usb_serial=usb_serial,
         probe=probe,
+        identify=plugins.identify,
         baud=baud,
         no_reset=no_reset,
         assume_yes=yes,

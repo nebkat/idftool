@@ -294,13 +294,33 @@ def test_devices_lists_ports_and_probes_them(monkeypatch):
                                  serial_number="7C:2C:67:92:79:C0", location="1-1.4",
                                  description="", product=None))()
     monkeypatch.setattr(misc, "get_port_list", lambda: [port])
-    monkeypatch.setattr(misc, "probe_port", lambda device, baud: {
-        "port": device, "chip": "ESP32-S3", "mac": "7c:2c:67:92:79:c0", "error": None})
+    monkeypatch.setattr(misc, "probe_port", lambda device, baud, identify=None: {
+        "port": device, "chip": "ESP32-S3", "mac": "7c:2c:67:92:79:c0", "identity": None,
+        "error": None})
 
     out = CliRunner().invoke(cli, ["ports"]).output
     assert "ESP USB-Serial/JTAG" in out and "7C:2C:67:92:79:C0" in out
     out = CliRunner().invoke(cli, ["devices", "--probe"]).output
     assert "ESP32-S3" in out and "7c:2c:67:92:79:c0" in out
+    assert "Device" not in out
+
+
+def test_devices_probe_shows_what_a_plugin_names_the_device(monkeypatch):
+    import idftool.commands.misc as misc
+    import idftool.plugins as plugins
+    from idftool.cli import cli
+
+    port = type("Port", (), dict(device="/dev/jtag", vid=0x303A, pid=0x1001,
+                                 serial_number="7C:2C:67:92:79:C0", location="1-1.4",
+                                 description="", product=None))()
+    monkeypatch.setattr(misc, "get_port_list", lambda: [port])
+    monkeypatch.setattr(plugins, "_loaded", [("board", lambda esp: "Harvest Controller v3")])
+    monkeypatch.setattr(misc, "probe_port", lambda device, baud, identify=None: {
+        "port": device, "chip": "ESP32-S3", "mac": "7c:2c:67:92:79:c0",
+        "identity": identify(None), "error": None})
+
+    out = CliRunner().invoke(cli, ["devices", "--probe"]).output
+    assert "Device" in out and "Harvest Controller v3" in out
 
 
 def test_enter_bootloader_waits_for_the_port(monkeypatch):
@@ -384,6 +404,14 @@ def test_p_probes_only_the_highlighted_port(picker):
 def test_probe_connects_to_every_port(picker):
     picker("\r", probe=True)
     assert sorted(picker.probed) == ["/dev/bridge", "/dev/jtag0", "/dev/jtag1"]
+
+
+def test_identify_probes_every_port_unless_probe_is_false(picker):
+    picker("\r", identify=lambda esp: None)
+    assert sorted(picker.probed) == ["/dev/bridge", "/dev/jtag0", "/dev/jtag1"]
+    picker.probed.clear()
+    picker("\r", identify=lambda esp: None, probe=False)
+    assert picker.probed == []
 
 
 def test_r_refreshes_and_q_quits(picker):

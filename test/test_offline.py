@@ -684,6 +684,68 @@ def test_a_failing_identify_leaves_the_device_usable(fake_chip):
     assert fake_chip.closed
 
 
+@pytest.fixture
+def plugins(monkeypatch):
+    """Register fake ``idftool.identify`` entry points: ``plugins(name=function, ...)``."""
+    import idftool.plugins as module
+
+    def register(**functions):
+        class Entry:
+            def __init__(self, name, function):
+                self.name, self.function = name, function
+
+            def load(self):
+                if isinstance(self.function, Exception):
+                    raise self.function
+                return self.function
+
+        entries = [Entry(name, f) for name, f in functions.items()]
+        monkeypatch.setattr(module, "entry_points",
+                            lambda group: entries if group == "idftool.identify" else [])
+        monkeypatch.setattr(module, "_loaded", None)
+        return module.identify
+
+    return register
+
+
+def test_no_plugins_names_nothing(plugins):
+    assert plugins()(None) is None
+
+
+def test_the_first_plugin_to_answer_names_the_device(plugins):
+    identify = plugins(a=lambda esp: None, b=lambda esp: f"board on {esp}", c=lambda esp: "c")
+    assert identify("/dev/x") == "board on /dev/x"
+
+
+def test_a_failing_plugin_does_not_hide_one_that_answers(plugins):
+    def broken(esp):
+        raise ValueError("no efuse")
+
+    assert plugins(a=broken, b=ImportError("gone"), c=lambda esp: "c")(None) == "c"
+
+
+def test_a_failing_plugin_is_the_error_when_none_answer(plugins, fake_chip):
+    from idftool.ports import probe_port
+
+    def broken(esp):
+        raise ValueError("no efuse")
+
+    found = probe_port("/dev/x", 115200, plugins(a=lambda esp: None, b=broken))
+    assert found["error"] is None and found["identify_error"] == "plugin b: no efuse"
+    found = probe_port("/dev/x", 115200, plugins(a=ImportError("No module named 'x'")))
+    assert found["identify_error"] == "plugin a: No module named 'x'"
+
+
+def test_plugins_load_once(plugins):
+    import idftool.plugins as module
+
+    loads = []
+    identify = plugins(a=lambda esp: loads.append(esp))
+    identify(1)
+    identify(2)
+    assert len(module._loaded) == 1 and loads == [1, 2]
+
+
 def test_device_labels_line_up():
     from idftool.ports import device_labels
 

@@ -36,7 +36,9 @@ friends.
 ### `--probe`
 
 Connect to every port to add each board's chip and MAC, including boards behind
-a USB-serial adapter. This resets the boards.
+a USB-serial adapter. This resets the boards. With a
+[plugin](../library.md#plugins) installed, a Device column shows what it names
+each board.
 
 ```console
 $ idftool devices --probe

@@ -354,16 +354,18 @@ def kill_holders(port: str) -> None:
 
 
 def select_device(baud: int, *, identify: Optional[Identify] = None,
-                  message: str = "Select device", probe: bool = False,
+                  message: str = "Select device", probe: Optional[bool] = None,
                   allow_none: bool = False) -> Optional[dict]:
     """Ask the user to pick a device; returns its :func:`usb_record` or :func:`probe_port`
     record, or ``{"port": None}`` if `allow_none` and they chose no device.
 
     Ports are described from USB alone, so no board is reset. ``p`` connects to the
-    highlighted port to identify its board; `probe` does that for every port up front, as
-    does `identify`, which needs a connection."""
+    highlighted port to identify its board; `probe` does that for every port up front.
+    `probe` defaults to whether `identify` is given, since it needs a connection."""
     if not sys.stdin.isatty():
         return None
+    if probe is None:
+        probe = identify is not None
 
     while True:
         answer, found = _pick(serial_ports.get_port_list(), baud, probe=probe,
@@ -421,7 +423,7 @@ def _pick(listed, baud: Optional[int], *, probe: bool, message: str,
     ports = [p.device for p in listed]
     results: dict[str, dict] = {p.device: usb_record(p) for p in listed}
     # Ports being connected to; the rest are only checked for a process holding them.
-    to_probe = set(ports) if probe or identify is not None else set()
+    to_probe = set(ports) if probe else set()
 
     choices = [questionary.Choice(title="", value=p) for p in ports]
     if not ports:

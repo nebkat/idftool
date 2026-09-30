@@ -58,11 +58,13 @@ class State:
 
     def __init__(self, *, port, baud, no_reset, partition_table_file, partition_table_offset,
                  partition_table_size, primary_bootloader_offset, recovery_bootloader_offset,
-                 assume_yes=False, mac=None, usb_serial=None, probe=False):
+                 assume_yes=False, mac=None, usb_serial=None, probe=False, identify=None):
         self.port = port
         self.mac = mac
         self.usb_serial = usb_serial
         self.probe = probe
+        #: Names a probed device; see :func:`idftool.ports.probe_port`.
+        self.identify = identify
         self.baud = baud
         self.no_reset = no_reset
         self.assume_yes = assume_yes
@@ -86,7 +88,8 @@ class State:
             return find_port_for_usb_serial(self.usb_serial)
         if self.port or self.assume_yes or not sys.stdin.isatty():
             return self.port
-        found = select_device(self.baud, probe=self.probe, allow_none=allow_none)
+        found = select_device(self.baud, probe=self.probe, identify=self.identify,
+                              allow_none=allow_none)
         if found["port"] is not None:
             print_rerun_hint(found["port"], found.get("mac"), found.get("serial"))
         return found["port"]
