@@ -1027,3 +1027,53 @@ def test_the_example_plugin_names_the_chip():
             return "ESP32-S3 (QFN56) (revision v0.2)"
 
     assert identify(Loader()) == "ESP32-S3 (QFN56) (revision v0.2)"
+
+
+@pytest.fixture
+def tool_argv(monkeypatch):
+    """Run ``run_esptool``/``run_espefuse``; returns the argv the tool would have run with."""
+    import esptool
+    import espefuse
+
+    from idftool.commands.misc import run_espefuse, run_esptool
+
+    seen = []
+    monkeypatch.setattr(sys, "argv", list(sys.argv))
+    for tool in (esptool, espefuse):
+        monkeypatch.setattr(tool, "_main", lambda: seen.append(sys.argv[1:]))
+
+    def run(tool, *args, **options):
+        state = _state(monkeypatch, **{"port": "/dev/a", **options.pop("state", {})})
+        for name, value in options.items():
+            setattr(state, name, value)
+        {"esptool": run_esptool, "espefuse": run_espefuse}[tool](state, args)
+        return seen.pop()
+
+    return run
+
+
+@pytest.mark.parametrize("tool, args, options, expected", [
+    ("esptool", ["chip-id"], {}, ["--port", "/dev/a", "chip-id"]),
+    ("esptool", ["read_mac"], {}, ["--port", "/dev/a", "read_mac"]),
+    ("esptool", ["merge-bin", "-o", "x.bin"], {}, ["merge-bin", "-o", "x.bin"]),
+    ("esptool", ["chip-id", "-h"], {}, ["chip-id", "-h"]),
+    ("esptool", ["-p", "/dev/b", "chip-id"], {}, ["-p", "/dev/b", "chip-id"]),
+    ("esptool", ["--port-filter", "vid=0x303a", "chip-id"], {},
+     ["--port-filter", "vid=0x303a", "chip-id"]),
+    ("esptool", ["chip-id"], {"baud_explicit": True},
+     ["--port", "/dev/a", "--baud", "115200", "chip-id"]),
+    ("esptool", ["-b", "921600", "chip-id"], {"baud_explicit": True},
+     ["--port", "/dev/a", "-b", "921600", "chip-id"]),
+    ("esptool", ["chip-id"], {"no_reset": True},
+     ["--port", "/dev/a", "--after", "no-reset", "chip-id"]),
+    ("esptool", ["-a", "watchdog-reset", "chip-id"], {"no_reset": True},
+     ["--port", "/dev/a", "-a", "watchdog-reset", "chip-id"]),
+    ("espefuse", ["summary"], {}, ["--port", "/dev/a", "summary"]),
+    ("espefuse", ["--virt", "--chip", "esp32s3", "summary"], {},
+     ["--virt", "--chip", "esp32s3", "summary"]),
+    ("espefuse", ["-h"], {}, ["-h"]),
+    ("espefuse", ["burn-efuse", "X", "1"], {"assume_yes": True},
+     ["--port", "/dev/a", "burn-efuse", "X", "1"]),
+])
+def test_tools_get_the_chosen_device_and_options(tool_argv, tool, args, options, expected):
+    assert tool_argv(tool, *args, **options) == expected

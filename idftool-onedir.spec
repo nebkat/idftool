@@ -1,8 +1,10 @@
 # -*- mode: python ; coding: utf-8 -*-
-from PyInstaller.utils.hooks import collect_data_files
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 datas = []
 datas += collect_data_files('esptool')
+# The eFuse definitions of each chip, for the espefuse command.
+datas += collect_data_files('espefuse')
 
 
 a = Analysis(
@@ -12,7 +14,9 @@ a = Analysis(
     datas=datas,
     # idftool.fs and its backends are imported lazily inside the fs commands, to keep them
     # off the startup path; name them so the analysis can't miss them.
-    hiddenimports=['idftool.fs', 'idftool.fs.fatfs', 'idftool.fs.littlefs', 'idftool.fs.spiffs'],
+    # bitstring (under espefuse) picks its backend module at runtime.
+    hiddenimports=['idftool.fs', 'idftool.fs.fatfs', 'idftool.fs.littlefs', 'idftool.fs.spiffs']
+    + collect_submodules('bitstring'),
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

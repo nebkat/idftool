@@ -1,5 +1,5 @@
-"""Discovery and one-off commands: ``devices``, ``monitor``, ``idf.py`` and
-``enter-bootloader``."""
+"""Discovery, the tools run on the chosen device (``monitor``, ``idf.py``, ``esptool``,
+``espefuse``), and ``enter-bootloader``."""
 import concurrent.futures
 import os.path
 import sys
@@ -131,8 +131,7 @@ def monitor(state, monitor_args=()):
     idf_monitor.main()
 
 
-@cli.command('monitor', help='Open esp-idf-monitor on the selected device. Arguments after '
-                             '`monitor` go to esp-idf-monitor (`idftool monitor -h` lists them)',
+@cli.command('monitor', help='Run esp-idf-monitor on the selected device',
              context_settings=dict(ignore_unknown_options=True, help_option_names=[]))
 @click.argument('monitor_args', nargs=-1, type=click.UNPROCESSED)
 @pass_state
@@ -195,13 +194,76 @@ def idf_py(state, idf_py_args=()):
     _exec([*_idf_py(), *args])
 
 
-@cli.command('idf.py', help='Run ESP-IDF\'s idf.py, asking which device to use for actions that '
-                            'need one. Arguments go to idf.py',
+@cli.command('idf.py', help='Run idf.py on the selected device',
              context_settings=dict(ignore_unknown_options=True, help_option_names=[]))
 @click.argument('idf_py_args', nargs=-1, type=click.UNPROCESSED)
 @pass_state
 def cmd_idf_py(state, idf_py_args):
     return idf_py(state, idf_py_args)
+
+
+#: esptool commands that don't talk to a device.
+ESPTOOL_OFFLINE_COMMANDS = {"elf2image", "image-info", "merge-bin", "version"}
+
+
+def _tool_argv(state, args, needs_device) -> list[str]:
+    """`args` for esptool or espefuse, with the chosen ``--port``, ``-b`` if given, and
+    ``--no-reset``. Their own options win. idftool's ``-y`` is never passed on: to
+    espefuse it would mean burning without asking."""
+    args = list(args)
+    prefix = []
+    if needs_device and not _has_option(args, "-p", "--port", "--port-filter"):
+        if port := state.resolve_port():
+            prefix += ["--port", port]
+    if state.baud_explicit and not _has_option(args, "-b", "--baud"):
+        prefix += ["--baud", str(state.baud)]
+    if state.no_reset and not _has_option(args, "-a", "--after"):
+        prefix += ["--after", "no-reset"]
+    return [*prefix, *args]
+
+
+def _run(tool, argv) -> None:
+    """Run `tool`'s own command line on `argv`, as if it had been run itself."""
+    sys.argv = [tool.__name__, *argv]
+    tool._main()
+
+
+def run_esptool(state, esptool_args=()):
+    """Run esptool on the device chosen by ``-p``, ``-m`` or the picker, when its command
+    needs one."""
+    import esptool
+
+    args = list(esptool_args)
+    command = next((a.replace("_", "-") for a in args if a.replace("_", "-") in esptool.cli.commands),
+                   None)
+    needs_device = (command is not None and command not in ESPTOOL_OFFLINE_COMMANDS
+                    and not _has_option(args, "-h", "--help"))
+    _run(esptool, _tool_argv(state, args, needs_device))
+
+
+@cli.command('esptool', help='Run esptool on the selected device',
+             context_settings=dict(ignore_unknown_options=True, help_option_names=[]))
+@click.argument('esptool_args', nargs=-1, type=click.UNPROCESSED)
+@pass_state
+def cmd_esptool(state, esptool_args):
+    return run_esptool(state, esptool_args)
+
+
+def run_espefuse(state, espefuse_args=()):
+    """Run espefuse on the device chosen by ``-p``, ``-m`` or the picker."""
+    import espefuse
+
+    args = list(espefuse_args)
+    needs_device = bool(args) and not _has_option(args, "-h", "--help", "--virt", "--token")
+    _run(espefuse, _tool_argv(state, args, needs_device))
+
+
+@cli.command('espefuse', help='Run espefuse on the selected device',
+             context_settings=dict(ignore_unknown_options=True, help_option_names=[]))
+@click.argument('espefuse_args', nargs=-1, type=click.UNPROCESSED)
+@pass_state
+def cmd_espefuse(state, espefuse_args):
+    return run_espefuse(state, espefuse_args)
 
 
 def enter_bootloader(state):

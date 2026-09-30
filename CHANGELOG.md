@@ -7,7 +7,7 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
-- `idf.py` runs ESP-IDF's `idf.py` on the selected device.
+- `idf.py`, `esptool` and `espefuse` run Espressif's tools on the selected device.
 - Plugins define how devices are named, from custom probing (e.g. eFuse, NVS).
 
 ### Changed

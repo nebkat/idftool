@@ -54,9 +54,11 @@ options. The options shared by every command are under
 
 ## Tools
 
-Espressif's own tools, run on the device you pick.
+Espressif's tools, run on the selected device.
 
-| Command | Description |
-|---------|-------------|
-| [`monitor`](monitor.md#monitor) | Open [`esp-idf-monitor`](https://github.com/espressif/esp-idf-monitor) on the selected device |
-| [`idf.py`](idf-py.md#idfpy) | Run ESP-IDF's `idf.py`, asking which device to use |
+| Command |
+|---------|
+| [`monitor`](monitor.md#monitor) |
+| [`idf.py`](idf-py.md#idfpy) |
+| [`esptool`](esptool.md#esptool) |
+| [`espefuse`](espefuse.md#espefuse) |
