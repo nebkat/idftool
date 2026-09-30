@@ -52,6 +52,7 @@ nav:
           - Partitions or files: guide/partitions-or-files.md
           - Scripting: guide/scripting.md
           - Python library: library.md
+          - Plugins: guide/plugins.md
   - Reference:
       - Overview: reference/index.md
       - Commands:

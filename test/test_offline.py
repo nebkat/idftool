@@ -1007,3 +1007,19 @@ def test_a_usb_serial_matches_ftdis_windows_channel_suffix(monkeypatch):
     monkeypatch.setattr(ports_module.serial_ports, "get_port_list", lambda: listed)
     assert ports_module.usb_ports_for_serial("A50285BI") == ["COM5"]
     assert ports_module.usb_ports_for_serial("A50285BIA") == ["COM5"]
+
+
+def test_the_example_plugin_names_the_chip():
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).parent.parent / "examples" / "identify-plugin"))
+    try:
+        from idftool_chip_description import identify
+    finally:
+        sys.path.pop(0)
+
+    class Loader:
+        def get_chip_description(self):
+            return "ESP32-S3 (QFN56) (revision v0.2)"
+
+    assert identify(Loader()) == "ESP32-S3 (QFN56) (revision v0.2)"
