@@ -26,9 +26,20 @@ api_key,data,string,abc123def456
 Don't pad the columns with spaces: `nvs_partition_gen` doesn't accept them in
 the header.
 
-!!! note
-    Encrypted NVS isn't supported yet. Every command here works on plaintext
-    NVS only.
+## Encrypted NVS
+
+For NVS encrypted with the HMAC key protection scheme
+(`CONFIG_NVS_SEC_KEY_PROTECT_USING_HMAC`), give every command `--hmac-key`: the
+key burned into the HMAC eFuse, as 64 hex digits or a file holding the raw 32
+bytes or the digits. Images are decrypted when read and encrypted when written.
+
+```bash
+idftool write-nvs nvs example.csv --hmac-key hmac_key.bin
+idftool get-nvs nvs storage:device_id --hmac-key hmac_key.bin
+```
+
+Without the key, an encrypted partition is refused rather than read as garbage.
+Flash encryption-based NVS keys aren't supported.
 
 ## `create-nvs`
 

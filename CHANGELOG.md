@@ -16,6 +16,8 @@ this project adheres to [Semantic Versioning](https://semver.org/).
   `ota`.
 - Bundles take an optional `manifest.json`: a name, the target chip, and ops
   that set NVS keys, edit files, erase partitions and set the boot slot.
+- `--hmac-key` reads and writes NVS encrypted with the HMAC key protection
+  scheme.
 - `write-bundle` checks every partition name before writing, and writes the
   partition table only if it differs. A manifest can ask first, or refuse a
   device whose layout differs.

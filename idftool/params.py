@@ -43,6 +43,21 @@ class MacParamType(click.ParamType):
             self.fail(f"{value!r} is not a MAC address", param, ctx)
         return mac
 
+class HmacKeyParamType(click.ParamType):
+    """An NVS HMAC key, as 64 hex digits or a file, turned into the XTS keys."""
+    name = "key"
+
+    def convert(self, value, param, ctx):
+        from idftool.nvs.crypto import NvsKeys, parse_hmac_key
+
+        if isinstance(value, NvsKeys):
+            return value
+        try:
+            return NvsKeys.from_hmac_key(parse_hmac_key(value))
+        except RuntimeError as e:
+            self.fail(str(e), param, ctx)
+
 BASED_INT = BasedIntParamType()
+HMAC_KEY = HmacKeyParamType()
 BOOTLOADER_OFFSET = BootloaderOffsetParamType()
 MAC = MacParamType()

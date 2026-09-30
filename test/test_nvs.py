@@ -321,3 +321,72 @@ def test_edit_reserves_the_last_page_for_garbage_collection():
     for i in range(400):
         data, _, _, _ = apply(data, [Edit("ns", f"k{i % 40}", "u32", i)])
     assert parse(data).pages[-1].is_uninit
+
+
+# --- encryption (HMAC key protection) -------------------------------------------------------
+
+HMAC_KEY = bytes(range(32))
+
+
+def generate_encrypted(tmp_path, rows):
+    """Build a reference encrypted image with Espressif's generator."""
+    import subprocess
+    import sys
+
+    csv = tmp_path / "in.csv"
+    csv.write_text("key,type,encoding,value\n" + "\n".join(rows) + "\n")
+    (tmp_path / "hmac.bin").write_bytes(HMAC_KEY)
+    subprocess.run([sys.executable, "-m", "esp_idf_nvs_partition_gen", "encrypt", str(csv),
+                    "enc.bin", f"{SIZE:#x}", "--keygen", "--key_protect_hmac",
+                    "--kp_hmac_inputkey", str(tmp_path / "hmac.bin"), "--outdir", str(tmp_path)],
+                   check=True, capture_output=True)
+    return (tmp_path / "enc.bin").read_bytes()
+
+
+ENCRYPTED_ROWS = SAMPLE_ROWS + [
+    "long,data,string,a string long enough to span several thirty-two byte entries",
+    "blob,data,hex2bin," + "00112233445566778899aabbccddeeff" * 5,
+]
+
+
+def test_encryption_matches_generator(tmp_path):
+    from idftool.nvs.crypto import NvsKeys, decrypt, encrypt
+
+    keys = NvsKeys.from_hmac_key(HMAC_KEY)
+    reference = generate_encrypted(tmp_path, ENCRYPTED_ROWS)
+    plain = generate(tmp_path, ENCRYPTED_ROWS)
+    assert encrypt(plain, keys) == reference
+    assert decrypt(reference, keys) == plain
+
+
+def test_decrypt_refuses_a_wrong_key_and_a_plain_image(tmp_path):
+    from idftool.nvs.crypto import NvsKeys, decrypt
+
+    reference = generate_encrypted(tmp_path, SAMPLE_ROWS)
+    with pytest.raises(NvsError, match="does not decrypt"):
+        decrypt(reference, NvsKeys.from_hmac_key(bytes(32)))
+    with pytest.raises(NvsError, match="not encrypted"):
+        decrypt(generate(tmp_path, SAMPLE_ROWS), NvsKeys.from_hmac_key(HMAC_KEY))
+
+
+@pytest.mark.parametrize("text", [
+    HMAC_KEY.hex(),
+    "0x" + HMAC_KEY.hex().upper(),
+    ":".join(f"{b:02x}" for b in HMAC_KEY),
+    " ".join(HMAC_KEY.hex()[i:i + 8] for i in range(0, 64, 8)),
+])
+def test_parse_hmac_key_spellings(text):
+    from idftool.nvs.crypto import parse_hmac_key
+
+    assert parse_hmac_key(text) == HMAC_KEY
+
+
+def test_parse_hmac_key_files(tmp_path):
+    from idftool.nvs.crypto import parse_hmac_key
+
+    (tmp_path / "raw.bin").write_bytes(HMAC_KEY)
+    (tmp_path / "hex.txt").write_text(HMAC_KEY.hex() + "\n")
+    assert parse_hmac_key(str(tmp_path / "raw.bin")) == HMAC_KEY
+    assert parse_hmac_key(str(tmp_path / "hex.txt")) == HMAC_KEY
+    with pytest.raises(NvsError):
+        parse_hmac_key("abcd")

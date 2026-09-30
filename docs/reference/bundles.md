@@ -95,7 +95,9 @@ idftool dump-bundle my-backup.zip
 ## `write-bundle`
 
 Flash a bundle. It prints the steps first, then checks everything against the
-device before the first write.
+device before the first write. `--hmac-key` is the key for an
+[encrypted NVS](nvs.md#encrypted-nvs) partition that a `set-nvs` op edits;
+bundles never carry keys.
 
 ```bash
 idftool write-bundle release.zip

@@ -21,10 +21,11 @@ from idftool.bundle import MANIFEST, ROLE_PREFIX, ROLES, BundleError, Manifest, 
     factory_target, is_ota_app, normalise_chip, nvs_target, read_bundle
 from idftool.cli import cli, pass_state
 from idftool.flash import flash_options, option_group, write_flash, write_flash_options
+from idftool.params import HMAC_KEY
 from idftool.partitions import get_partition
 
 # Keep the pass-through write options in a panel of their own.
-option_group('write-bundle')
+option_group('write-bundle', '--hmac-key')
 
 def create_bundle(state, output_file, flash_partition_table, files, manifest_file=None):
     loaded = state.setup(needs_device=False)
@@ -160,14 +161,15 @@ def _choose_table(state, check) -> bool:
     return answer == choices[0]
 
 
-def write_bundle(state, input_file, **options):
+def write_bundle(state, input_file, hmac_key=None, **options):
     """Flash a bundle: its table, bootloader, role app and named partitions, then its
-    manifest's ops. Everything is checked against the device before the first write. Keyword
-    arguments go to esptool's ``write_flash`` (see :data:`idftool.flash.WRITE_FLASH_OPTIONS`)."""
+    manifest's ops. Everything is checked against the device before the first write.
+    `hmac_key` decrypts an encrypted NVS partition for ``set-nvs`` ops. Keyword arguments go to
+    esptool's ``write_flash`` (see :data:`idftool.flash.WRITE_FLASH_OPTIONS`)."""
     from idftool.commands.firmware import boot_partition, clear_boot_partition, flash_factory, \
         flash_ota, ota_partition
     from idftool.commands.fs import edit_fs_partition
-    from idftool.commands.nvs import edit_nvs_partition, manifest_edits
+    from idftool.commands.nvs import check_nvs_key, edit_nvs_partition, manifest_edits
 
     esp = state.connect()
     bundle = _read_bundle(state, input_file)
@@ -238,6 +240,9 @@ def write_bundle(state, input_file, **options):
             except (click.UsageError, RuntimeError) as e:
                 message = e.format_message() if isinstance(e, click.UsageError) else str(e)
                 raise BundleError(f"manifest.json: op {op.index} (set-nvs): {message}") from e
+            # Where the table stays, check now that the key fits the partition.
+            if not (bundle.table is not None and update_table):
+                check_nvs_key(esp, nvs_target(table, op.partition), hmac_key)
 
     write = write_flash_options(options, skip_flashed=True, diff=True)
 
@@ -285,7 +290,7 @@ def write_bundle(state, input_file, **options):
                               op.delete, options)
         elif op.op == 'set-nvs':
             edit_nvs_partition(esp, nvs_target(table, op.partition), nvs_edits[op.index],
-                               options, read_file)
+                               options, read_file, hmac_key)
         elif op.op == 'set-boot':
             boot_partition(esp, table, op.partition)
         elif op.op == 'clear-boot':
@@ -294,10 +299,12 @@ def write_bundle(state, input_file, **options):
 
 @cli.command('write-bundle', help='Flash a bundle ZIP')
 @click.argument('input_file')
+@click.option('--hmac-key', type=HMAC_KEY, default=None,
+              help="HMAC key of an encrypted NVS partition the manifest's set-nvs edits")
 @flash_options
 @pass_state
-def cmd_write_bundle(state, input_file, **options):
-    return write_bundle(state, input_file, **options)
+def cmd_write_bundle(state, input_file, hmac_key, **options):
+    return write_bundle(state, input_file, hmac_key, **options)
 
 
 def print_bundle(state, bundle_file):

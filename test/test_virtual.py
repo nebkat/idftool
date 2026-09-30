@@ -473,6 +473,38 @@ def test_nvs_on_the_device(run, tmp_path, esp):
     assert "SN-0043" in (tmp_path / "back.csv").read_text()
 
 
+KEY = bytes(range(32)).hex()
+
+
+def test_encrypted_nvs_on_the_device(run, tmp_path, esp):
+    (tmp_path / "example.csv").write_text(
+        "key,type,encoding,value\nconfig,namespace,,\nserial,data,string,SN-0042\n")
+    run("write-nvs", "nvs", "example.csv", "--hmac-key", KEY)
+    assert b"SN-0042" not in esp.region(*NVS)
+    assert "looks encrypted; pass --hmac-key" in run("print-nvs", "nvs", ok=False)
+    assert "does not decrypt" in run("print-nvs", "nvs", "--hmac-key", "00" * 32, ok=False)
+    run("set-nvs", "nvs", "config:serial=SN-0043", "--hmac-key", KEY)
+    assert run("get-nvs", "nvs", "config:serial", "--hmac-key", KEY).splitlines()[0] == "SN-0043"
+
+    bundle("b.zip", {"manifest.json": {"ops": [{"op": "set-nvs", "set": {"config:serial": "SN-0044"}}]}})
+    esp.writes.clear()
+    assert "pass --hmac-key" in run("write-bundle", "b.zip", ok=False)
+    assert not esp.writes
+    run("write-bundle", "b.zip", "--hmac-key", KEY)
+    run("read-nvs", "nvs", "back.csv", "--hmac-key", KEY)
+    assert "SN-0044" in (tmp_path / "back.csv").read_text()
+
+
+def test_encrypted_nvs_files(run_offline, tmp_path):
+    (tmp_path / "example.csv").write_text(
+        "key,type,encoding,value\nconfig,namespace,,\nserial,data,string,SN-0042\n")
+    image = tmp_path / "nvs.bin"
+    run_offline(f"create-nvs {tmp_path / 'example.csv'} -o {image} --size 0x6000 --hmac-key {KEY}")
+    run_offline(f"set-nvs -f {image} config:serial=SN-0043 --hmac-key {KEY}")
+    run_offline(f"extract-nvs -f {image} {tmp_path / 'out.csv'} --hmac-key {KEY}")
+    assert "SN-0043" in (tmp_path / "out.csv").read_text()
+
+
 def test_filesystem_on_the_device(run, tmp_path):
     (tmp_path / "assets").mkdir()
     (tmp_path / "assets" / "config.json").write_text('{"a": 1}')
