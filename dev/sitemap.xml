@@ -2,110 +2,126 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
          <loc>https://nebkat.github.io/idftool/dev/</loc>
-         <lastmod>2026-09-29</lastmod>
+         <lastmod>2026-09-30</lastmod>
     </url>
     <url>
          <loc>https://nebkat.github.io/idftool/dev/changelog/</loc>
-         <lastmod>2026-09-29</lastmod>
+         <lastmod>2026-09-30</lastmod>
     </url>
     <url>
          <loc>https://nebkat.github.io/idftool/dev/contributing/</loc>
-         <lastmod>2026-09-29</lastmod>
+         <lastmod>2026-09-30</lastmod>
     </url>
     <url>
          <loc>https://nebkat.github.io/idftool/dev/installation/</loc>
-         <lastmod>2026-09-29</lastmod>
+         <lastmod>2026-09-30</lastmod>
     </url>
     <url>
          <loc>https://nebkat.github.io/idftool/dev/library/</loc>
-         <lastmod>2026-09-29</lastmod>
+         <lastmod>2026-09-30</lastmod>
     </url>
     <url>
          <loc>https://nebkat.github.io/idftool/dev/guide/backups-and-releases/</loc>
-         <lastmod>2026-09-29</lastmod>
+         <lastmod>2026-09-30</lastmod>
     </url>
     <url>
          <loc>https://nebkat.github.io/idftool/dev/guide/choosing-a-device/</loc>
-         <lastmod>2026-09-29</lastmod>
+         <lastmod>2026-09-30</lastmod>
     </url>
     <url>
          <loc>https://nebkat.github.io/idftool/dev/guide/flashing-firmware/</loc>
-         <lastmod>2026-09-29</lastmod>
+         <lastmod>2026-09-30</lastmod>
     </url>
     <url>
          <loc>https://nebkat.github.io/idftool/dev/guide/getting-started/</loc>
-         <lastmod>2026-09-29</lastmod>
+         <lastmod>2026-09-30</lastmod>
     </url>
     <url>
          <loc>https://nebkat.github.io/idftool/dev/guide/monitoring/</loc>
-         <lastmod>2026-09-29</lastmod>
+         <lastmod>2026-09-30</lastmod>
     </url>
     <url>
          <loc>https://nebkat.github.io/idftool/dev/guide/partition-addressing/</loc>
-         <lastmod>2026-09-29</lastmod>
+         <lastmod>2026-09-30</lastmod>
     </url>
     <url>
          <loc>https://nebkat.github.io/idftool/dev/guide/partitions-or-files/</loc>
-         <lastmod>2026-09-29</lastmod>
+         <lastmod>2026-09-30</lastmod>
+    </url>
+    <url>
+         <loc>https://nebkat.github.io/idftool/dev/guide/plugins/</loc>
+         <lastmod>2026-09-30</lastmod>
     </url>
     <url>
          <loc>https://nebkat.github.io/idftool/dev/guide/provisioning/</loc>
-         <lastmod>2026-09-29</lastmod>
+         <lastmod>2026-09-30</lastmod>
     </url>
     <url>
          <loc>https://nebkat.github.io/idftool/dev/guide/scripting/</loc>
-         <lastmod>2026-09-29</lastmod>
+         <lastmod>2026-09-30</lastmod>
     </url>
     <url>
          <loc>https://nebkat.github.io/idftool/dev/reference/</loc>
-         <lastmod>2026-09-29</lastmod>
+         <lastmod>2026-09-30</lastmod>
     </url>
     <url>
          <loc>https://nebkat.github.io/idftool/dev/reference/bundles/</loc>
-         <lastmod>2026-09-29</lastmod>
+         <lastmod>2026-09-30</lastmod>
     </url>
     <url>
          <loc>https://nebkat.github.io/idftool/dev/reference/discovery/</loc>
-         <lastmod>2026-09-29</lastmod>
+         <lastmod>2026-09-30</lastmod>
+    </url>
+    <url>
+         <loc>https://nebkat.github.io/idftool/dev/reference/espefuse/</loc>
+         <lastmod>2026-09-30</lastmod>
+    </url>
+    <url>
+         <loc>https://nebkat.github.io/idftool/dev/reference/esptool/</loc>
+         <lastmod>2026-09-30</lastmod>
     </url>
     <url>
          <loc>https://nebkat.github.io/idftool/dev/reference/filesystems/</loc>
-         <lastmod>2026-09-29</lastmod>
+         <lastmod>2026-09-30</lastmod>
     </url>
     <url>
          <loc>https://nebkat.github.io/idftool/dev/reference/firmware/</loc>
-         <lastmod>2026-09-29</lastmod>
+         <lastmod>2026-09-30</lastmod>
     </url>
     <url>
          <loc>https://nebkat.github.io/idftool/dev/reference/global-options/</loc>
-         <lastmod>2026-09-29</lastmod>
+         <lastmod>2026-09-30</lastmod>
+    </url>
+    <url>
+         <loc>https://nebkat.github.io/idftool/dev/reference/idf-py/</loc>
+         <lastmod>2026-09-30</lastmod>
     </url>
     <url>
          <loc>https://nebkat.github.io/idftool/dev/reference/images/</loc>
-         <lastmod>2026-09-29</lastmod>
+         <lastmod>2026-09-30</lastmod>
     </url>
     <url>
          <loc>https://nebkat.github.io/idftool/dev/reference/misc/</loc>
-         <lastmod>2026-09-29</lastmod>
+         <lastmod>2026-09-30</lastmod>
     </url>
     <url>
          <loc>https://nebkat.github.io/idftool/dev/reference/monitor/</loc>
-         <lastmod>2026-09-29</lastmod>
+         <lastmod>2026-09-30</lastmod>
     </url>
     <url>
          <loc>https://nebkat.github.io/idftool/dev/reference/nvs/</loc>
-         <lastmod>2026-09-29</lastmod>
+         <lastmod>2026-09-30</lastmod>
     </url>
     <url>
          <loc>https://nebkat.github.io/idftool/dev/reference/partition-io/</loc>
-         <lastmod>2026-09-29</lastmod>
+         <lastmod>2026-09-30</lastmod>
     </url>
     <url>
          <loc>https://nebkat.github.io/idftool/dev/reference/partition-table/</loc>
-         <lastmod>2026-09-29</lastmod>
+         <lastmod>2026-09-30</lastmod>
     </url>
     <url>
          <loc>https://nebkat.github.io/idftool/dev/reference/write-options/</loc>
-         <lastmod>2026-09-29</lastmod>
+         <lastmod>2026-09-30</lastmod>
     </url>
 </urlset>
