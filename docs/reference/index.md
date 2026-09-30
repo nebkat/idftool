@@ -17,6 +17,8 @@ options. The options shared by every command are under
 | [`app-info`](firmware.md#app-info) | Print the app description from an application binary |
 | **[Monitor](monitor.md)** | |
 | [`monitor`](monitor.md#monitor) | Open [`esp-idf-monitor`](https://github.com/espressif/esp-idf-monitor) on the selected device |
+| **[idf.py](idf-py.md)** | |
+| [`idf.py`](idf-py.md#idfpy) | Run ESP-IDF's `idf.py`, asking which device to use |
 | **[Partition I/O](partition-io.md)** | |
 | [`read`](partition-io.md#read) | Read a partition (or slice) into a file |
 | [`write`](partition-io.md#write) | Write one or more files to named partitions |

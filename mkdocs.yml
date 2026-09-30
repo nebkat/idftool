@@ -58,6 +58,7 @@ nav:
           - Discovery: reference/discovery.md
           - Firmware: reference/firmware.md
           - Monitor: reference/monitor.md
+          - idf.py: reference/idf-py.md
           - Partition I/O: reference/partition-io.md
           - Images: reference/images.md
           - Bundles: reference/bundles.md

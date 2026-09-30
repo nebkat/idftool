@@ -22,6 +22,7 @@ REFRESH = "\0refresh"
 MANUAL = "\0manual"
 QUIT = "\0quit"
 KILL = "\0kill"
+NONE = "\0none"
 
 #: Whether `k` can kill a process holding a port.
 CAN_KILL = sys.platform != "win32"
@@ -353,9 +354,10 @@ def kill_holders(port: str) -> None:
 
 
 def select_device(baud: int, *, identify: Optional[Identify] = None,
-                  message: str = "Select device", probe: bool = False) -> Optional[dict]:
+                  message: str = "Select device", probe: bool = False,
+                  allow_none: bool = False) -> Optional[dict]:
     """Ask the user to pick a device; returns its :func:`usb_record` or :func:`probe_port`
-    record.
+    record, or ``{"port": None}`` if `allow_none` and they chose no device.
 
     Ports are described from USB alone, so no board is reset. ``p`` connects to the
     highlighted port to identify its board; `probe` does that for every port up front, as
@@ -365,9 +367,11 @@ def select_device(baud: int, *, identify: Optional[Identify] = None,
 
     while True:
         answer, found = _pick(serial_ports.get_port_list(), baud, probe=probe,
-                              identify=identify, message=message)
+                              identify=identify, message=message, allow_none=allow_none)
         if answer is REFRESH:
             continue
+        if answer is NONE:
+            return {"port": None}
         if answer is KILL:
             kill_holders(found["port"])
             continue
@@ -409,7 +413,8 @@ def prompt_for_port(message: str = "Select port") -> Optional[str]:
 
 
 def _pick(listed, baud: Optional[int], *, probe: bool, message: str,
-          identify: Optional[Identify] = None, allow_probe: bool = True):
+          identify: Optional[Identify] = None, allow_probe: bool = True,
+          allow_none: bool = False):
     """Show the picker once; returns ``(answer, record)``."""
     from questionary.prompts.common import InquirerControl
 
@@ -422,6 +427,8 @@ def _pick(listed, baud: Optional[int], *, probe: bool, message: str,
     if not ports:
         choices.append(questionary.Choice(title=[("class:meta", "no serial ports found")],
                                           value=None, disabled="plug one in"))
+    if allow_none:
+        choices.append(questionary.Choice(title=[("class:meta", "∅ No device")], value=NONE))
     choices.append(questionary.Choice(title=[("class:meta", "✎ Enter a port manually…")],
                                       value=MANUAL))
     choices.append(questionary.Choice(title=[("class:meta", "↻ Refresh")], value=REFRESH))
@@ -548,7 +555,7 @@ def _pick(listed, baud: Optional[int], *, probe: bool, message: str,
 
     if answer is KILL:
         return KILL, {"port": to_kill["port"]}
-    if answer in (REFRESH, MANUAL, QUIT) or answer is None:
+    if answer in (REFRESH, MANUAL, QUIT, NONE) or answer is None:
         return answer, None
     chosen = results[answer]
     if chosen["error"]:

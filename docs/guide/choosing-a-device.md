@@ -87,3 +87,18 @@ On Windows, FTDI's driver adds a channel letter to the serial number
 
 For boards on their built-in USB port the serial number is the MAC, so `-m` and
 `--usb-serial` find the same port.
+
+## With `idf.py`
+
+[`idftool idf.py`](../reference/idf-py.md) runs ESP-IDF's `idf.py` and asks for
+a device when the actions need one:
+
+```bash
+idftool idf.py build flash monitor
+```
+
+Alias it to put every `idf.py` call through the device list:
+
+```bash
+alias idf.py='idftool idf.py'
+```

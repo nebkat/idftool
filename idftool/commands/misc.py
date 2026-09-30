@@ -1,4 +1,5 @@
-"""Discovery and one-off commands: ``devices``, ``monitor`` and ``enter-bootloader``."""
+"""Discovery and one-off commands: ``devices``, ``monitor``, ``idf.py`` and
+``enter-bootloader``."""
 import concurrent.futures
 import os.path
 import sys
@@ -115,6 +116,68 @@ def monitor(state, monitor_args=()):
 @pass_state
 def cmd_monitor(state, monitor_args):
     return monitor(state, monitor_args)
+
+
+#: idf.py actions that talk to a device, besides any ``*-flash`` and ``efuse-*`` one.
+IDF_PY_DEVICE_ACTIONS = {"monitor", "erase-flash", "read-otadata", "erase-otadata",
+                         "coredump-info", "coredump-debug"}
+#: ``*-flash`` / ``efuse-*`` actions that only build.
+IDF_PY_BUILD_ACTIONS = {"dfu-flash", "uf2-flash", "efuse-common-table", "efuse-custom-table"}
+
+
+def idf_py_needs_device(args) -> bool:
+    """Whether idf.py `args` include an action that talks to a device."""
+    for arg in args:
+        action = arg.replace("_", "-")
+        if action.startswith("-") or action in IDF_PY_BUILD_ACTIONS:
+            continue
+        if (action in IDF_PY_DEVICE_ACTIONS or action == "flash" or action.endswith("-flash")
+                or action.startswith("efuse-")):
+            return True
+    return False
+
+
+def _idf_py() -> list[str]:
+    """How to run idf.py: from PATH, else from $IDF_PATH with ESP-IDF's own Python."""
+    import shutil
+
+    if found := shutil.which("idf.py"):
+        return [found]
+    tools = os.path.join(os.environ.get("IDF_PATH", ""), "tools", "idf.py")
+    if not (os.environ.get("IDF_PATH") and os.path.isfile(tools)):
+        raise click.ClickException("idf.py not found; run ESP-IDF's export script first")
+    env = os.environ.get("IDF_PYTHON_ENV_PATH")
+    python = env and shutil.which("python", path=os.path.join(
+        env, "Scripts" if sys.platform == "win32" else "bin"))
+    return [python, tools] if python else [tools]
+
+
+def _exec(argv):
+    """Replace this process with `argv`, so idf.py owns the terminal, signals and exit code."""
+    if sys.platform == "win32":
+        import subprocess
+
+        sys.exit(subprocess.call(argv))
+    os.execv(argv[0], argv)
+
+
+def idf_py(state, idf_py_args=()):
+    """Run idf.py, adding ``-p`` for the device chosen by ``-p``, ``-m``, ``--usb-serial`` or
+    the picker when an action needs one."""
+    args = list(idf_py_args)
+    if not {"-p", "--port"} & set(args) and idf_py_needs_device(args):
+        if port := state.resolve_port(allow_none=True):
+            args = ["-p", port, *args]
+    _exec([*_idf_py(), *args])
+
+
+@cli.command('idf.py', help='Run ESP-IDF\'s idf.py, asking which device to use for actions that '
+                            'need one. Arguments go to idf.py',
+             context_settings=dict(ignore_unknown_options=True, help_option_names=[]))
+@click.argument('idf_py_args', nargs=-1, type=click.UNPROCESSED)
+@pass_state
+def cmd_idf_py(state, idf_py_args):
+    return idf_py(state, idf_py_args)
 
 
 def enter_bootloader(state):

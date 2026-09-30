@@ -56,6 +56,13 @@ Setting boot partition to 'ota_1'...
 
 The `-m` form finds the board by its MAC address, wherever it's plugged in.
 
+It works with `idf.py` too. Alias it, and every `flash` or `monitor` asks which
+device to use:
+
+```bash
+alias idf.py='idftool idf.py'
+```
+
 ### Firmware flashing
 
 Flash to the default (factory) or next available (OTA) app partition, with no

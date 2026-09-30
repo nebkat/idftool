@@ -402,3 +402,73 @@ def test_a_held_port_is_shown_and_refused(picker, monkeypatch):
     monkeypatch.setattr(ports, "held_reason", lambda port: "held by idf.py (pid 1)")
     with pytest.raises(click.ClickException, match="held by idf.py"):
         picker("\r")
+
+
+def test_no_device_is_offered_only_when_asked(picker):
+    none = "\x1b[B" * 3 + "\r"  # past the three ports
+    assert picker(none, allow_none=True) == {"port": None}
+    # Without it, the same keys land on "Enter a port manually…".
+    assert picker(none + "/dev/typed\r")["port"] == "/dev/typed"
+
+
+# --- idf.py ---------------------------------------------------------------------------------
+
+@pytest.mark.parametrize("args, needed", [
+    (["build"], False),
+    (["menuconfig"], False),
+    (["-C", "project", "build", "size"], False),
+    (["dfu-flash"], False),
+    (["efuse-common-table"], False),
+    (["flash"], True),
+    (["build", "flash", "monitor"], True),
+    (["app-flash"], True),
+    (["storage-flash"], True),
+    (["erase_flash"], True),
+    (["efuse-summary"], True),
+    (["read-otadata"], True),
+])
+def test_idf_py_asks_only_for_actions_that_need_a_device(args, needed):
+    from idftool.commands.misc import idf_py_needs_device
+
+    assert idf_py_needs_device(args) is needed
+
+
+@pytest.fixture
+def idf_py(monkeypatch):
+    """Run the idf.py command; returns what idf.py would have been run with."""
+    import idftool.commands.misc as misc
+    from idftool.cli import cli
+
+    ran = []
+    monkeypatch.setattr(misc, "_idf_py", lambda: ["idf.py"])
+    monkeypatch.setattr(misc, "_exec", ran.append)
+
+    def invoke(*args, port=None):
+        import idftool.state as state
+
+        monkeypatch.setattr(state.State, "resolve_port", lambda self, allow_none=False: port)
+        ran.clear()
+        result = CliRunner().invoke(cli, list(args))
+        assert result.exit_code == 0, result.output + repr(result.exception)
+        return ran[0]
+
+    return invoke
+
+
+def test_idf_py_adds_the_chosen_port(idf_py):
+    assert idf_py("idf.py", "flash", "monitor", port="/dev/a") == \
+        ["idf.py", "-p", "/dev/a", "flash", "monitor"]
+
+
+def test_idf_py_passes_through_when_no_device_is_needed_or_chosen(idf_py):
+    assert idf_py("idf.py", "build", port="/dev/a") == ["idf.py", "build"]
+    assert idf_py("idf.py", "flash", port=None) == ["idf.py", "flash"]
+
+
+def test_idf_py_keeps_a_port_it_was_given(idf_py):
+    assert idf_py("idf.py", "-p", "/dev/b", "flash", port="/dev/a") == \
+        ["idf.py", "-p", "/dev/b", "flash"]
+
+
+def test_idf_py_passes_help_through(idf_py):
+    assert idf_py("idf.py", "--help") == ["idf.py", "--help"]

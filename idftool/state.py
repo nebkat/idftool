@@ -77,17 +77,18 @@ class State:
         #: which happens after the command has already printed its result.
         self.stdout_is_data = False
 
-    def resolve_port(self) -> Optional[str]:
+    def resolve_port(self, allow_none: bool = False) -> Optional[str]:
         """The port to connect to: ``-p``, else ``--mac``'s or ``--usb-serial``'s, else ask
-        interactively (unless ``-y``)."""
+        interactively (unless ``-y``). With `allow_none`, the question offers no device."""
         if self.mac and not self.port:
             return find_port_for_mac(self.mac, self.baud, probe=self.probe)
         if self.usb_serial and not self.port:
             return find_port_for_usb_serial(self.usb_serial)
         if self.port or self.assume_yes or not sys.stdin.isatty():
             return self.port
-        found = select_device(self.baud, probe=self.probe)
-        print_rerun_hint(found["port"], found.get("mac"), found.get("serial"))
+        found = select_device(self.baud, probe=self.probe, allow_none=allow_none)
+        if found["port"] is not None:
+            print_rerun_hint(found["port"], found.get("mac"), found.get("serial"))
         return found["port"]
 
     def connect(self) -> ESPLoader:
