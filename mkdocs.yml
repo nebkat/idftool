@@ -47,9 +47,10 @@ nav:
           - Monitoring a device: guide/monitoring.md
           - Provisioning devices: guide/provisioning.md
           - Backups and releases: guide/backups-and-releases.md
-      - Advanced:
+      - Concepts:
           - Partition addressing: guide/partition-addressing.md
           - Partitions or files: guide/partitions-or-files.md
+      - Advanced:
           - Scripting: guide/scripting.md
           - Python library: library.md
           - Plugins: guide/plugins.md
