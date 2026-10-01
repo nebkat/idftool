@@ -10,6 +10,9 @@ built by ``test/project/build_fixtures.sh``; tests skip if they're missing.
 The assertions are intentionally light — we mostly check that each command succeeds and that
 readbacks / round-trips are consistent, not the exact human-readable output.
 """
+import json
+import zipfile
+
 import pytest
 
 pytestmark = pytest.mark.device
@@ -31,7 +34,7 @@ def device(idf, assets):
 
 def test_devices(idf):
     out = idf("devices")
-    assert "||" in out  # "<port> || <description> || <hwid>"
+    assert "USB ID" in out
 
 
 def test_list_shows_our_partitions(idf, device):
@@ -211,20 +214,20 @@ def test_skip_flashed_skips_a_write_that_would_change_nothing(idf, device, asset
     out = idf(f"factory {assets / 'app-v1.bin'}")
     assert "already in flash" in out and "skipping write" in out
 
-    # --no-skip-flashed writes it anyway.
-    out = idf(f"factory {assets / 'app-v1.bin'} --no-skip-flashed")
+    # --no-skip-flashed --no-diff writes it anyway.
+    out = idf(f"factory {assets / 'app-v1.bin'} --no-skip-flashed --no-diff")
     assert "skipping write" not in out
 
-    # A different app does not match, so it is written normally.
+    # A different app does not match, so it is written.
     out = idf(f"factory {assets / 'app-v2.bin'}")
     assert "skipping write" not in out
 
-    # The other write commands leave it off unless asked.
+    # Every other write command skips by default too.
     idf(f"write factory {assets / 'app-v1.bin'}")
     out = idf(f"write factory {assets / 'app-v1.bin'}")
-    assert "skipping write" not in out
-    out = idf(f"write factory {assets / 'app-v1.bin'} --skip-flashed")
     assert "skipping write" in out
+    out = idf(f"write factory {assets / 'app-v1.bin'} --no-skip-flashed --no-diff")
+    assert "skipping write" not in out
 
 
 def test_diff_writes_only_the_sectors_that_changed(idf, device, assets):
@@ -233,7 +236,7 @@ def test_diff_writes_only_the_sectors_that_changed(idf, device, assets):
     # depends on how much these two builds have in common.
     idf(f"factory {assets / 'app-v1.bin'} --no-diff --no-skip-flashed")
     out = idf(f"factory {assets / 'app-v2.bin'}")
-    assert "sectors differ" in out or "differs too widely" in out
+    assert " in 1 region" in out or " regions in " in out or "too much of it differs" in out
 
     # Whichever path it took, the partition has to hold app-v2 exactly afterwards — which
     # the whole-region comparison is the independent check of.
@@ -265,7 +268,105 @@ def test_bundle_roundtrip(idf, device, tmp_path):
     idf(f"dump-bundle {bundle}")            # reads every partition (slow)
     out = idf(f"print-bundle -f {bundle}")
     assert "factory" in out
-    idf(f"write-bundle {bundle}")           # flash it all back
+    with zipfile.ZipFile(bundle) as zf:
+        assert zf.read("bootloader.bin") == idf_read(idf, tmp_path, "bootloader")
+    assert "Bootloader: ESP32S3 (offset=0x0)" in out
+    out = idf(f"write-bundle {bundle}")     # flash it all back: nothing has changed
+    assert "already matches" in out
+
+
+def idf_read(idf, tmp_path, partition):
+    out = tmp_path / f"{partition}.read"
+    idf(f"read {partition} {out}")
+    return out.read_bytes()
+
+
+def make_bundle(path, entries):
+    """name → bytes, or a dict for manifest.json."""
+    with zipfile.ZipFile(path, "w") as zf:
+        for name, data in entries.items():
+            zf.writestr(name, json.dumps(data) if isinstance(data, dict) else data)
+    return path
+
+
+def test_bootloader_checks(idf, device, assets, tmp_path):
+    # The same bootloader is accepted (and skipped, it's already there).
+    assert "already in flash" in idf(f"write bootloader {assets / 'bootloader.bin'}")
+    # An app is not a bootloader, whichever chip it was built for.
+    small_app = make_bundle(tmp_path / "b.zip", {"bootloader.bin": (assets / "app-v1.bin").read_bytes()[:0x8000]})
+    assert "Invalid bootloader binary" in idf(f"write-bundle {small_app}", expect_error=True)
+
+
+def test_role_bundles(idf, device, assets, tmp_path):
+    idf("clear-boot")
+    ota = make_bundle(tmp_path / "ota.zip", {"@ota.bin": (assets / "app-v2.bin").read_bytes()})
+    assert "Write @ota.bin to the next OTA slot" in idf(f"print-bundle -f {ota}")
+    idf(f"write-bundle {ota}")
+    assert "ota_0" in idf("get-boot")
+    assert "idftool_test 2.0.0" in idf("list")
+
+    factory = make_bundle(tmp_path / "factory.zip", {"@factory.bin": (assets / "app-v1.bin").read_bytes()})
+    idf(f"write-bundle {factory}")
+    assert "not set" in idf("get-boot").lower()
+
+    clash = make_bundle(tmp_path / "clash.zip", {"@ota.bin": b"x", "ota_1.bin": b"y"})
+    assert "may pick it" in idf(f"write-bundle {clash}", expect_error=True)
+
+
+def test_manifest_bundle(idf, device, assets, tmp_path, fs_tree):
+    idf(f"write-nvs {NVS_PARTITION} {assets / 'nvs.csv'}")
+    idf(f"write-fs {DATA_PARTITION} {fs_tree} --type spiffs")
+    idf("clear-boot")
+    bundle = make_bundle(tmp_path / "b.zip", {
+        "partition_table.csv": (assets / "partitions.csv").read_text(),
+        "ota_0.bin": (assets / "app-v2.bin").read_bytes(),
+        "files/config.json": b'{"channel": "stable"}',
+        "manifest.json": {
+            "name": "Hardware test", "chip": "esp32s3", "table": "require",
+            "ops": [
+                {"op": "set-nvs", "set": {"storage:device_id": "99", "storage:added": "u8:7"}},
+                {"op": "edit-fs", "partition": DATA_PARTITION,
+                 "put": {"/config.json": "files/config.json"}, "delete": ["hello.txt"]},
+                {"op": "set-boot", "partition": "ota_0"},
+            ]}})
+    out = idf(f"write-bundle {bundle}")
+    assert "Bundle: Hardware test" in out and "already matches" in out
+    assert "ota_0" in idf("get-boot")
+    assert idf(f"get-nvs {NVS_PARTITION} storage:device_id storage:added",
+               stdout_only=True).split() == ["99", "7"]
+    listing = idf(f"print-fs {DATA_PARTITION}")
+    assert "config.json" in listing and "hello.txt" not in listing
+
+
+def test_bundle_table_rules(idf, device, assets, tmp_path):
+    moved = (assets / "partitions.csv").read_text().replace(
+        "storage,    data, spiffs,   0xb0000", "storage,    data, spiffs,   0xc0000")
+    require = make_bundle(tmp_path / "require.zip", {"partition_table.csv": moved, "manifest.json": {
+        "table": "require", "ops": [{"op": "clear-boot"}]}})
+    assert "requires" in idf(f"write-bundle {require}", expect_error=True)
+    assert "0xb0000" in idf("list")
+
+    ask = make_bundle(tmp_path / "ask.zip", {"partition_table.csv": moved, "manifest.json": {
+        "table": "ask", "ops": [{"op": "clear-boot"}]}})
+    assert "pass -y" in idf(f"write-bundle {ask}", expect_error=True)
+    out = idf(f"-y write-bundle {ask}")
+    assert "storage: moved 0xb0000 → 0xc0000" in out
+    assert "0xc0000" in idf("list")
+
+    idf(f"write-table {assets / 'partitions.csv'}")  # put it back
+    assert "0xb0000" in idf("list")
+
+
+def test_encrypted_nvs(idf, device, assets, tmp_path):
+    key = bytes(range(32)).hex()
+    idf(f"write-nvs {NVS_PARTITION} {assets / 'nvs.csv'} --hmac-key {key}")
+    assert "pass --hmac-key" in idf(f"print-nvs {NVS_PARTITION}", expect_error=True)
+    assert "does not decrypt" in idf(f"print-nvs {NVS_PARTITION} --hmac-key {'00' * 32}",
+                                     expect_error=True)
+    idf(f"set-nvs {NVS_PARTITION} storage:device_id=4242 --hmac-key {key}")
+    assert idf(f"get-nvs {NVS_PARTITION} storage:device_id --hmac-key {key}",
+               stdout_only=True).strip() == "4242"
+    idf(f"write-nvs {NVS_PARTITION} {assets / 'nvs.csv'}")  # back to plaintext
 
 
 # --- full flash image -----------------------------------------------------------------------
@@ -283,6 +384,14 @@ def test_dump_and_print_image(idf, device, tmp_path):
     assert image.stat().st_size == 0xc0000
     out = idf(f"print-image -f {image}")
     assert "factory" in out
+    assert "Bootloader: ESP32S3 (offset=0x0)" in out
+
+
+def test_write_image_without_erase_skips_what_matches(idf, device, assets):
+    idf(f"write-image --no-erase {assets / 'flash-image.bin'}")
+    # The app may have touched its own data since; either way the bootloader diff must work.
+    out = idf(f"write-image --no-erase --diff {assets / 'flash-image.bin'}")
+    assert "already in flash" in out or " region" in out
 
 
 # --- misc -----------------------------------------------------------------------------------

@@ -39,6 +39,8 @@ def validate_bootloader_binary(esp: ESPLoader, bootloader_binary: bytes) -> Imag
         image_metadata = ImageMetadata.from_bytes(bootloader_binary)
     except (RuntimeError, ValueError) as e:
         raise RuntimeError(f"Invalid bootloader binary: {e}")
+    if image_metadata.app_description is not None:
+        raise RuntimeError("Invalid bootloader binary: it is an application")
     _check_chip(esp, image_metadata)
     return image_metadata
 

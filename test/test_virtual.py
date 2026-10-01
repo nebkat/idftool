@@ -238,6 +238,14 @@ def test_rewriting_a_partition_writes_nothing(run, tmp_path, esp):
     assert not esp.writes
 
 
+def test_an_app_is_refused_as_the_bootloader(esp):
+    from idftool.apps import validate_bootloader_binary
+
+    with pytest.raises(RuntimeError, match="it is an application"):
+        validate_bootloader_binary(esp, app(1))
+    validate_bootloader_binary(esp, (CHIP / "bootloader.bin").read_bytes())
+
+
 def test_a_bootloader_for_another_chip_is_refused(run, esp):
     esp.IMAGE_CHIP_ID = 0  # pretend the device is an ESP32
     before = esp.region(0, 0x8000)
