@@ -4,7 +4,7 @@ All notable changes to this project are documented here. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [v1.2.0] — 2026-10-01
 
 ### Added
 - `IDFTOOL_PROBE=1` probes by default; `--no-probe` skips it.
@@ -27,9 +27,6 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 - Partition names can't start with `@`.
 - Every write skips what's already in flash and rewrites only the sectors that
   changed, not just `ota` and `factory`. `write-image` is unchanged.
-
-### Fixed
-- `write-image --no-erase --diff` works when the bootloader is part of the image.
 
 ## [v1.1.0] — 2026-09-30
 
@@ -403,6 +400,7 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 ### Added
 - Initial release.
 
+[v1.2.0]: https://github.com/nebkat/idftool/releases/tag/v1.2.0
 [v1.1.0]: https://github.com/nebkat/idftool/releases/tag/v1.1.0
 [v1.0.0]: https://github.com/nebkat/idftool/releases/tag/v1.0.0
 [v0.10.0]: https://github.com/nebkat/idftool/releases/tag/v0.10.0
