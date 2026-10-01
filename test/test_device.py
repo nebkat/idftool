@@ -295,6 +295,11 @@ def test_bootloader_checks(idf, device, assets, tmp_path):
     # An app is not a bootloader, whichever chip it was built for.
     small_app = make_bundle(tmp_path / "b.zip", {"bootloader.bin": (assets / "app-v1.bin").read_bytes()[:0x8000]})
     assert "Invalid bootloader binary" in idf(f"write-bundle {small_app}", expect_error=True)
+    # A bootloader is not an app, unless forced.
+    assert "is a bootloader, not an app" in idf(f"write ota_0 {assets / 'bootloader.bin'}",
+                                                 expect_error=True)
+    assert "writing it anyway" in idf(f"write ota_0 {assets / 'bootloader.bin'} --force")
+    assert "IDF v" in idf(f"app-info -f {assets / 'bootloader.bin'}")
 
 
 def test_role_bundles(idf, device, assets, tmp_path):

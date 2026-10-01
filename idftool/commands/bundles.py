@@ -13,10 +13,10 @@ from esptool import flash_size_bytes
 from esptool.cmds import detect_flash_size
 
 from esp_idf_defs import ImageMetadata
-from esp_idf_defs.partitions import APP_TYPE, BOOTLOADER_TYPE, PartitionTable
+from esp_idf_defs.partitions import BOOTLOADER_TYPE, PartitionTable
 
-from idftool.apps import parse_bootloader, print_app_info, print_bootloader, \
-    print_partition_table_and_apps, validate_app_binary, validate_bootloader_binary
+from idftool.apps import check_partition_image, parse_bootloader, print_app_info, \
+    print_bootloader, print_partition_table_and_apps, validate_app_binary
 from idftool.bundle import MANIFEST, ROLE_PREFIX, ROLES, BundleError, Manifest, check_bundle, \
     factory_target, is_ota_app, normalise_chip, nvs_target, read_bundle
 from idftool.cli import cli, pass_state
@@ -207,30 +207,29 @@ def write_bundle(state, input_file, hmac_key=None, **options):
         return bundle.files[name]
 
     # Check every image before the first write.
+    force = options.get('force')
     if bundle.bootloader is not None:
         if bootloader_entry is None:
             raise BundleError(f"The bootloader offset of {esp.CHIP_NAME} is not known")
-        validate_bootloader_binary(esp, bundle.bootloader)
+        check_partition_image(esp, bootloader_entry, bundle.bootloader, "bootloader.bin", force)
         fits("bootloader.bin", bundle.bootloader, bootloader_entry)
     role_image = None
     if bundle.role:
-        _, role_image = validate_app_binary(esp, bundle.role_app)
+        _, role_image = validate_app_binary(esp, bundle.role_app, bundle.role_file)
         if bundle.role == 'factory':
             fits(bundle.role_file, bundle.role_app, factory_target(table))
     named = []
     for name, data in bundle.partitions.items():
         partition = resolve(name)
         fits(f"{name}.bin", data, partition)
-        # An erased slot (as dump-bundle saves an unused OTA partition) has no app to check.
-        if partition.type == APP_TYPE and data.strip(b'\xff'):
-            validate_app_binary(esp, data)
-        if partition.type == BOOTLOADER_TYPE:
-            validate_bootloader_binary(esp, data)
+        check_partition_image(esp, partition, data, f"{name}.bin", force)
         named.append((partition, data))
     nvs_edits = {}
     for op in bundle.ops:
         if op.op in ('write', 'write-fs'):
             fits(op.file, bundle.files[op.file], resolve(op.partition))
+            if op.op == 'write':
+                check_partition_image(esp, resolve(op.partition), bundle.files[op.file], op.file, force)
         elif op.op == 'set-boot' and not is_ota_app(resolve(op.partition)):
             raise BundleError(f"manifest.json: op {op.index} (set-boot): "
                               f"'{op.partition}' is not an OTA app partition")

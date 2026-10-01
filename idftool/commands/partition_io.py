@@ -5,9 +5,7 @@ import rich_click as click
 
 from esptool.cmds import read_flash, erase_region
 
-from esp_idf_defs.partitions import BOOTLOADER_TYPE
-
-from idftool.apps import validate_bootloader_binary
+from idftool.apps import check_partition_image
 from idftool.cli import cli, pass_state
 from idftool.flash import flash_options, option_group, write_flash, write_flash_options
 from idftool.partitions import get_partition_address, get_partition_slice
@@ -64,9 +62,10 @@ def write_partitions(state, files, **options):
         input_file_size = os.path.getsize(input_file)
         if input_file_size > partition.size:
             raise ValueError(f"Input file {input_file} size {input_file_size:#x} exceeds partition {partition.name} size {partition.size:#x}")
-        if partition.type == BOOTLOADER_TYPE and address == partition.offset:
+        if address == partition.offset:
             with open(input_file, 'rb') as f:
-                validate_bootloader_binary(loaded.esp, f.read())
+                check_partition_image(loaded.esp, partition, f.read(), f"'{input_file}'",
+                                      options.get('force'))
         addr_data.append((address, input_file))
         print(f"Writing file {input_file} (size={input_file_size:#x}) to partition {partition.name} (offset={address:#x}, size={partition.size:#x})")
 

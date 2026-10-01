@@ -241,9 +241,40 @@ def test_rewriting_a_partition_writes_nothing(run, tmp_path, esp):
 def test_an_app_is_refused_as_the_bootloader(esp):
     from idftool.apps import validate_bootloader_binary
 
-    with pytest.raises(RuntimeError, match="it is an application"):
+    with pytest.raises(RuntimeError, match="is an app, not a bootloader"):
         validate_bootloader_binary(esp, app(1))
     validate_bootloader_binary(esp, (CHIP / "bootloader.bin").read_bytes())
+
+
+def test_a_bootloader_is_refused_as_an_app(run, esp):
+    out = run("write", "ota_0", CHIP / "bootloader.bin", ok=False)
+    assert "is a bootloader, not an app. Pass --force" in out
+    assert not esp.writes
+    bundle("b.zip", {"ota_0.bin": (CHIP / "bootloader.bin").read_bytes()})
+    assert "ota_0.bin is a bootloader, not an app" in run("write-bundle", "b.zip", ok=False)
+    assert not esp.writes
+
+
+def test_force_writes_an_image_that_fails_its_check(run, esp):
+    out = run("write", "ota_0", CHIP / "bootloader.bin", "--force")
+    assert "Warning:" in out and "writing it anyway" in out
+    loader = (CHIP / "bootloader.bin").read_bytes()
+    assert esp.region(OTA_0[0], len(loader)) == loader
+
+
+def test_an_app_for_another_chip_is_refused_by_write(run, esp):
+    esp.IMAGE_CHIP_ID = 0  # pretend the device is an ESP32
+    assert "Chip ID mismatch" in run("write", "ota_0", CHIP / "app-v1.bin", ok=False)
+
+
+def test_identify_image():
+    from idftool.apps import identify_image
+
+    loader = (CHIP / "bootloader.bin").read_bytes()
+    assert identify_image(app(1)).kind == "app"
+    info = identify_image(loader)
+    assert info.kind == "bootloader" and info.bootloader.idf_version.startswith("v6.0")
+    assert identify_image(b"\xff" * 64) is None
 
 
 def test_a_bootloader_for_another_chip_is_refused(run, esp):

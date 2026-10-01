@@ -8,8 +8,9 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 - `IDFTOOL_PROBE=1` probes by default; `--no-probe` skips it.
-- `dump-bundle` includes the bootloader, and `write-bundle` and `write` check
-  it against the chip.
+- `dump-bundle` includes the bootloader.
+- `write` and `write-bundle` check that apps and bootloaders are the right kind
+  of image for the chip. `--force` writes them anyway.
 - `print-image`, `print-bundle` and `app-info` show which chip the bootloader
   is for.
 - Bundles take `@factory.bin` and `@ota.bin`, which flash like `factory` and
