@@ -1976,7 +1976,8 @@ it one.</p>
 </tbody>
 </table>
 <p><code>--probe</code> connects to every port up front instead, so the chip column is filled
-for all of them.</p>
+for all of them. Set <code>IDFTOOL_PROBE=1</code> to make that the default, and pass
+<code>--no-probe</code> to skip it for one run.</p>
 <p>After you pick, <code>idftool</code> prints how to skip the picker next time:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>Device: /dev/cu.usbmodem11401 — ESP32-S3 · ESP USB-Serial/JTAG · 7c:2c:67:92:79:c0
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>Re-run with: idftool -p /dev/cu.usbmodem11401 get-boot

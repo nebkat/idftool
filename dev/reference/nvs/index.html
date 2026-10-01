@@ -1330,6 +1330,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#encrypted-nvs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Encrypted NVS
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#create-nvs" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1850,6 +1861,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#encrypted-nvs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Encrypted NVS
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#create-nvs" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1962,80 +1984,85 @@ and reads, queries, and edits them on the device or as files.</p>
 </code></pre></div>
 <p>Don't pad the columns with spaces: <code>nvs_partition_gen</code> doesn't accept them in
 the header.</p>
-<div class="admonition note">
-<p class="admonition-title">Note</p>
-<p>Encrypted NVS isn't supported yet. Every command here works on plaintext
-NVS only.</p>
-</div>
+<h2 id="encrypted-nvs">Encrypted NVS<a class="headerlink" href="#encrypted-nvs" title="Permanent link">&para;</a></h2>
+<p>For NVS encrypted with the HMAC key protection scheme
+(<code>CONFIG_NVS_SEC_KEY_PROTECT_USING_HMAC</code>), give every command <code>--hmac-key</code>: the
+key burned into the HMAC eFuse, as 64 hex digits or a file holding the raw 32
+bytes or the digits. Images are decrypted when read and encrypted when written.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>idftool<span class="w"> </span>write-nvs<span class="w"> </span>nvs<span class="w"> </span>example.csv<span class="w"> </span>--hmac-key<span class="w"> </span>hmac_key.bin
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>idftool<span class="w"> </span>get-nvs<span class="w"> </span>nvs<span class="w"> </span>storage:device_id<span class="w"> </span>--hmac-key<span class="w"> </span>hmac_key.bin
+</code></pre></div>
+<p>Without the key, an encrypted partition is refused rather than read as garbage.
+Flash encryption-based NVS keys aren't supported.</p>
 <h2 id="create-nvs"><code>create-nvs</code><a class="headerlink" href="#create-nvs" title="Permanent link">&para;</a></h2>
 <p>Build an NVS image from a CSV, offline. Needs a size: <code>--size</code>, or
 <code>--partition</code> to take it from the partition table (which needs
 <code>--partition-table-file</code> or a device).</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>idftool<span class="w"> </span>create-nvs<span class="w"> </span>example.csv<span class="w"> </span>-o<span class="w"> </span>nvs.bin<span class="w"> </span>--size<span class="w"> </span>0x6000
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>idftool<span class="w"> </span>--partition-table-file<span class="w"> </span>partitions.csv<span class="w"> </span>create-nvs<span class="w"> </span>example.csv<span class="w"> </span>-o<span class="w"> </span>nvs.bin<span class="w"> </span>--partition<span class="w"> </span>nvs
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>idftool<span class="w"> </span>create-nvs<span class="w"> </span>example.csv<span class="w"> </span>-o<span class="w"> </span>nvs.bin<span class="w"> </span>--size<span class="w"> </span>0x6000
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>idftool<span class="w"> </span>--partition-table-file<span class="w"> </span>partitions.csv<span class="w"> </span>create-nvs<span class="w"> </span>example.csv<span class="w"> </span>-o<span class="w"> </span>nvs.bin<span class="w"> </span>--partition<span class="w"> </span>nvs
 </code></pre></div>
 <h2 id="write-nvs"><code>write-nvs</code><a class="headerlink" href="#write-nvs" title="Permanent link">&para;</a></h2>
 <p>Build an NVS image from a CSV and flash it to a partition.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>idftool<span class="w"> </span>write-nvs<span class="w"> </span>nvs<span class="w"> </span>example.csv
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>idftool<span class="w"> </span>write-nvs<span class="w"> </span>nvs<span class="w"> </span>example.csv
 </code></pre></div>
 <p>Takes the <a href="../write-options/">write options</a>.</p>
 <h2 id="print-nvs"><code>print-nvs</code><a class="headerlink" href="#print-nvs" title="Permanent link">&para;</a></h2>
 <p>List the keys and values in an NVS partition or image. <code>--pages</code> adds the page
 map: each page's state, sequence number, and how many of its 126 entries are
 written or erased. Alias: <code>list-nvs</code>.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>idftool<span class="w"> </span>print-nvs<span class="w"> </span>nvs<span class="w">                 </span><span class="c1"># from the device</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>idftool<span class="w"> </span>print-nvs<span class="w"> </span>-f<span class="w"> </span>nvs.bin<span class="w">          </span><span class="c1"># from a file</span>
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>idftool<span class="w"> </span>print-nvs<span class="w"> </span>-f<span class="w"> </span>nvs.bin<span class="w"> </span>--pages
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>idftool<span class="w"> </span>print-nvs<span class="w"> </span>nvs<span class="w">                 </span><span class="c1"># from the device</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>idftool<span class="w"> </span>print-nvs<span class="w"> </span>-f<span class="w"> </span>nvs.bin<span class="w">          </span><span class="c1"># from a file</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>idftool<span class="w"> </span>print-nvs<span class="w"> </span>-f<span class="w"> </span>nvs.bin<span class="w"> </span>--pages
 </code></pre></div>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="gp">$ </span>idftool<span class="w"> </span>print-nvs<span class="w"> </span>-f<span class="w"> </span>nvs.bin<span class="w"> </span>--pages
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="go">'nvs.bin': NVS version 2, 0x6000 bytes</span>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="go">╭──────┬─────┬───────────────┬───────┬─────────────────────╮</span>
-<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="go">│ Page │ Seq │ State         │ Used  │ Entries             │</span>
-<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="go">├──────┼─────┼───────────────┼───────┼─────────────────────┤</span>
-<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="go">│ 0    │ 0   │ active        │ 6/126 │ 6 written, 0 erased │</span>
-<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="go">│ 1    │ -   │ uninitialised │       │                     │</span>
-<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="go">│ 2    │ -   │ uninitialised │       │                     │</span>
-<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="go">│ 3    │ -   │ uninitialised │       │                     │</span>
-<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="go">│ 4    │ -   │ uninitialised │       │                     │</span>
-<a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="go">│ 5    │ -   │ uninitialised │       │                     │</span>
-<a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a><span class="go">╰──────┴─────┴───────────────┴───────┴─────────────────────╯</span>
-<a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a>
-<a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a><span class="go">╭───────────┬─────────────┬────────┬──────────╮</span>
-<a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a><span class="go">│ Namespace │ Key         │ Type   │ Value    │</span>
-<a id="__codelineno-4-16" name="__codelineno-4-16" href="#__codelineno-4-16"></a><span class="go">├───────────┼─────────────┼────────┼──────────┤</span>
-<a id="__codelineno-4-17" name="__codelineno-4-17" href="#__codelineno-4-17"></a><span class="go">│ config    │ sample_rate │ u32    │ 100      │</span>
-<a id="__codelineno-4-18" name="__codelineno-4-18" href="#__codelineno-4-18"></a><span class="go">│ config    │ serial      │ string │ SN-0042  │</span>
-<a id="__codelineno-4-19" name="__codelineno-4-19" href="#__codelineno-4-19"></a><span class="go">│ config    │ wifi_ssid   │ string │ Workshop │</span>
-<a id="__codelineno-4-20" name="__codelineno-4-20" href="#__codelineno-4-20"></a><span class="go">╰───────────┴─────────────┴────────┴──────────╯</span>
-<a id="__codelineno-4-21" name="__codelineno-4-21" href="#__codelineno-4-21"></a><span class="go">3 entries in 1 namespace, 21 bytes of data</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="gp">$ </span>idftool<span class="w"> </span>print-nvs<span class="w"> </span>-f<span class="w"> </span>nvs.bin<span class="w"> </span>--pages
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="go">'nvs.bin': NVS version 2, 0x6000 bytes</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="go">╭──────┬─────┬───────────────┬───────┬─────────────────────╮</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="go">│ Page │ Seq │ State         │ Used  │ Entries             │</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="go">├──────┼─────┼───────────────┼───────┼─────────────────────┤</span>
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="go">│ 0    │ 0   │ active        │ 6/126 │ 6 written, 0 erased │</span>
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="go">│ 1    │ -   │ uninitialised │       │                     │</span>
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="go">│ 2    │ -   │ uninitialised │       │                     │</span>
+<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="go">│ 3    │ -   │ uninitialised │       │                     │</span>
+<a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="go">│ 4    │ -   │ uninitialised │       │                     │</span>
+<a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="go">│ 5    │ -   │ uninitialised │       │                     │</span>
+<a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="go">╰──────┴─────┴───────────────┴───────┴─────────────────────╯</span>
+<a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a>
+<a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a><span class="go">╭───────────┬─────────────┬────────┬──────────╮</span>
+<a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a><span class="go">│ Namespace │ Key         │ Type   │ Value    │</span>
+<a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a><span class="go">├───────────┼─────────────┼────────┼──────────┤</span>
+<a id="__codelineno-5-17" name="__codelineno-5-17" href="#__codelineno-5-17"></a><span class="go">│ config    │ sample_rate │ u32    │ 100      │</span>
+<a id="__codelineno-5-18" name="__codelineno-5-18" href="#__codelineno-5-18"></a><span class="go">│ config    │ serial      │ string │ SN-0042  │</span>
+<a id="__codelineno-5-19" name="__codelineno-5-19" href="#__codelineno-5-19"></a><span class="go">│ config    │ wifi_ssid   │ string │ Workshop │</span>
+<a id="__codelineno-5-20" name="__codelineno-5-20" href="#__codelineno-5-20"></a><span class="go">╰───────────┴─────────────┴────────┴──────────╯</span>
+<a id="__codelineno-5-21" name="__codelineno-5-21" href="#__codelineno-5-21"></a><span class="go">3 entries in 1 namespace, 21 bytes of data</span>
 </code></pre></div>
 <h2 id="extract-nvs-read-nvs"><code>extract-nvs</code> / <code>read-nvs</code><a class="headerlink" href="#extract-nvs-read-nvs" title="Permanent link">&para;</a></h2>
 <p>Dump NVS back out as a CSV that feeds straight into <code>create-nvs</code>.
 <code>extract-nvs</code> reads an image file, <code>read-nvs</code> reads the device.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>idftool<span class="w"> </span>extract-nvs<span class="w"> </span>-f<span class="w"> </span>nvs.bin<span class="w"> </span>nvs.csv
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>idftool<span class="w"> </span>read-nvs<span class="w"> </span>nvs<span class="w"> </span>nvs.csv
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>idftool<span class="w"> </span>extract-nvs<span class="w"> </span>-f<span class="w"> </span>nvs.bin<span class="w"> </span>nvs.csv
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>idftool<span class="w"> </span>read-nvs<span class="w"> </span>nvs<span class="w"> </span>nvs.csv
 </code></pre></div>
 <h2 id="get-nvs"><code>get-nvs</code><a class="headerlink" href="#get-nvs" title="Permanent link">&para;</a></h2>
 <p>Print the values of one or more keys, one per line and nothing else, so they
 can be captured in a shell. A key is <code>namespace:key</code>, or just <code>key</code> with
 <code>--namespace</code>. Blobs print as hex, or raw bytes with <code>--raw</code>.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>idftool<span class="w"> </span>get-nvs<span class="w"> </span>nvs<span class="w"> </span>storage:device_id
-<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>idftool<span class="w"> </span>get-nvs<span class="w"> </span>nvs<span class="w"> </span>-n<span class="w"> </span>storage<span class="w"> </span>device_name<span class="w"> </span>device_id
-<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>idftool<span class="w"> </span>get-nvs<span class="w"> </span>nvs<span class="w"> </span>storage:cert<span class="w"> </span>--raw<span class="w"> </span>&gt;<span class="w"> </span>cert.der
-<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>idftool<span class="w"> </span>get-nvs<span class="w"> </span>-f<span class="w"> </span>nvs.bin<span class="w"> </span>storage:device_id
-<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>
-<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="nv">serial</span><span class="o">=</span><span class="k">$(</span>idftool<span class="w"> </span>get-nvs<span class="w"> </span>nvs<span class="w"> </span>storage:device_id<span class="k">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>idftool<span class="w"> </span>get-nvs<span class="w"> </span>nvs<span class="w"> </span>storage:device_id
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>idftool<span class="w"> </span>get-nvs<span class="w"> </span>nvs<span class="w"> </span>-n<span class="w"> </span>storage<span class="w"> </span>device_name<span class="w"> </span>device_id
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>idftool<span class="w"> </span>get-nvs<span class="w"> </span>nvs<span class="w"> </span>storage:cert<span class="w"> </span>--raw<span class="w"> </span>&gt;<span class="w"> </span>cert.der
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>idftool<span class="w"> </span>get-nvs<span class="w"> </span>-f<span class="w"> </span>nvs.bin<span class="w"> </span>storage:device_id
+<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>
+<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="nv">serial</span><span class="o">=</span><span class="k">$(</span>idftool<span class="w"> </span>get-nvs<span class="w"> </span>nvs<span class="w"> </span>storage:device_id<span class="k">)</span>
 </code></pre></div>
 <p>Only values go to stdout. Progress, the partition table, and everything else go
 to stderr, even when reading from a device.</p>
 <h2 id="set-nvs"><code>set-nvs</code><a class="headerlink" href="#set-nvs" title="Permanent link">&para;</a></h2>
 <p>Set or delete keys in an existing NVS partition or image, without rebuilding it
 from a CSV.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>idftool<span class="w"> </span>set-nvs<span class="w"> </span>nvs<span class="w"> </span>storage:device_name<span class="o">=</span><span class="s2">"My Device"</span>
-<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>idftool<span class="w"> </span>set-nvs<span class="w"> </span>nvs<span class="w"> </span>storage:serial:string<span class="o">=</span>SN-0001<span class="w"> </span>-d<span class="w"> </span>storage:old_key
-<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>idftool<span class="w"> </span>set-nvs<span class="w"> </span>nvs<span class="w"> </span>-n<span class="w"> </span>storage<span class="w"> </span>:cert:blob<span class="o">=</span>@device.der
-<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>idftool<span class="w"> </span>set-nvs<span class="w"> </span>-f<span class="w"> </span>nvs.bin<span class="w"> </span>storage:device_id<span class="o">=</span><span class="m">42</span>
-<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>idftool<span class="w"> </span>set-nvs<span class="w"> </span>nvs<span class="w"> </span>storage:device_id<span class="o">=</span><span class="m">42</span><span class="w"> </span>--dry-run
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>idftool<span class="w"> </span>set-nvs<span class="w"> </span>nvs<span class="w"> </span>storage:device_name<span class="o">=</span><span class="s2">"My Device"</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>idftool<span class="w"> </span>set-nvs<span class="w"> </span>nvs<span class="w"> </span>storage:serial:string<span class="o">=</span>SN-0001<span class="w"> </span>-d<span class="w"> </span>storage:old_key
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>idftool<span class="w"> </span>set-nvs<span class="w"> </span>nvs<span class="w"> </span>-n<span class="w"> </span>storage<span class="w"> </span>:cert:blob<span class="o">=</span>@device.der
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>idftool<span class="w"> </span>set-nvs<span class="w"> </span>-f<span class="w"> </span>nvs.bin<span class="w"> </span>storage:device_id<span class="o">=</span><span class="m">42</span>
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>idftool<span class="w"> </span>set-nvs<span class="w"> </span>nvs<span class="w"> </span>storage:device_id<span class="o">=</span><span class="m">42</span><span class="w"> </span>--dry-run
 </code></pre></div>
 <dl>
 <dt><code>namespace:key=value</code></dt>

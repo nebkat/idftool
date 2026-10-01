@@ -1877,9 +1877,9 @@ the command name, and any left unset keep the default.</p>
 </tbody>
 </table>
 <h2 id="skipping-whats-already-there">Skipping what's already there<a class="headerlink" href="#skipping-whats-already-there" title="Permanent link">&para;</a></h2>
-<p><code>ota</code> and <code>factory</code> turn on <code>--skip-flashed</code> and <code>--diff</code> by default, so
-reflashing the same build is nearly instant and a small change rewrites only
-the sectors it touched. Other commands leave both off unless asked.</p>
+<p><code>--skip-flashed</code> and <code>--diff</code> are on by default for every command except
+<code>write-image</code>, so reflashing the same thing is nearly instant and a small
+change rewrites only the sectors it touched.</p>
 <dl>
 <dt><code>--skip-flashed</code></dt>
 <dd>Hashes the partition on the device and compares it with the file, like
@@ -1895,8 +1895,8 @@ writing the whole region.</dd>
 <p><code>write-image</code> adds <code>--erase</code>/<code>--no-erase</code> (on by default), and refuses
 <code>--skip-flashed</code> unless the erase is off: nothing can match a chip that was
 just wiped. See <a href="../images/#write-image"><code>write-image</code></a>.</p>
-<p><code>write-table</code> doesn't take these. Its <code>--force</code> already means "flash a table
-that failed verification".</p>
+<p><code>write-table</code> doesn't take these, and always skips a table that's already in
+flash. Its <code>--force</code> already means "flash a table that failed verification".</p>
 <p>From Python, the same names work as keyword arguments. See
 <a href="../../library/#write-options">Python library</a>.</p>
 

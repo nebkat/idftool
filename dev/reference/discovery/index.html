@@ -1174,10 +1174,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#-probe" class="md-nav__link">
+  <a href="#-probe-no-probe" class="md-nav__link">
     <span class="md-ellipsis">
       
-        --probe
+        --probe, --no-probe
       
     </span>
   </a>
@@ -1824,10 +1824,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#-probe" class="md-nav__link">
+  <a href="#-probe-no-probe" class="md-nav__link">
     <span class="md-ellipsis">
       
-        --probe
+        --probe, --no-probe
       
     </span>
   </a>
@@ -1892,11 +1892,11 @@ On an adapter it identifies the adapter, if it has one at all.</dd>
 </dl>
 <p>Piped, it prints plain space-separated columns instead of a box, for <code>awk</code> and
 friends.</p>
-<h3 id="-probe"><code>--probe</code><a class="headerlink" href="#-probe" title="Permanent link">&para;</a></h3>
+<h3 id="-probe-no-probe"><code>--probe</code>, <code>--no-probe</code><a class="headerlink" href="#-probe-no-probe" title="Permanent link">&para;</a></h3>
 <p>Connect to every port to add each board's chip and MAC, including boards behind
 a USB-serial adapter. This resets the boards. With a
 <a href="../../guide/plugins/">plugin</a> installed, a Device column shows what it names
-each board.</p>
+each board. Defaults to the global <code>--probe</code>, or <code>IDFTOOL_PROBE</code>.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="gp">$ </span>idftool<span class="w"> </span>devices<span class="w"> </span>--probe
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="go">Probing 2 port(s)…</span>
 <a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="go">╭─────────────────────────────┬─────────────┬───────────────────┬─────────────────────┬───────────────────┬───────────┬──────────╮</span>

@@ -1946,32 +1946,34 @@ To check whether a unit already runs a given build, flash just the app with
 <a href="../firmware/#ota"><code>ota</code></a> or <a href="../firmware/#factory"><code>factory</code></a>.</p>
 <p>Takes the <a href="../write-options/">write options</a>.</p>
 <h2 id="print-image"><code>print-image</code><a class="headerlink" href="#print-image" title="Permanent link">&para;</a></h2>
-<p>Inspect a flash image without a device: the partition table inside it and, for
-each app partition holding a valid app, its project name, version, IDF version,
-compile time, ELF SHA-256, and target chip.</p>
+<p>Inspect a flash image without a device: which chip its bootloader is for, the
+partition table inside it and, for each app partition holding a valid app, its
+project name, version, IDF version, compile time, ELF SHA-256, and target chip.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="gp">$ </span>idftool<span class="w"> </span>print-image<span class="w"> </span>-f<span class="w"> </span>build/full-flash.img
 <a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="go">Image: build/full-flash.img (0xc0000 bytes)</span>
 <a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="go">╭──────────┬──────┬─────────┬─────────┬──────┬───────────────╮</span>
-<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="go">│ Name     │ Type │ Subtype │  Offset │ Size │ App           │</span>
-<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="go">├──────────┼──────┼─────────┼─────────┼──────┼───────────────┤</span>
-<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="go">│ nvs      │ data │ nvs     │  0x9000 │  24K │               │</span>
-<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="go">│ otadata  │ data │ ota     │  0xf000 │   8K │               │</span>
-<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="go">│ phy_init │ data │ phy     │ 0x11000 │   4K │               │</span>
-<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="go">│ factory  │ app  │ factory │ 0x20000 │ 192K │ my-app 1.2.0  │</span>
-<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="go">│ ota_0    │ app  │ ota_0   │ 0x50000 │ 192K │ empty         │</span>
-<a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a><span class="go">│ ota_1    │ app  │ ota_1   │ 0x80000 │ 192K │ empty         │</span>
-<a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a><span class="go">│ storage  │ data │ spiffs  │ 0xb0000 │  64K │               │</span>
-<a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a><span class="go">╰──────────┴──────┴─────────┴─────────┴──────┴───────────────╯</span>
-<a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a>
-<a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a><span class="go">Partition 'factory' (offset=0x20000):</span>
-<a id="__codelineno-3-17" name="__codelineno-3-17" href="#__codelineno-3-17"></a><span class="go">  Project name:     my-app</span>
-<a id="__codelineno-3-18" name="__codelineno-3-18" href="#__codelineno-3-18"></a><span class="go">  Version:          1.2.0</span>
-<a id="__codelineno-3-19" name="__codelineno-3-19" href="#__codelineno-3-19"></a><span class="go">  IDF version:      v6.0.2</span>
-<a id="__codelineno-3-20" name="__codelineno-3-20" href="#__codelineno-3-20"></a><span class="go">  Secure version:   0</span>
-<a id="__codelineno-3-21" name="__codelineno-3-21" href="#__codelineno-3-21"></a><span class="go">  Compiled:         Sep 29 2026 14:30:00</span>
-<a id="__codelineno-3-22" name="__codelineno-3-22" href="#__codelineno-3-22"></a><span class="go">  ELF SHA256:       4fd8f31259d82483f0fc34d4422b1aefb6ead9da845395d5ea96a135ed32c78a</span>
-<a id="__codelineno-3-23" name="__codelineno-3-23" href="#__codelineno-3-23"></a><span class="go">  Chip:             ESP32S3 (rev 0 to 99)</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="go">Bootloader: ESP32S3 (offset=0x0)</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="go">╭──────────┬──────┬─────────┬─────────┬──────┬───────────────╮</span>
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="go">│ Name     │ Type │ Subtype │  Offset │ Size │ App           │</span>
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="go">├──────────┼──────┼─────────┼─────────┼──────┼───────────────┤</span>
+<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="go">│ nvs      │ data │ nvs     │  0x9000 │  24K │               │</span>
+<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="go">│ otadata  │ data │ ota     │  0xf000 │   8K │               │</span>
+<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="go">│ phy_init │ data │ phy     │ 0x11000 │   4K │               │</span>
+<a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a><span class="go">│ factory  │ app  │ factory │ 0x20000 │ 192K │ my-app 1.2.0  │</span>
+<a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a><span class="go">│ ota_0    │ app  │ ota_0   │ 0x50000 │ 192K │ empty         │</span>
+<a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a><span class="go">│ ota_1    │ app  │ ota_1   │ 0x80000 │ 192K │ empty         │</span>
+<a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a><span class="go">│ storage  │ data │ spiffs  │ 0xb0000 │  64K │               │</span>
+<a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a><span class="go">╰──────────┴──────┴─────────┴─────────┴──────┴───────────────╯</span>
+<a id="__codelineno-3-17" name="__codelineno-3-17" href="#__codelineno-3-17"></a>
+<a id="__codelineno-3-18" name="__codelineno-3-18" href="#__codelineno-3-18"></a><span class="go">Partition 'factory' (offset=0x20000):</span>
+<a id="__codelineno-3-19" name="__codelineno-3-19" href="#__codelineno-3-19"></a><span class="go">  Project name:     my-app</span>
+<a id="__codelineno-3-20" name="__codelineno-3-20" href="#__codelineno-3-20"></a><span class="go">  Version:          1.2.0</span>
+<a id="__codelineno-3-21" name="__codelineno-3-21" href="#__codelineno-3-21"></a><span class="go">  IDF version:      v6.0.2</span>
+<a id="__codelineno-3-22" name="__codelineno-3-22" href="#__codelineno-3-22"></a><span class="go">  Secure version:   0</span>
+<a id="__codelineno-3-23" name="__codelineno-3-23" href="#__codelineno-3-23"></a><span class="go">  Compiled:         Sep 29 2026 14:30:00</span>
+<a id="__codelineno-3-24" name="__codelineno-3-24" href="#__codelineno-3-24"></a><span class="go">  ELF SHA256:       4fd8f31259d82483f0fc34d4422b1aefb6ead9da845395d5ea96a135ed32c78a</span>
+<a id="__codelineno-3-25" name="__codelineno-3-25" href="#__codelineno-3-25"></a><span class="go">  Chip:             ESP32S3 (rev 0 to 99)</span>
 </code></pre></div>
 
 

@@ -1274,6 +1274,34 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#manifest" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Manifest
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Manifest">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#partition-table-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Partition table rules
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#create-bundle" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1828,6 +1856,34 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#manifest" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Manifest
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Manifest">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#partition-table-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Partition table rules
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#create-bundle" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1897,62 +1953,182 @@
 
 
 <h1 id="bundles">Bundles<a class="headerlink" href="#bundles" title="Permanent link">&para;</a></h1>
-<p>A bundle is a plain ZIP with one <code>.bin</code> per partition, named after the
-partition, and optionally a <code>partition_table.csv</code>. Use them to hand a build
+<p>A bundle is a ZIP whose filenames say what to flash. Use them to hand a build
 from CI to whoever flashes it, or to archive exactly what shipped.</p>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Flashing it</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>partition_table.csv</code> or <code>.bin</code></td>
+<td>Replaces the partition table, if it differs. Written first.</td>
+</tr>
+<tr>
+<td><code>bootloader.bin</code></td>
+<td>Writes the bootloader.</td>
+</tr>
+<tr>
+<td><code>@factory.bin</code></td>
+<td>Flashes the app to the factory partition (or <code>ota_0</code>) and clears otadata, like <a href="../firmware/#factory"><code>factory</code></a>.</td>
+</tr>
+<tr>
+<td><code>@ota.bin</code></td>
+<td>Writes the app to the next OTA slot and boots it, like <a href="../firmware/#ota"><code>ota</code></a>.</td>
+</tr>
+<tr>
+<td><code>&lt;name&gt;.bin</code></td>
+<td>Writes the partition called <code>name</code>.</td>
+</tr>
+<tr>
+<td><code>manifest.json</code></td>
+<td>Optional: a name, the target chip, table rules and extra ops. See <a href="#manifest">Manifest</a>.</td>
+</tr>
+</tbody>
+</table>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>release.zip
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>├── partition_table.csv
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>├── ota_0.bin
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>├── @ota.bin
 <a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>└── storage.bin
 </code></pre></div>
+<p>They're written in that order. A bundle can't have both <code>@factory.bin</code> and
+<code>@ota.bin</code>, or name a partition the role file may write. Partition names can't
+start with <code>@</code>. Files in subdirectories are only used by manifest ops.</p>
+<p>Before anything is written, every app and bootloader is checked against the
+chip, and every partition the bundle names must exist in the table it will
+meet: the bundle's own, else the device's.</p>
+<h2 id="manifest">Manifest<a class="headerlink" href="#manifest" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="p">{</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"MS5 v0.17.0"</span><span class="p">,</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span><span class="nt">"description"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Field update: new app, reset the channel"</span><span class="p">,</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">  </span><span class="nt">"chip"</span><span class="p">:</span><span class="w"> </span><span class="s2">"esp32s3"</span><span class="p">,</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">  </span><span class="nt">"ops"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">    </span><span class="p">{</span><span class="nt">"op"</span><span class="p">:</span><span class="w"> </span><span class="s2">"set-nvs"</span><span class="p">,</span><span class="w"> </span><span class="nt">"partition"</span><span class="p">:</span><span class="w"> </span><span class="s2">"nvs_cfg"</span><span class="p">,</span><span class="w"> </span><span class="nt">"set"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"cfg:channel"</span><span class="p">:</span><span class="w"> </span><span class="s2">"string:stable"</span><span class="p">}},</span>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">    </span><span class="p">{</span><span class="nt">"op"</span><span class="p">:</span><span class="w"> </span><span class="s2">"edit-fs"</span><span class="p">,</span><span class="w"> </span><span class="nt">"partition"</span><span class="p">:</span><span class="w"> </span><span class="s2">"storage"</span><span class="p">,</span><span class="w"> </span><span class="nt">"put"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"/config.json"</span><span class="p">:</span><span class="w"> </span><span class="s2">"files/config.json"</span><span class="p">}},</span>
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="w">    </span><span class="p">{</span><span class="nt">"op"</span><span class="p">:</span><span class="w"> </span><span class="s2">"clear-boot"</span><span class="p">}</span>
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="w">  </span><span class="p">]</span>
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="p">}</span>
+</code></pre></div>
+<p>All fields are optional. <code>chip</code> is checked against the device. <code>ops</code> run in
+order after the files:</p>
+<table>
+<thead>
+<tr>
+<th>Op</th>
+<th>Fields</th>
+<th>Does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>write</code></td>
+<td><code>partition</code>, <code>file</code></td>
+<td>Write a file to a partition.</td>
+</tr>
+<tr>
+<td><code>erase</code></td>
+<td><code>partition</code></td>
+<td>Erase a partition.</td>
+</tr>
+<tr>
+<td><code>write-fs</code></td>
+<td><code>partition</code>, <code>file</code></td>
+<td>Write a filesystem image.</td>
+</tr>
+<tr>
+<td><code>edit-fs</code></td>
+<td><code>partition</code>, <code>put</code>, <code>delete</code></td>
+<td>Put files (path → file in the bundle) in the filesystem, and delete paths.</td>
+</tr>
+<tr>
+<td><code>set-nvs</code></td>
+<td><code>partition</code>, <code>set</code>, <code>delete</code></td>
+<td>Set keys (<code>ns:key</code> → <code>type:value</code>, or a bare value for a key that exists) and delete them. Without <code>partition</code>, the first NVS partition.</td>
+</tr>
+<tr>
+<td><code>set-boot</code></td>
+<td><code>partition</code></td>
+<td>Boot that OTA slot next.</td>
+</tr>
+<tr>
+<td><code>clear-boot</code></td>
+<td></td>
+<td>Clear otadata so the factory app boots.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="partition-table-rules">Partition table rules<a class="headerlink" href="#partition-table-rules" title="Permanent link">&para;</a></h3>
+<p>A table that already matches the device's isn't written. <code>table</code> says what
+happens when it differs:</p>
+<ul>
+<li><code>update</code> (default): write it.</li>
+<li><code>ask</code>: show the differences and ask. <code>-y</code> answers yes.</li>
+<li><code>require</code>: never write it, and refuse the device.</li>
+</ul>
+<p><code>tableMatch</code> says which differences count: <code>exact</code> (default) for any, or <code>used</code>
+for only the partitions the bundle writes, erases, edits or boots. With <code>used</code>,
+a device that differs elsewhere keeps its own table.</p>
 <h2 id="create-bundle"><code>create-bundle</code><a class="headerlink" href="#create-bundle" title="Permanent link">&para;</a></h2>
-<p>Pack partition binaries into a bundle. <code>--flash-partition-table</code> includes the
-partition table CSV so <a href="#write-bundle"><code>write-bundle</code></a> flashes it too.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>idftool<span class="w"> </span>--partition-table-file<span class="w"> </span>partitions.csv<span class="w"> </span>create-bundle<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span>-o<span class="w"> </span>release.zip<span class="w"> </span>--flash-partition-table<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span>ota_0<span class="w"> </span>build/app.bin<span class="w"> </span>storage<span class="w"> </span>build/spiffs.bin
+<p>Pack partition binaries into a bundle. <code>@factory</code> and <code>@ota</code> add a role file.
+<code>--flash-partition-table</code> includes the partition table CSV so
+<a href="#write-bundle"><code>write-bundle</code></a> flashes it too. <code>--manifest</code> adds a
+<code>manifest.json</code> and the files its ops name, relative to it.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>idftool<span class="w"> </span>--partition-table-file<span class="w"> </span>partitions.csv<span class="w"> </span>create-bundle<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span>-o<span class="w"> </span>release.zip<span class="w"> </span>--flash-partition-table<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">  </span>ota_0<span class="w"> </span>build/app.bin<span class="w"> </span>storage<span class="w"> </span>build/spiffs.bin
 </code></pre></div>
 <h2 id="dump-bundle"><code>dump-bundle</code><a class="headerlink" href="#dump-bundle" title="Permanent link">&para;</a></h2>
 <p>Read every partition off the device into a bundle, always with
-<code>partition_table.csv</code>. Without a filename it's named
+<code>bootloader.bin</code> and <code>partition_table.csv</code>. Without a filename it's named
 <code>{chip}-{mac}-{timestamp}.zip</code>.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>idftool<span class="w"> </span>dump-bundle<span class="w">                 </span><span class="c1"># auto-named</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>idftool<span class="w"> </span>dump-bundle<span class="w"> </span>my-backup.zip
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>idftool<span class="w"> </span>dump-bundle<span class="w">                 </span><span class="c1"># auto-named</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>idftool<span class="w"> </span>dump-bundle<span class="w"> </span>my-backup.zip
 </code></pre></div>
 <h2 id="write-bundle"><code>write-bundle</code><a class="headerlink" href="#write-bundle" title="Permanent link">&para;</a></h2>
-<p>Flash every binary in a bundle. If the bundle has a <code>partition_table.csv</code>,
-<code>idftool</code> uses it instead of the device's table, and rewrites the device's table
-to match.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>idftool<span class="w"> </span>write-bundle<span class="w"> </span>release.zip
+<p>Flash a bundle. It prints the steps first, then checks everything against the
+device before the first write. <code>--hmac-key</code> is the key for an
+<a href="../nvs/#encrypted-nvs">encrypted NVS</a> partition that a <code>set-nvs</code> op edits;
+bundles never carry keys.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>idftool<span class="w"> </span>write-bundle<span class="w"> </span>release.zip
 </code></pre></div>
 <p>Takes the <a href="../write-options/">write options</a>.</p>
 <h2 id="print-bundle"><code>print-bundle</code><a class="headerlink" href="#print-bundle" title="Permanent link">&para;</a></h2>
-<p>Inspect a bundle without a device: its partition table and, for each app
-partition present, the app description.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="gp">$ </span>idftool<span class="w"> </span>print-bundle<span class="w"> </span>-f<span class="w"> </span>release.zip
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="go">Bundle: release.zip (0x2828d bytes)</span>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="go">Partitions included: ota_0</span>
-<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>
-<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="go">╭──────────┬──────┬─────────┬─────────┬──────┬───────────────╮</span>
-<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="go">│ Name     │ Type │ Subtype │  Offset │ Size │ App           │</span>
-<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="go">├──────────┼──────┼─────────┼─────────┼──────┼───────────────┤</span>
-<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="go">│ nvs      │ data │ nvs     │  0x9000 │  24K │               │</span>
-<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="go">│ otadata  │ data │ ota     │  0xf000 │   8K │               │</span>
-<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="go">│ phy_init │ data │ phy     │ 0x11000 │   4K │               │</span>
-<a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="go">│ factory  │ app  │ factory │ 0x20000 │ 192K │ empty         │</span>
-<a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a><span class="go">│ ota_0    │ app  │ ota_0   │ 0x50000 │ 192K │ my-app 1.2.0  │</span>
-<a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a><span class="go">│ ota_1    │ app  │ ota_1   │ 0x80000 │ 192K │ empty         │</span>
-<a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a><span class="go">│ storage  │ data │ spiffs  │ 0xb0000 │  64K │               │</span>
-<a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a><span class="go">╰──────────┴──────┴─────────┴─────────┴──────┴───────────────╯</span>
-<a id="__codelineno-4-16" name="__codelineno-4-16" href="#__codelineno-4-16"></a>
-<a id="__codelineno-4-17" name="__codelineno-4-17" href="#__codelineno-4-17"></a><span class="go">Partition 'ota_0' (offset=0x50000):</span>
-<a id="__codelineno-4-18" name="__codelineno-4-18" href="#__codelineno-4-18"></a><span class="go">  Project name:     my-app</span>
-<a id="__codelineno-4-19" name="__codelineno-4-19" href="#__codelineno-4-19"></a><span class="go">  Version:          1.2.0</span>
-<a id="__codelineno-4-20" name="__codelineno-4-20" href="#__codelineno-4-20"></a><span class="go">  IDF version:      v6.0.2</span>
-<a id="__codelineno-4-21" name="__codelineno-4-21" href="#__codelineno-4-21"></a><span class="go">  Secure version:   0</span>
-<a id="__codelineno-4-22" name="__codelineno-4-22" href="#__codelineno-4-22"></a><span class="go">  Compiled:         Sep 29 2026 14:30:00</span>
-<a id="__codelineno-4-23" name="__codelineno-4-23" href="#__codelineno-4-23"></a><span class="go">  ELF SHA256:       4fd8f31259d82483f0fc34d4422b1aefb6ead9da845395d5ea96a135ed32c78a</span>
-<a id="__codelineno-4-24" name="__codelineno-4-24" href="#__codelineno-4-24"></a><span class="go">  Chip:             ESP32S3 (rev 0 to 99)</span>
+<p>Inspect a bundle without a device: its manifest, the steps flashing it takes,
+its bootloader's chip, its partition table if it has one, and the app
+descriptions.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="gp">$ </span>idftool<span class="w"> </span>print-bundle<span class="w"> </span>-f<span class="w"> </span>release.zip
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="go">Bundle: release.zip (0x2828d bytes)</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="go">Partition table: partition_table.csv</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="go">Steps:</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="go">  1. Write the partition table (partition_table.csv) if it differs</span>
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="go">  2. Write ota_0.bin to partition 'ota_0'</span>
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="go">Partitions included: ota_0</span>
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>
+<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="go">Bootloader: none</span>
+<a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a>
+<a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="go">╭──────────┬──────┬─────────┬─────────┬──────┬───────────────╮</span>
+<a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="go">│ Name     │ Type │ Subtype │  Offset │ Size │ App           │</span>
+<a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="go">├──────────┼──────┼─────────┼─────────┼──────┼───────────────┤</span>
+<a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a><span class="go">│ nvs      │ data │ nvs     │  0x9000 │  24K │               │</span>
+<a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a><span class="go">│ otadata  │ data │ ota     │  0xf000 │   8K │               │</span>
+<a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a><span class="go">│ phy_init │ data │ phy     │ 0x11000 │   4K │               │</span>
+<a id="__codelineno-5-17" name="__codelineno-5-17" href="#__codelineno-5-17"></a><span class="go">│ factory  │ app  │ factory │ 0x20000 │ 192K │ empty         │</span>
+<a id="__codelineno-5-18" name="__codelineno-5-18" href="#__codelineno-5-18"></a><span class="go">│ ota_0    │ app  │ ota_0   │ 0x50000 │ 192K │ my-app 1.2.0  │</span>
+<a id="__codelineno-5-19" name="__codelineno-5-19" href="#__codelineno-5-19"></a><span class="go">│ ota_1    │ app  │ ota_1   │ 0x80000 │ 192K │ empty         │</span>
+<a id="__codelineno-5-20" name="__codelineno-5-20" href="#__codelineno-5-20"></a><span class="go">│ storage  │ data │ spiffs  │ 0xb0000 │  64K │               │</span>
+<a id="__codelineno-5-21" name="__codelineno-5-21" href="#__codelineno-5-21"></a><span class="go">╰──────────┴──────┴─────────┴─────────┴──────┴───────────────╯</span>
+<a id="__codelineno-5-22" name="__codelineno-5-22" href="#__codelineno-5-22"></a>
+<a id="__codelineno-5-23" name="__codelineno-5-23" href="#__codelineno-5-23"></a><span class="go">Partition 'ota_0' (offset=0x50000):</span>
+<a id="__codelineno-5-24" name="__codelineno-5-24" href="#__codelineno-5-24"></a><span class="go">  Project name:     my-app</span>
+<a id="__codelineno-5-25" name="__codelineno-5-25" href="#__codelineno-5-25"></a><span class="go">  Version:          1.2.0</span>
+<a id="__codelineno-5-26" name="__codelineno-5-26" href="#__codelineno-5-26"></a><span class="go">  IDF version:      v6.0.2</span>
+<a id="__codelineno-5-27" name="__codelineno-5-27" href="#__codelineno-5-27"></a><span class="go">  Secure version:   0</span>
+<a id="__codelineno-5-28" name="__codelineno-5-28" href="#__codelineno-5-28"></a><span class="go">  Compiled:         Sep 29 2026 14:30:00</span>
+<a id="__codelineno-5-29" name="__codelineno-5-29" href="#__codelineno-5-29"></a><span class="go">  ELF SHA256:       4fd8f31259d82483f0fc34d4422b1aefb6ead9da845395d5ea96a135ed32c78a</span>
+<a id="__codelineno-5-30" name="__codelineno-5-30" href="#__codelineno-5-30"></a><span class="go">  Chip:             ESP32S3 (rev 0 to 99)</span>
 </code></pre></div>
 
 

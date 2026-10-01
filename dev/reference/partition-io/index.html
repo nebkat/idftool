@@ -1907,7 +1907,9 @@
 <h2 id="write"><code>write</code><a class="headerlink" href="#write" title="Permanent link">&para;</a></h2>
 <p>Write files to partitions. Arguments come in <code>PARTITION FILE</code> pairs; repeat
 them to flash several partitions in one go. Each file is checked to fit its
-partition before anything is written.</p>
+partition before anything is written. A file for an app partition or the
+bootloader must be an app or a bootloader built for this chip; <code>--force</code> writes
+it anyway.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>idftool<span class="w"> </span>write<span class="w"> </span>ota_0<span class="w"> </span>build/app.bin<span class="w"> </span>storage<span class="w"> </span>build/spiffs.bin
 </code></pre></div>
 <p>Takes the <a href="../write-options/">write options</a>.</p>

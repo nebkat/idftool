@@ -1938,7 +1938,8 @@ take out a single partition.</p>
 <h2 id="restore-a-device">Restore a device<a class="headerlink" href="#restore-a-device" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>idftool<span class="w"> </span>write-bundle<span class="w"> </span>esp32-s3-7c2c679279c0-20260929-143000.zip
 </code></pre></div>
-<p>This writes every partition and the partition table from the bundle.</p>
+<p>This writes every partition, the bootloader and the partition table from the
+bundle, skipping what's already there.</p>
 <p>From an image:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>idftool<span class="w"> </span>write-image<span class="w"> </span>esp32-s3-7c2c679279c0-20260929-143000.img
 </code></pre></div>
@@ -1961,6 +1962,10 @@ offsets. Build the bundle from your project's outputs:</p>
 </code></pre></div>
 <p><code>--flash-partition-table</code> includes the partition table, so a device with an
 older layout is updated to match.</p>
+<p>For a field update, name the app <code>@ota</code> instead of a partition, so it goes to
+whichever OTA slot is next. A <a href="../../reference/bundles/#manifest">manifest</a> can
+also set NVS keys, edit files, and control when the partition table may
+change.</p>
 <h2 id="clone-a-device">Clone a device<a class="headerlink" href="#clone-a-device" title="Permanent link">&para;</a></h2>
 <p>Back up one board and restore the bundle onto another:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>idftool<span class="w"> </span>-m<span class="w"> </span>7c:2c:67:92:79:c0<span class="w"> </span>dump-bundle<span class="w"> </span>golden.zip

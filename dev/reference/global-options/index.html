@@ -1792,8 +1792,8 @@
 <td>Serial baud rate for flashing. Default 115200, the ROM bootloader's rate. See <a href="https://docs.espressif.com/projects/esptool/en/latest/esp32/esptool/serial-connection.html">serial connection</a>. If given, also passed to <a href="../monitor/#monitor"><code>monitor</code></a> and <a href="../idf-py/#idfpy"><code>idf.py</code></a>.</td>
 </tr>
 <tr>
-<td><code>--probe</code></td>
-<td>Connect to every port to identify its board. Resets them.</td>
+<td><code>--probe</code>, <code>--no-probe</code></td>
+<td>Connect to every port to identify its board. Resets them. Defaults to <code>IDFTOOL_PROBE</code> (<code>1</code> to probe).</td>
 </tr>
 <tr>
 <td><code>-y</code>, <code>--yes</code></td>
