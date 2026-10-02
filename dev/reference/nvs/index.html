@@ -2063,6 +2063,7 @@ from a CSV.</p>
 <a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>idftool<span class="w"> </span>set-nvs<span class="w"> </span>nvs<span class="w"> </span>-n<span class="w"> </span>storage<span class="w"> </span>:cert:blob<span class="o">=</span>@device.der
 <a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>idftool<span class="w"> </span>set-nvs<span class="w"> </span>-f<span class="w"> </span>nvs.bin<span class="w"> </span>storage:device_id<span class="o">=</span><span class="m">42</span>
 <a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>idftool<span class="w"> </span>set-nvs<span class="w"> </span>nvs<span class="w"> </span>storage:device_id<span class="o">=</span><span class="m">42</span><span class="w"> </span>--dry-run
+<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>idftool<span class="w"> </span>set-nvs<span class="w"> </span>nvs<span class="w"> </span>--csv<span class="w"> </span>keys.csv
 </code></pre></div>
 <dl>
 <dt><code>namespace:key=value</code></dt>
@@ -2077,6 +2078,10 @@ from a CSV.</p>
 <dd>Read the value from a file.</dd>
 <dt><code>-d namespace:key</code></dt>
 <dd>Delete a key.</dd>
+<dt><code>-c FILE</code>, <code>--csv FILE</code></dt>
+<dd>Set every key in a CSV, in the format <code>create-nvs</code> takes and <code>read-nvs</code>
+writes. Keys not in the CSV are left alone. Repeatable; CSV rows apply
+first, then specs, then deletes.</dd>
 </dl>
 <p>Changes are <strong>appended</strong> the way firmware writes them: a new entry goes into
 free space and the old one is marked erased. Everything else stays
