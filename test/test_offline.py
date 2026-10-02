@@ -224,7 +224,57 @@ def test_set_nvs_needs_something_to_do(run_offline, tmp_path):
     image = tmp_path / "nvs.bin"
     run_offline(f"create-nvs {SAMPLES / 'nvs.csv'} -o {image} --size 0x6000")
     out = run_offline(f"set-nvs -f {image}", expect_error=True)
-    assert "at least one SPEC or --delete" in out
+    assert "at least one SPEC, --csv or --delete" in out
+
+
+def test_set_nvs_csv_merges(run_offline, tmp_path):
+    image = tmp_path / "nvs.bin"
+    run_offline(f"create-nvs {SAMPLES / 'nvs.csv'} -o {image} --size 0x6000")
+    (tmp_path / "cert.der").write_bytes(b"\x01\x02\x03")
+    keys = tmp_path / "keys.csv"
+    keys.write_text(
+        "key,type,encoding,value\n"
+        "# comments are skipped\n"
+        "storage,namespace,,\n"
+        "counter,data,u16,0x2a\n"
+        "serial,data,string,SN-42\n"
+        "token,data,base64,3q2+7w==\n"
+        "pad,data,blob_sz_fill(4;0x00),ab\n"
+        f"cert,file,binary,{tmp_path / 'cert.der'}\n"
+        "other,namespace,,\n"
+        "flag,data,u8,1\n")
+    # SPECs apply after the CSV, so they win.
+    run_offline(["set-nvs", "-f", str(image), "--csv", str(keys), "storage:serial=SN-43"])
+    get = lambda *keys: run_offline(["get-nvs", "-f", str(image), *keys]).splitlines()
+    assert get("storage:counter", "storage:serial", "storage:token", "storage:pad",
+               "storage:cert", "other:flag") == ["42", "SN-43", "deadbeef", "0200000061620000",
+                                                 "010203", "1"]
+    # Keys not in the CSV stay.
+    assert get("storage:device_name") == ["idftool-test"]
+
+
+def test_set_nvs_csv_round_trips_extract(run_offline, tmp_path):
+    image, other = tmp_path / "nvs.bin", tmp_path / "other.bin"
+    run_offline(f"create-nvs {SAMPLES / 'nvs.csv'} -o {image} --size 0x6000")
+    run_offline(f"set-nvs -f {image} storage:blob:blob=00ff storage:counter=9")
+    run_offline(f"extract-nvs -f {image} {tmp_path / 'back.csv'}")
+    (tmp_path / "empty.csv").write_text("key,type,encoding,value\nx,namespace,,\nk,data,u8,0\n")
+    run_offline(f"create-nvs {tmp_path / 'empty.csv'} -o {other} --size 0x6000")
+    out = run_offline(f"set-nvs -f {other} --csv {tmp_path / 'back.csv'}")
+    assert "+ storage:blob (blob) = 00ff" in out
+    assert run_offline(f"get-nvs -f {other} storage:counter x:k").splitlines() == ["9", "0"]
+
+
+def test_set_nvs_csv_errors_name_the_row(run_offline, tmp_path):
+    image = tmp_path / "nvs.bin"
+    run_offline(f"create-nvs {SAMPLES / 'nvs.csv'} -o {image} --size 0x6000")
+    bad = tmp_path / "bad.csv"
+    bad.write_text("key,type,encoding,value\nstorage,namespace,,\ncounter,data,u16,lots\n")
+    assert "'counter': 'lots' is not valid u16" in run_offline(
+        f"set-nvs -f {image} --csv {bad}", expect_error=True)
+    bad.write_text("key,type,encoding,value\ncounter,data,u16,1\n")
+    assert "before any namespace" in run_offline(f"set-nvs -f {image} --csv {bad}",
+                                                 expect_error=True)
 
 
 def test_set_nvs_value_from_a_file(run_offline, tmp_path):

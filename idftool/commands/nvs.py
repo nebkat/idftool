@@ -20,8 +20,8 @@ from idftool.partitions import get_partition
 
 # Keep the pass-through write options in a panel of their own.
 option_group('write-nvs', '--hmac-key')
-option_group('set-nvs', '--file', '--delete', '--namespace', '--output', '--rewrite', '--hmac-key',
-             '--dry-run')
+option_group('set-nvs', '--file', '--csv', '--delete', '--namespace', '--output', '--rewrite',
+             '--hmac-key', '--dry-run')
 
 
 def hmac_key_option(f):
@@ -338,25 +338,114 @@ def _parse_delete(spec, default_namespace):
     return Edit(namespace, key)
 
 
-def _resolve_untyped(image, edits, read_file=_read_host_file):
-    """Fill in the type of any ``--set`` that didn't give one, from the entry it replaces."""
+def _fill_blob(encoding, value, key):
+    """The bytes of a ``blob_fill(N;0xPP)`` or ``blob_sz_fill(N;0xPP)`` value."""
+    import re
+    import struct
+
+    match = re.fullmatch(r'(blob_fill|blob_sz_fill)\((\d+);(0x[0-9a-fA-F]{2})\)', encoding)
+    if not match:
+        raise click.UsageError(f"'{key}': invalid encoding '{encoding}'")
+    kind, length, pad = match.group(1), int(match.group(2)), int(match.group(3), 16)
+    data = value.encode('utf-8')
+    if len(data) > length:
+        raise click.UsageError(f"'{key}': value is longer than {length} bytes")
+    prefix = struct.pack('<I', len(data)) if kind == 'blob_sz_fill' else b''
+    return prefix + data + bytes([pad]) * (length - len(data))
+
+
+def _csv_value(key, row_type, encoding, value, read_file):
+    """``(type, value)`` of one ``nvs_partition_gen`` CSV row."""
+    import base64
+    import binascii
+    from idftool.nvs import PRIMITIVES
+
+    if row_type == 'file':
+        raw = read_file(value)
+        if encoding == 'binary':
+            return 'blob', raw
+        value = raw.decode('utf-8')
+        if encoding == 'string':
+            return 'string', value
+    elif row_type != 'data':
+        raise click.UsageError(f"'{key}': unknown type '{row_type}' (expected namespace, data "
+                               f"or file)")
+
+    try:
+        if encoding in PRIMITIVES:
+            return encoding, int(value.strip(), 0)
+        if encoding == 'string':
+            return 'string', value
+        if encoding == 'hex2bin':
+            return 'blob', bytes.fromhex(value.strip())
+        if encoding == 'base64':
+            return 'blob', base64.b64decode(value)
+        if encoding == 'binary':
+            return 'blob', value.encode('utf-8')
+    except (ValueError, binascii.Error) as e:
+        raise click.UsageError(f"'{key}': '{value}' is not valid {encoding}: {e}")
+    if encoding.startswith(('blob_fill', 'blob_sz_fill')):
+        return 'blob', _fill_blob(encoding, value, key)
+    raise click.UsageError(f"'{key}': unknown encoding '{encoding}'")
+
+
+def csv_edits(text, source, read_file=_read_host_file):
+    """Edits setting every key in an ``nvs_partition_gen`` CSV, the format ``create-nvs``
+    takes and ``read-nvs`` writes. ``file`` rows are read through `read_file`."""
+    import csv
     from idftool.nvs.edit import Edit
 
-    resolved = []
+    rows = csv.DictReader(line for line in text.splitlines() if not line.startswith('#'))
+    if not rows.fieldnames or not {'key', 'type', 'encoding', 'value'} <= set(rows.fieldnames):
+        raise click.UsageError(f"{source} needs a 'key,type,encoding,value' header")
+    edits, namespace = [], None
+    for row in rows:
+        key, row_type = row['key'], (row['type'] or '').strip()
+        if row_type == 'namespace':
+            namespace = key
+            continue
+        if namespace is None:
+            raise click.UsageError(f"{source}: '{key}' comes before any namespace row")
+        try:
+            type_name, value = _csv_value(key, row_type, (row['encoding'] or '').strip(),
+                                          row['value'] or '', read_file)
+        except click.UsageError as e:
+            raise click.UsageError(f"{source}: {e.format_message()}")
+        edits.append(Edit(namespace, key, type_name, value))
+    return edits
+
+
+def _read_csv(path):
+    try:
+        text = open(path, encoding='utf-8').read()
+    except OSError as e:
+        raise click.UsageError(f"Cannot read CSV file '{path}': {e}")
+    return csv_edits(text, f"'{path}'")
+
+
+def _resolve_untyped(image, edits, read_file=_read_host_file):
+    """Fill in the type of any ``--set`` that didn't give one, from the entry it replaces —
+    an earlier edit of the same key, or else the image's."""
+    from idftool.nvs.edit import Edit
+
+    resolved, types = [], {}
     for edit in edits:
         if edit.is_delete or edit.type is not None:
             resolved.append(edit)
+            types[edit.qualified] = edit.type
             continue
         existing = image.get(edit.namespace, edit.key)
-        if existing is None:
+        type_name = types.get(edit.qualified, existing and existing.type)
+        if type_name is None:
             from idftool.nvs import PRIMITIVES, NvsError
             known = ', '.join(list(PRIMITIVES) + ['string', 'blob'])
             raise NvsError(
                 f"'{edit.namespace}:{edit.key}' is not in the image, so its type cannot be "
                 f"inferred — write it as {edit.namespace}:{edit.key}:<type>={edit.value} "
                 f"(types: {known})")
-        resolved.append(Edit(edit.namespace, edit.key, existing.type,
-                             _parse_value(existing.type, edit.value, read_file)))
+        types[edit.qualified] = type_name
+        resolved.append(Edit(edit.namespace, edit.key, type_name,
+                             _parse_value(type_name, edit.value, read_file)))
     return resolved
 
 
@@ -403,13 +492,14 @@ def _write_pages(esp, part, result, dirty, options, hmac_key=None):
                 **write_flash_options(options, skip_flashed=True, diff=True))
 
 
-def manifest_edits(set_values, deletes, read_file):
-    """Edits from a bundle manifest's ``set-nvs`` op: ``ns:key`` → ``type:value`` (or a bare
-    value for a key that exists), and ``ns:key`` deletes."""
+def manifest_edits(set_values, deletes, read_file, csv_file=None):
+    """Edits from a bundle manifest's ``set-nvs`` op: the keys of `csv_file`, then ``ns:key`` →
+    ``type:value`` (or a bare value for a key that exists), then ``ns:key`` deletes."""
     from idftool.nvs import PRIMITIVES
 
     known = list(PRIMITIVES) + ['string', 'blob']
-    edits = []
+    edits = (csv_edits(read_file(csv_file).decode('utf-8'), f"'{csv_file}'", read_file)
+             if csv_file else [])
     for qualified, value in set_values.items():
         value = str(value)
         prefix, colon, rest = value.partition(':')
@@ -462,22 +552,23 @@ def _split_target(args, image_file, what):
 
 
 def set_nvs(state, args, image_file, deletes, namespace, output_file, do_rewrite, dry_run,
-            hmac_key=None, **options):
+            hmac_key=None, csv_files=(), **options):
     """Set or delete keys in an NVS partition or image. Keyword arguments go to esptool's
     ``write_flash`` (see :data:`idftool.flash.WRITE_FLASH_OPTIONS`)."""
     import idftool.nvs as nvs
     from idftool.nvs.edit import apply
 
     partition, specs = _split_target(args, image_file, "SPEC")
-    if not specs and not deletes:
+    if not specs and not deletes and not csv_files:
         if partition and '=' in partition:
             # The one positional given is a spec, so what's missing is the target it applies to.
             raise click.UsageError(
                 f"'{partition}' looks like a SPEC, not a partition — name the partition first "
                 f"(idftool set-nvs nvs {partition}) or use -f/--file")
-        raise click.UsageError(f"Nothing to do — pass at least one SPEC or --delete.\n{SPEC_HELP}")
+        raise click.UsageError(f"Nothing to do — pass at least one SPEC, --csv or --delete.\n{SPEC_HELP}")
 
-    edits = ([_parse_set(spec, namespace) for spec in specs] +
+    edits = ([edit for path in csv_files for edit in _read_csv(path)] +
+             [_parse_set(spec, namespace) for spec in specs] +
              [_parse_delete(spec, namespace) for spec in deletes])
 
     data, part, source = _load_image(state, partition, image_file, 'set-nvs', hmac_key)
@@ -518,6 +609,8 @@ def set_nvs(state, args, image_file, deletes, namespace, output_file, do_rewrite
 @click.argument('args', nargs=-1, metavar='[PARTITION] SPEC...')
 @click.option('-f', '--file', 'image_file', default=None,
               help='Edit this NVS image file instead of a partition on the device')
+@click.option('-c', '--csv', 'csv_files', multiple=True, metavar='CSV',
+              help='Set every key in this CSV (the create-nvs format); repeatable')
 @click.option('-d', '--delete', 'deletes', multiple=True, metavar='KEY',
               help='Delete a key: namespace:key')
 @click.option('-n', '--namespace', default=None,
@@ -530,20 +623,22 @@ def set_nvs(state, args, image_file, deletes, namespace, output_file, do_rewrite
 @hmac_key_option
 @flash_options
 @pass_state
-def cmd_set_nvs(state, args, image_file, deletes, namespace, output_file, do_rewrite, dry_run,
-                hmac_key, **options):
+def cmd_set_nvs(state, args, image_file, csv_files, deletes, namespace, output_file, do_rewrite,
+                dry_run, hmac_key, **options):
     """Set or delete keys in an NVS partition on the device, or in an image file with --file.
 
     A SPEC is `namespace:key=value`, or `namespace:key:type=value` to give the type of a key
     that isn't there yet — for one that is, the type is taken from the entry being replaced.
-    A value of `@FILE` is read from that file.
+    A value of `@FILE` is read from that file. `--csv` sets every key in a CSV file of the
+    kind `create-nvs` takes and `read-nvs` writes, leaving the rest of the partition alone;
+    CSV rows apply first, then SPECs, then deletes.
 
     Changes are appended the way the firmware would write them, so everything else in the
     partition is left byte-for-byte alone and a device write only touches the pages that
     changed. If there is no room left to append, the image is compacted instead.
     """
     return set_nvs(state, args, image_file, deletes, namespace, output_file, do_rewrite, dry_run,
-                   hmac_key, **options)
+                   hmac_key, csv_files, **options)
 
 
 def _parse_get(spec, default_namespace):

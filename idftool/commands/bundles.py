@@ -235,7 +235,7 @@ def write_bundle(state, input_file, hmac_key=None, **options):
                               f"'{op.partition}' is not an OTA app partition")
         elif op.op == 'set-nvs':
             try:
-                nvs_edits[op.index] = manifest_edits(op.set, op.delete, read_file)
+                nvs_edits[op.index] = manifest_edits(op.set, op.delete, read_file, op.file)
             except (click.UsageError, RuntimeError) as e:
                 message = e.format_message() if isinstance(e, click.UsageError) else str(e)
                 raise BundleError(f"manifest.json: op {op.index} (set-nvs): {message}") from e

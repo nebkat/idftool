@@ -51,7 +51,7 @@ order after the files:
 | `erase` | `partition` | Erase a partition. |
 | `write-fs` | `partition`, `file` | Write a filesystem image. |
 | `edit-fs` | `partition`, `put`, `delete` | Put files (path → file in the bundle) in the filesystem, and delete paths. |
-| `set-nvs` | `partition`, `set`, `delete` | Set keys (`ns:key` → `type:value`, or a bare value for a key that exists) and delete them. Without `partition`, the first NVS partition. |
+| `set-nvs` | `partition`, `file`, `set`, `delete` | Set the keys in `file` (an NVS CSV), set keys (`ns:key` → `type:value`, or a bare value for a key that exists) and delete them. Without `partition`, the first NVS partition. |
 | `set-boot` | `partition` | Boot that OTA slot next. |
 | `clear-boot` | | Clear otadata so the factory app boots. |
 

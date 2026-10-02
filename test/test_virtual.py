@@ -500,6 +500,21 @@ def test_print_bundle_without_a_table(run_offline, tmp_path):
     assert "2.0.0" in out
 
 
+def test_bundle_sets_nvs_from_a_csv(run, tmp_path, esp):
+    (tmp_path / "example.csv").write_text(
+        "key,type,encoding,value\nconfig,namespace,,\nserial,data,string,SN-0042\n"
+        "keep,data,u8,1\n")
+    run("write-nvs", "nvs", "example.csv")
+    csv = ("key,type,encoding,value\nconfig,namespace,,\nserial,data,string,SN-0050\n"
+           "cert,file,binary,nvs/cert.der\n")
+    bundle("b.zip", {"nvs/keys.csv": csv, "nvs/cert.der": b"\xca\xfe",
+                     "manifest.json": {"ops": [{"op": "set-nvs", "file": "nvs/keys.csv"}]}})
+    assert "keys from nvs/keys.csv" in run("print-bundle", "-f", "b.zip")
+    run("write-bundle", "b.zip")
+    assert run("get-nvs", "nvs", "config:serial", "config:keep", "config:cert").splitlines()[:3] \
+        == ["SN-0050", "1", "cafe"]
+
+
 def test_nvs_on_the_device(run, tmp_path, esp):
     (tmp_path / "example.csv").write_text(
         "key,type,encoding,value\nconfig,namespace,,\nserial,data,string,SN-0042\n")

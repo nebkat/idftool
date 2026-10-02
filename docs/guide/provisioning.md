@@ -40,6 +40,12 @@ Add a key that doesn't exist yet by giving its type:
 idftool set-nvs nvs config:serial:string=SN-0042
 ```
 
+Set several keys from a CSV, keeping everything else:
+
+```bash
+idftool set-nvs nvs --csv config.csv
+```
+
 ### Read values back
 
 ```console

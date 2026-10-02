@@ -116,8 +116,8 @@ class Op:
                               f"\"delete\" a list")
         if op == 'edit-fs' and not (put or delete):
             raise BundleError(f"{where} (edit-fs): needs \"put\" and/or \"delete\"")
-        if op == 'set-nvs' and not (set_ or delete):
-            raise BundleError(f"{where} (set-nvs): needs \"set\" and/or \"delete\"")
+        if op == 'set-nvs' and not (set_ or delete or data.get('file')):
+            raise BundleError(f"{where} (set-nvs): needs \"file\", \"set\" and/or \"delete\"")
         return cls(index, op, data.get('partition'), data.get('file'),
                    {str(k): str(v) for k, v in put.items()}, [str(d) for d in delete],
                    dict(set_))
@@ -138,7 +138,8 @@ class Op:
                     f"delete {', '.join(self.delete)}" if self.delete else '']
             return f"Update files in '{self.partition}': {'; '.join(w for w in what if w)}"
         if self.op == 'set-nvs':
-            what = [f"{k} = {v}" for k, v in self.set.items()] + [f"delete {d}" for d in self.delete]
+            what = ([f"keys from {self.file}"] if self.file else []) + \
+                   [f"{k} = {v}" for k, v in self.set.items()] + [f"delete {d}" for d in self.delete]
             where = f" ('{self.partition}')" if self.partition else ''
             return f"Update NVS{where}: {', '.join(what)}"
         if self.op == 'set-boot':

@@ -6,6 +6,10 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- `set-nvs --csv` sets every key in a CSV without touching the rest of the
+  partition. Bundle `set-nvs` ops take a CSV as `file`.
+
 ### Changed
 - The progress bar for sector-by-sector writes matches esptool's: sizes in
   kB/MB and elapsed time.

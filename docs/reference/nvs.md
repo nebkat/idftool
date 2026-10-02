@@ -137,6 +137,7 @@ idftool set-nvs nvs storage:serial:string=SN-0001 -d storage:old_key
 idftool set-nvs nvs -n storage :cert:blob=@device.der
 idftool set-nvs -f nvs.bin storage:device_id=42
 idftool set-nvs nvs storage:device_id=42 --dry-run
+idftool set-nvs nvs --csv keys.csv
 ```
 
 `namespace:key=value`
@@ -156,6 +157,11 @@ idftool set-nvs nvs storage:device_id=42 --dry-run
 
 `-d namespace:key`
 :   Delete a key.
+
+`-c FILE`, `--csv FILE`
+:   Set every key in a CSV, in the format `create-nvs` takes and `read-nvs`
+    writes. Keys not in the CSV are left alone. Repeatable; CSV rows apply
+    first, then specs, then deletes.
 
 Changes are **appended** the way firmware writes them: a new entry goes into
 free space and the old one is marked erased. Everything else stays
