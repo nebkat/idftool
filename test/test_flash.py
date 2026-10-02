@@ -487,7 +487,7 @@ def test_changed_sectors_are_written_as_they_are_found(monkeypatch, capsys):
         [(0x10000 + 5 * 0x1000, data[5 * 0x1000:7 * 0x1000])],
         [(0x10000 + 40 * 0x1000, data[40 * 0x1000:41 * 0x1000])],
     ]
-    assert "wrote 12K of 256K in 2 regions" in capsys.readouterr().out
+    assert "wrote 12.00kB of 256.00kB in 2 regions" in capsys.readouterr().out
 
 
 def test_an_abandoned_scan_writes_the_region_whole(monkeypatch, capsys):
@@ -562,9 +562,8 @@ def test_app_commands_diff_by_default():
 def test_progress_is_silent_when_progress_is_not_wanted(capsys):
     from idftool.flash import Progress
 
-    bar = Progress('x', 0x1000, enabled=False)
-    bar.update(scanned=0x800)
-    bar.finish()
+    with Progress('x', 0x1000, enabled=False) as bar:
+        bar.update(scanned=0x800)
     assert capsys.readouterr().out == ""
 
 
@@ -575,7 +574,8 @@ def test_progress_obeys_esptools_verbosity(capsys):
 
     log.set_verbosity('silent')
     try:
-        Progress('x', 0x1000).update(scanned=0x800)
+        with Progress('x', 0x1000) as bar:
+            bar.update(scanned=0x800)
         assert capsys.readouterr().out == ""
     finally:
         log.set_verbosity('auto')
@@ -586,17 +586,31 @@ def test_progress_redraws_only_when_the_percentage_moves(capsys):
     and 256 lines of scroll on one that cannot."""
     from idftool.flash import Progress
 
-    bar = Progress('x', 1000 * 0x1000)
-    for sector in range(1, 21):          # 20 updates spanning 0% to 2% of the region
-        bar.update(scanned=sector * 0x1000)
+    with Progress('x', 1000 * 0x1000) as bar:
+        for sector in range(1, 21):      # 20 updates spanning 0% to 2% of the region
+            bar.update(scanned=sector * 0x1000)
     assert capsys.readouterr().out.count('%') == 3   # the first, then 1% and 2%
 
 
-def test_progress_sizes_read_the_way_a_person_would_say_them():
+def test_progress_sizes_match_esptools_bar():
     from idftool.flash import Progress
 
     assert [Progress.size(n) for n in (512, 0x1000, 0x40000, 0x100000, 0x180000)] == \
-        ["512B", "4K", "256K", "1M", "1.5M"]
+        ["512B", "4.00kB", "256.00kB", "1.00MB", "1.50MB"]
+
+
+def test_progress_uses_esptools_layout_and_stops_short_of_done(capsys):
+    """An abandoned scan must not be drawn as complete on the way out."""
+    from idftool.flash import Progress
+
+    with Progress('x', 4 * 0x1000) as bar:
+        bar.update(scanned=0x1000)
+        bar.update(written=0x1000)
+        bar.update(scanned=0x2000)
+    out = capsys.readouterr().out
+    assert "x (written 4.00kB)" in out
+    assert "8.00kB/16.00kB [" in out
+    assert "100.0%" not in out
 
 
 def test_quiet_esptool_keeps_what_matters_and_restores_itself(capsys):

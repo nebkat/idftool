@@ -313,30 +313,51 @@ def plan_sector_writes(esp, address, data, on_scanned=None, sector_size=DIFF_SEC
 
 
 class Progress:
-    """One progress bar for a whole operation, drawn by esptool's own logger.
+    """One progress bar for a whole operation: esptool's own (``log.progress``).
 
     The differential path scans and writes in the same pass, so its progress is two numbers
-    that advance independently — bytes compared, and bytes written. Both go on one bar, which
-    tracks the scan (whose total is known from the start) and reports the writes alongside.
+    that advance independently — bytes compared, and bytes written. The bar tracks the scan
+    (whose total is known from the start); what has been written goes in its description.
 
-    Rendering goes through ``log.progress_bar`` rather than being written out here, so this
-    inherits esptool's decisions rather than second-guessing them: whether the terminal takes
-    ANSI escapes, the Windows fallback, and the verbosity setting, which is what ``silent``
-    has to reach to be worth anything. It also means the bar looks like every other bar the
-    user sees from a flashing tool.
+    Going through esptool's logger means the bar looks like every other bar esptool draws —
+    same layout, sizes and elapsed time — and obeys its decisions on ANSI, Unicode and
+    verbosity.
     """
 
-    def __init__(self, prefix, total, enabled=True):
-        self.prefix, self.total, self.enabled = prefix, total, enabled and total > 0
+    class _StoppedShort(Exception):
+        """Thrown into ``log.progress`` so a scan that stopped short isn't drawn as done."""
+
+    def __init__(self, description, total, enabled=True):
+        self.description, self.total, self.enabled = description, total, enabled and total > 0
         self.scanned = self.written = 0
         self._shown = None
+        self._drawn = 0
+        self._context = self._task = None
+
+    def __enter__(self):
+        self._context = log.progress(total=self.total, description=self.description,
+                                     unit='B', disable=not self.enabled)
+        self._task = self._context.__enter__()
+        return self
+
+    def __exit__(self, *exc):
+        if self.scanned < self.total:
+            # An abandoned or failed scan never reaches 100%: end the line where it stopped.
+            if self._shown is not None:
+                log.print("")
+            if exc[0] is None:
+                exc = (self._StoppedShort, self._StoppedShort(), None)
+        self._context.__exit__(*exc)
 
     @staticmethod
     def size(count):
-        for unit, scale in (('M', 1 << 20), ('K', 1 << 10)):
-            if count >= scale:
-                return f'{count / scale:.1f}{unit}'.replace('.0', '')
-        return f'{count}B'
+        """A byte count as esptool's bar shows it, e.g. ``1.20MB``."""
+        if count < 1024:
+            return f'{count}B'
+        for unit in ('kB', 'MB'):
+            count /= 1024
+            if count < 1024 or unit == 'MB':
+                return f'{count:.2f}{unit}'
 
     @staticmethod
     def rate(count, seconds):
@@ -349,26 +370,20 @@ class Progress:
         256 lines of scroll on one that cannot overwrite.
         """
         if scanned is not None:
-            self.scanned = scanned
+            self.scanned = min(scanned, self.total)
         if written is not None:
             self.written = written
         if not self.enabled:
             return
-        percent = 100 * min(self.scanned, self.total) // self.total
+        percent = 100 * self.scanned // self.total
         if percent == self._shown:
             return
         self._shown = percent
-        suffix = f' compared {self.size(self.scanned)}/{self.size(self.total)}'
+        description = self.description
         if self.written:
-            suffix += f', written {self.size(self.written)}'
-        log.progress_bar(min(self.scanned, self.total), self.total,
-                         prefix=f'{self.prefix} ', suffix=suffix)
-
-    def finish(self):
-        """End the bar's line if it stopped short — an abandoned scan never reaches 100%."""
-        if self._shown is not None and self._shown != 100:
-            log.print("")
-        self._shown = None
+            description += f' (written {self.size(self.written)})'
+        self._task.update(advance=self.scanned - self._drawn, description=description)
+        self._drawn = self.scanned
 
 
 def _say(prefix, args, file=None):
@@ -490,12 +505,11 @@ def _write_changed_sectors(esp, address, prepared, described, kwargs):
     fall back to comparing the region as a whole.
     """
     print(f"Comparing {described} against flash at {address:#010x}...")
-    progress = Progress(described, len(prepared), enabled=not kwargs.get('no_progress'))
     written = runs = 0
     elapsed = 0.0
     abandoned = False
 
-    try:
+    with Progress(described, len(prepared), enabled=not kwargs.get('no_progress')) as progress:
         for offset, length, reason in plan_sector_writes(
                 esp, address, prepared, on_scanned=lambda n: progress.update(scanned=n)):
             if reason == 'remainder':
@@ -514,8 +528,6 @@ def _write_changed_sectors(esp, address, prepared, described, kwargs):
             written += length
             runs += 1
             progress.update(written=written)
-    finally:
-        progress.finish()
 
     # esptool reports what it wrote and how fast after every write; a differential one is
     # made of many, so the same figures are totalled up and reported once here instead.
