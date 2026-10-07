@@ -7,6 +7,7 @@ import shutil
 import signal
 import sys
 import time
+from pathlib import Path
 from typing import Callable, Optional
 
 import questionary
@@ -101,7 +102,8 @@ def usb_record(port) -> dict:
 
 
 def port_holders(port: str) -> list[tuple[int, str]]:
-    """``(pid, command)`` for each process holding `port`, via lsof if available."""
+    """``(pid, program)`` for each process holding `port`, via lsof if available. A Python
+    process is named by what it runs (``esp-rfc2217-relay``, ``idf_monitor``), not as Python."""
     import subprocess
 
     try:
@@ -114,9 +116,34 @@ def port_holders(port: str) -> list[tuple[int, str]]:
         if line.startswith("p"):
             pid = int(line[1:])
         elif line.startswith("c") and pid is not None:
-            holders.append((pid, line[1:]))
+            holders.append((pid, program_name(pid) or line[1:]))
             pid = None
     return holders
+
+
+def program_name(pid: int) -> Optional[str]:
+    """What a Python process runs: the module of ``python -m <module>``, else its script's
+    name. None for anything else, or when ps can't say."""
+    import subprocess
+
+    try:
+        command = subprocess.run(["ps", "-o", "command=", "-p", str(pid)],
+                                 capture_output=True, text=True, timeout=5).stdout.split()
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if not command or "python" not in Path(command[0]).name.lower():
+        return None
+    arguments = iter(command[1:])
+    for argument in arguments:
+        if argument == "-m":
+            return next(arguments, None)
+        if argument == "-c":
+            return None
+        if argument in ("-X", "-W", "-Q"):
+            next(arguments, None)
+        elif not argument.startswith("-"):
+            return Path(argument).name
+    return None
 
 
 def held_reason(port: str) -> Optional[str]:
