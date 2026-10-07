@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [v1.3.1] — 2026-10-07
+
+### Changed
+- A process holding a port is named by what it runs (`esp-rfc2217-relay`,
+  `bench`, `idf_monitor`), not as `Python`.
+
 ## [v1.3.0] — 2026-10-02
 
 ### Added
@@ -410,6 +416,7 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 ### Added
 - Initial release.
 
+[v1.3.1]: https://github.com/nebkat/idftool/releases/tag/v1.3.1
 [v1.3.0]: https://github.com/nebkat/idftool/releases/tag/v1.3.0
 [v1.2.0]: https://github.com/nebkat/idftool/releases/tag/v1.2.0
 [v1.1.0]: https://github.com/nebkat/idftool/releases/tag/v1.1.0
