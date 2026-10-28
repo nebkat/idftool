@@ -60,7 +60,7 @@ class State:
     def __init__(self, *, port, baud, no_reset, partition_table_file, partition_table_offset,
                  partition_table_size, primary_bootloader_offset, recovery_bootloader_offset,
                  assume_yes=False, mac=None, usb_serial=None, probe=False, identify=None,
-                 baud_explicit=False):
+                 baud_explicit=False, quiet=False):
         self.port = port
         self.mac = mac
         self.usb_serial = usb_serial
@@ -79,6 +79,9 @@ class State:
         self.primary_bootloader_offset = primary_bootloader_offset
         self.recovery_bootloader_offset = recovery_bootloader_offset
         self.esp: Optional[ESPLoader] = None
+        #: Skip the tables printed on the way (the partition table, a filesystem's listing),
+        #: and the device reads only they need.
+        self.quiet = quiet
         #: Set by a command whose stdout is data meant to be piped or captured (get-nvs).
         #: Progress and status then belong on stderr instead — including the hard reset,
         #: which happens after the command has already printed its result.
@@ -90,12 +93,13 @@ class State:
         commands as functions.
 
         The chip is never reset: when it returns to running is the caller's decision. The
-        partition table is read off the device unless `partition_table_file` names one."""
+        partition table is read off the device unless `partition_table_file` names one. The
+        state is quiet (see :attr:`quiet`)."""
         state = cls(port=esp.serial_port, baud=esp._port.baudrate, no_reset=True,
                     partition_table_file=partition_table_file,
                     partition_table_offset=PARTITION_TABLE_OFFSET, partition_table_size=PARTITION_TABLE_SIZE,
                     primary_bootloader_offset=esp.BOOTLOADER_FLASH_OFFSET, recovery_bootloader_offset=None,
-                    assume_yes=assume_yes)
+                    assume_yes=assume_yes, quiet=True)
         state.esp = esp
         return state
 
@@ -148,8 +152,8 @@ class State:
         return require_partitions(partition_table, "the loaded source")
 
     def setup(self, *, needs_device=True, image_file=None) -> 'Loaded':
-        """Connect if required, load and print the partition table, and build the virtual
-        partition-table/bootloader entries the command handlers expect.
+        """Connect if required, load and print the partition table (unless `quiet`), and build
+        the virtual partition-table/bootloader entries the command handlers expect.
 
         Returns a ``Loaded`` whose ``esp`` is ``None`` for commands that ran entirely from a file.
         """
@@ -159,8 +163,18 @@ class State:
         esp = self.esp
 
         partition_table = self._load_partition_table(image_file)
+        if not self.quiet:
+            self._print_partition_table(partition_table)
 
-        # Read otadata so the printed table can mark the active app partition
+        if esp:
+            partition_table.verify_size_fits(flash_size_bytes(detect_flash_size(esp)))
+
+        return Loaded(esp, partition_table, *self.virtual_entries(partition_table))
+
+    def _print_partition_table(self, partition_table):
+        """Print the table, with each app's description and the active slot read off the device
+        when there is one."""
+        esp = self.esp
         otadata_params: Optional[OtaDataParameters] = None
         if esp:
             try:
@@ -171,11 +185,6 @@ class State:
                 print(f"Warning: failed to read otadata: {type(e).__name__}: {e}", file=sys.stderr)
 
         print_partition_table(partition_table, esp.read_flash if esp else None, otadata=otadata_params)
-
-        if esp:
-            partition_table.verify_size_fits(flash_size_bytes(detect_flash_size(esp)))
-
-        return Loaded(esp, partition_table, *self.virtual_entries(partition_table))
 
     def read_device_table(self) -> Optional[PartitionTable]:
         """The device's table (or --partition-table-file's), or None if the device has none."""

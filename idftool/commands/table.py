@@ -7,7 +7,7 @@ from esptool import flash_size_bytes
 from esptool.cmds import detect_flash_size
 
 from idftool.cli import cli, pass_state
-from idftool.display import print_partition_table
+from idftool.display import print_partition_table, say
 from idftool.flash import write_flash
 from idftool.partitions import load_partition_table_file, resolve_partition_table_format, \
     write_partition_table_file
@@ -94,19 +94,20 @@ def write_table(state, table_file, force):
         if not force:
             raise RuntimeError(
                 f"Partition table failed verification: {e}. Re-run with --force to flash it anyway.") from e
-        print(f"Warning: partition table failed verification: {e} (continuing due to --force)")
+        say(f"Warning: partition table failed verification: {e} (continuing due to --force)")
 
     partition_table.verify_size_fits(flash_size_bytes(detect_flash_size(esp)))
 
     binary = partition_table.to_binary()
-    print_partition_table(partition_table)
-    print()
-    print(f"Writing partition table ({len(binary):#x} bytes) to offset {state.partition_table_offset:#x}...")
-    print("Note: this replaces only the partition map; existing partition data on flash is not moved, "
-          "resized, or erased. A table that no longer matches the flash contents can make the device unbootable.")
+    if not state.quiet:
+        print_partition_table(partition_table)
+        print()
+    say(f"Writing partition table ({len(binary):#x} bytes) to offset {state.partition_table_offset:#x}...")
+    say("Note: this replaces only the partition map; existing partition data on flash is not moved, "
+        "resized, or erased. A table that no longer matches the flash contents can make the device unbootable.")
     write_flash(esp=esp, addr_data=[(state.partition_table_offset, binary)], flash_size='detect',
                 skip_flashed=True, diff=True)
-    print("Partition table written")
+    say("Partition table written")
 
 
 @cli.command('write-table', help='Flash a partition table from a CSV or binary file to the device')

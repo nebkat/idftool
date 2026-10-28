@@ -56,6 +56,22 @@ An unknown option raises `TypeError` rather than being ignored. `esptool` reads
 its options with `kwargs.get`, so a misspelled one would otherwise be a write
 that quietly did something else.
 
+## Output
+
+A `State` from `State.attached` is quiet. It does not print the tables commands
+show on the way (the partition table, a filesystem's listing), nor read what
+only they show: otadata and each app's description. What the writes have to say
+goes through `esptool`'s logger, so a logger of your own receives idftool's
+lines along with `esptool`'s, and nothing reaches stdout:
+
+```python
+from esptool.logger import log
+
+log.set_logger(MyLogger())  # an esptool.logger.TemplateLogger
+```
+
+`State(quiet=True)` does the same for a `State` that makes its own connection.
+
 ## Choosing a device
 
 `idftool.ports.select_device()` shows the [picker](guide/choosing-a-device.md)

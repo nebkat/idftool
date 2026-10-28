@@ -7,6 +7,7 @@ from esptool.cmds import read_flash, erase_region
 
 from idftool.apps import check_partition_image
 from idftool.cli import cli, pass_state
+from idftool.display import say
 from idftool.flash import flash_options, option_group, write_flash, write_flash_options
 from idftool.partitions import get_partition_address, get_partition_slice
 
@@ -67,7 +68,7 @@ def write_partitions(state, files, **options):
                 check_partition_image(loaded.esp, partition, f.read(), f"'{input_file}'",
                                       options.get('force'))
         addr_data.append((address, input_file))
-        print(f"Writing file {input_file} (size={input_file_size:#x}) to partition {partition.name} (offset={address:#x}, size={partition.size:#x})")
+        say(f"Writing file {input_file} (size={input_file_size:#x}) to partition {partition.name} (offset={address:#x}, size={partition.size:#x})")
 
     write_flash(
         esp=loaded.esp,
@@ -89,7 +90,7 @@ def erase_partition(state, partition):
     loaded = state.setup()
     partition, address, length = get_partition_slice(
         loaded.partition_table, loaded.partition_table_entry, loaded.bootloader_entry, partition)
-    print(f"Erasing partition {partition.name} (offset={address:#x}, size={length:#x})")
+    say(f"Erasing partition {partition.name} (offset={address:#x}, size={length:#x})")
     erase_region(loaded.esp, address=address, size=length)
 
 

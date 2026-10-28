@@ -20,6 +20,7 @@ from idftool.apps import check_partition_image, parse_bootloader, print_app_info
 from idftool.bundle import MANIFEST, ROLE_PREFIX, ROLES, BundleError, Manifest, check_bundle, \
     factory_target, is_ota_app, normalise_chip, nvs_target, read_bundle
 from idftool.cli import cli, pass_state
+from idftool.display import say
 from idftool.flash import flash_options, option_group, write_flash, write_flash_options
 from idftool.params import HMAC_KEY
 from idftool.partitions import get_partition
@@ -135,9 +136,9 @@ def _choose_table(state, check) -> bool:
     """Whether to write the bundle's differing table (False keeps the device's)."""
     if not check.table_changes:
         return False
-    print("The bundle's partition table differs from the device's:")
+    say("The bundle's partition table differs from the device's:")
     for difference in check.differences:
-        print(f"  {difference}")
+        say(f"  {difference}")
     if check.policy == 'update':
         return True
     if check.policy == 'require':
@@ -174,9 +175,9 @@ def write_bundle(state, input_file, hmac_key=None, **options):
     esp = state.connect()
     bundle = _read_bundle(state, input_file)
     manifest = bundle.manifest
-    print(f"Bundle: {bundle.name}" + (f" — {manifest.description}" if manifest and manifest.description else ""))
+    say(f"Bundle: {bundle.name}" + (f" — {manifest.description}" if manifest and manifest.description else ""))
     for i, step in enumerate(bundle.outline(), 1):
-        print(f"  {i}. {step}")
+        say(f"  {i}. {step}")
 
     if manifest and manifest.chip and manifest.chip != normalise_chip(esp.CHIP_NAME):
         raise BundleError(f"This bundle is for {manifest.chip}, but the connected device is "
@@ -247,17 +248,17 @@ def write_bundle(state, input_file, hmac_key=None, **options):
 
     if bundle.table is not None:
         if not check.differences:
-            print("Partition table already matches; not written")
+            say("Partition table already matches; not written")
         elif not update_table:
-            print("Partition table differs only outside this bundle's partitions; the device's is kept")
+            say("Partition table differs only outside this bundle's partitions; the device's is kept")
         else:
             table.verify_size_fits(flash_size_bytes(detect_flash_size(esp)))
-            print(f"Writing partition table (offset={table_entry.offset:#x}, size={table_entry.size:#x}) from bundle")
+            say(f"Writing partition table (offset={table_entry.offset:#x}, size={table_entry.size:#x}) from bundle")
             write_flash(esp=esp, addr_data=[(table_entry.offset, table.to_binary())],
                         flash_size='detect', **write)
 
     if bundle.bootloader is not None:
-        print(f"Writing bootloader (offset={bootloader_entry.offset:#x}, size={bootloader_entry.size:#x}) from bundle")
+        say(f"Writing bootloader (offset={bootloader_entry.offset:#x}, size={bootloader_entry.size:#x}) from bundle")
         write_flash(esp=esp, addr_data=[(bootloader_entry.offset, bundle.bootloader)],
                     flash_size='detect', **write)
 
@@ -270,12 +271,12 @@ def write_bundle(state, input_file, hmac_key=None, **options):
 
     if named:
         for partition, _ in named:
-            print(f"Writing partition {partition.name} (offset={partition.offset:#x}, size={partition.size:#x}) from bundle")
+            say(f"Writing partition {partition.name} (offset={partition.offset:#x}, size={partition.size:#x}) from bundle")
         write_flash(esp=esp, addr_data=[(p.offset, data) for p, data in named],
                     flash_size='detect', **write)
 
     for op in bundle.ops:
-        print(f"Op {op.index}: {op.describe()}")
+        say(f"Op {op.index}: {op.describe()}")
         if op.op in ('write', 'write-fs'):
             partition = resolve(op.partition)
             write_flash(esp=esp, addr_data=[(partition.offset, bundle.files[op.file])],

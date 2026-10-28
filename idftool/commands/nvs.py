@@ -12,7 +12,7 @@ import rich_click as click
 
 
 from idftool.cli import cli, pass_state, reject_file_as_partition
-from idftool.display import print_rows
+from idftool.display import print_rows, say
 from idftool.flash import flash_options, option_group, write_flash, write_flash_options
 from idftool.nvs import fit_nvs_binary, generate_nvs_image, looks_like_nvs_binary
 from idftool.params import BASED_INT, HMAC_KEY
@@ -90,13 +90,13 @@ def write_nvs(state, partition, csv_file, hmac_key=None, **options):
     partition = _nvs_partition(loaded, partition)
     data = open(csv_file, 'rb').read()
     if looks_like_nvs_binary(data):
-        print(f"Using NVS binary '{csv_file}' for partition '{partition.name}' (size={partition.size:#x})...")
+        say(f"Using NVS binary '{csv_file}' for partition '{partition.name}' (size={partition.size:#x})...")
         image = fit_nvs_binary(data, partition.size)
     else:
-        print(f"Generating NVS image from '{csv_file}' for partition '{partition.name}' (size={partition.size:#x})...")
+        say(f"Generating NVS image from '{csv_file}' for partition '{partition.name}' (size={partition.size:#x})...")
         image = generate_nvs_image(csv_file, partition.size)
     image = _encrypt(image, hmac_key, data)
-    print(f"Writing NVS image to partition '{partition.name}' (offset={partition.offset:#x}, size={partition.size:#x})")
+    say(f"Writing NVS image to partition '{partition.name}' (offset={partition.offset:#x}, size={partition.size:#x})")
     write_flash(esp=loaded.esp, addr_data=[(partition.offset, image)], flash_size='detect',
                 **write_flash_options(options, skip_flashed=True, diff=True))
 
@@ -148,7 +148,7 @@ def _read_image(state, partition, image_file, command):
 
     loaded = state.setup()
     part = _nvs_partition(loaded, partition)
-    print(f"Reading partition {part.name} (offset={part.offset:#x}, size={part.size:#x})")
+    say(f"Reading partition {part.name} (offset={part.offset:#x}, size={part.size:#x})")
     return loaded.esp.read_flash(part.offset, part.size), part, f"partition '{part.name}'"
 
 
@@ -486,8 +486,8 @@ def _write_pages(esp, part, result, dirty, options, hmac_key=None):
     # A page's ciphertext depends only on its plaintext and position, so the dirty pages hold.
     writes = _contiguous_writes(part.offset, _encrypt(result, hmac_key), dirty)
     total = sum(len(d) for _, d in writes)
-    print(f"Writing {total:#x} bytes to partition '{part.name}' in "
-          f"{len(writes)} run{'' if len(writes) == 1 else 's'}")
+    say(f"Writing {total:#x} bytes to partition '{part.name}' in "
+        f"{len(writes)} run{'' if len(writes) == 1 else 's'}")
     write_flash(esp=esp, addr_data=writes, flash_size='detect',
                 **write_flash_options(options, skip_flashed=True, diff=True))
 
@@ -522,15 +522,15 @@ def edit_nvs_partition(esp, part, edits, options, read_file=_read_host_file, hma
     import idftool.nvs as nvs
     from idftool.nvs.edit import apply
 
-    print(f"Reading partition {part.name} (offset={part.offset:#x}, size={part.size:#x})")
+    say(f"Reading partition {part.name} (offset={part.offset:#x}, size={part.size:#x})")
     data = _decrypt(esp.read_flash(part.offset, part.size), hmac_key, f"partition '{part.name}'")
     image = nvs.parse(data)
     _report_errors(image)
     result, changes, dirty, _ = apply(data, _resolve_untyped(image, edits, read_file))
     for change in changes:
-        print(_describe(change))
+        say(_describe(change))
     if not dirty:
-        print("Nothing changed.")
+        say("Nothing changed.")
         return
     _write_pages(esp, part, result, dirty, options, hmac_key)
 
@@ -578,22 +578,22 @@ def set_nvs(state, args, image_file, deletes, namespace, output_file, do_rewrite
 
     result, changes, dirty, compacted = apply(data, edits, force_rewrite=do_rewrite)
 
-    print(f"Editing {source} ({len(data):#x} bytes)")
+    say(f"Editing {source} ({len(data):#x} bytes)")
     for change in changes:
-        print(_describe(change))
+        say(_describe(change))
 
     if not dirty:
-        print("Nothing changed.")
+        say("Nothing changed.")
         return
 
     if compacted:
-        print("No room left to append — the image was compacted and rewritten in full.")
+        say("No room left to append — the image was compacted and rewritten in full.")
     else:
-        print(f"Appended in place; {len(dirty)} of {len(data) // nvs.PAGE_SIZE} "
-              f"page{'' if len(dirty) == 1 else 's'} changed ({', '.join(map(str, dirty))}).")
+        say(f"Appended in place; {len(dirty)} of {len(data) // nvs.PAGE_SIZE} "
+            f"page{'' if len(dirty) == 1 else 's'} changed ({', '.join(map(str, dirty))}).")
 
     if dry_run:
-        print("Dry run — nothing written.")
+        say("Dry run — nothing written.")
         return
 
     if part is not None:
@@ -602,7 +602,7 @@ def set_nvs(state, args, image_file, deletes, namespace, output_file, do_rewrite
         target = output_file or image_file
         with open(target, 'wb') as f:
             f.write(_encrypt(result, hmac_key))
-        print(f"Wrote {len(result):#x} bytes to '{target}'")
+        say(f"Wrote {len(result):#x} bytes to '{target}'")
 
 
 @cli.command('set-nvs', help='Set or delete keys in an NVS partition or image')

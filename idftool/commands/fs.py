@@ -11,7 +11,7 @@ import rich_click as click
 
 
 from idftool.cli import cli, pass_state, reject_file_as_partition
-from idftool.display import print_rows
+from idftool.display import print_rows, say
 from idftool.flash import FLASH_OPTION_FLAGS, flash_options, split_options, write_flash, write_flash_options
 from idftool.params import BASED_INT
 from idftool.partitions import get_partition
@@ -155,8 +155,8 @@ def write_fs(state, partition, source, fs_type, **options):
     opts = _fs_options_for(fs_type, options)
 
     if os.path.isdir(source):
-        print(f"Creating {fs_type} image from '{source}' for partition '{part.name}' (size={part.size:#x})...")
-        print(f"  {fs.describe(fs_type, part.size, **opts)}")
+        say(f"Creating {fs_type} image from '{source}' for partition '{part.name}' (size={part.size:#x})...")
+        say(f"  {fs.describe(fs_type, part.size, **opts)}")
         image = fs.create(fs_type, source, part.size, **opts)
     else:
         # A single file is ambiguous: it is either an already-built image or content to put
@@ -167,7 +167,7 @@ def write_fs(state, partition, source, fs_type, **options):
             if len(data) > part.size:
                 raise ValueError(f"Image '{source}' size {len(data):#x} exceeds partition "
                                  f"{part.name} size {part.size:#x}")
-            print(f"Using {fs_type} image '{source}' for partition '{part.name}' (size={part.size:#x})...")
+            say(f"Using {fs_type} image '{source}' for partition '{part.name}' (size={part.size:#x})...")
             if len(data) < part.size:
                 # Deliberately not padded: a wear-levelled FAT image keeps its metadata in the
                 # last sectors and records its own size, so padding it out would corrupt it.
@@ -176,14 +176,15 @@ def write_fs(state, partition, source, fs_type, **options):
                       f"may not mount", file=sys.stderr)
             image = data
         else:
-            print(f"Creating {fs_type} image containing '{source}' for partition "
-                  f"'{part.name}' (size={part.size:#x})...")
+            say(f"Creating {fs_type} image containing '{source}' for partition "
+                f"'{part.name}' (size={part.size:#x})...")
             image = fs.create(fs_type, source, part.size, **opts)
 
-    with fs.mount(fs_type, image, **opts) as volume:
-        print_rows(fs.listing_rows(volume.entries()))
-    print(f"Writing {fs_type} image to partition '{part.name}' "
-          f"(offset={part.offset:#x}, size={part.size:#x})")
+    if not state.quiet:
+        with fs.mount(fs_type, image, **opts) as volume:
+            print_rows(fs.listing_rows(volume.entries()))
+    say(f"Writing {fs_type} image to partition '{part.name}' "
+        f"(offset={part.offset:#x}, size={part.size:#x})")
     write_flash(esp=loaded.esp, addr_data=[(part.offset, image)], flash_size='detect',
                 **write_flash_options(flash, skip_flashed=True, diff=True))
 
@@ -197,7 +198,7 @@ def edit_fs_partition(esp, part, put, delete, options):
 
     import idftool.fs as fs
 
-    print(f"Reading partition {part.name} (offset={part.offset:#x}, size={part.size:#x})")
+    say(f"Reading partition {part.name} (offset={part.offset:#x}, size={part.size:#x})")
     data = esp.read_flash(part.offset, part.size)
     fs_type = fs.resolve_type(partition=part, image=data, what=f"partition '{part.name}'")
     with tempfile.TemporaryDirectory() as tmp:
@@ -218,18 +219,18 @@ def edit_fs_partition(esp, part, put, delete, options):
             elif target.exists():
                 target.unlink()
             else:
-                print(f"  {path} was not there to delete")
+                say(f"  {path} was not there to delete")
                 continue
-            print(f"  - {path}")
+            say(f"  - {path}")
         for path, content in put.items():
             target = inside(path)
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(content)
-            print(f"  + {path} ({len(content)} bytes)")
+            say(f"  + {path} ({len(content)} bytes)")
         image = fs.create(fs_type, tmp, part.size)
 
-    print(f"Writing {fs_type} image to partition '{part.name}' "
-          f"(offset={part.offset:#x}, size={part.size:#x})")
+    say(f"Writing {fs_type} image to partition '{part.name}' "
+        f"(offset={part.offset:#x}, size={part.size:#x})")
     write_flash(esp=esp, addr_data=[(part.offset, image)], flash_size='detect',
                 **write_flash_options(options, skip_flashed=True, diff=True))
 

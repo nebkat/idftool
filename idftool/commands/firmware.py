@@ -7,6 +7,7 @@ from esp_idf_defs.partitions import APP_TYPE, DATA_TYPE, SUBTYPES
 
 from idftool.apps import load_app_binary
 from idftool.cli import cli, pass_state
+from idftool.display import say
 from idftool.flash import flash_options, option_group, write_flash, write_flash_options
 from idftool.partitions import read_otadata, write_otadata
 
@@ -47,13 +48,13 @@ def otadata_partition_of(partition_table):
 
 
 def flash_factory(esp, partition_table, partition, app_binary, image_metadata, options):
-    print(f"Writing '{image_metadata.app_description.title}' to partition '{partition.name}'...")
+    say(f"Writing '{image_metadata.app_description.title}' to partition '{partition.name}'...")
     write_flash(esp=esp, addr_data=[(partition.offset, app_binary)],
                 **write_flash_options(options, skip_flashed=True, diff=True))
 
     otadata_partition = otadata_partition_of(partition_table)
     if otadata_partition:
-        print("Erasing 'otadata' partition...")
+        say("Erasing 'otadata' partition...")
         esp.erase_region(offset=otadata_partition.offset, size=otadata_partition.size)
 
 
@@ -98,11 +99,11 @@ def ota_partition(esp, partition_table):
 def flash_ota(esp, partition_table, partition, app_binary, image_metadata, options):
     otadata_partition, otadata = read_otadata(esp, partition_table)
     next_slot = partition.subtype - SUBTYPES[APP_TYPE]['ota_0']
-    print(f"Writing '{image_metadata.app_description.title}' to partition '{partition.name}'...")
+    say(f"Writing '{image_metadata.app_description.title}' to partition '{partition.name}'...")
     write_flash(esp=esp, addr_data=[(partition.offset, app_binary)],
                 **write_flash_options(options, skip_flashed=True, diff=True))
 
-    print(f"Setting boot partition to 'ota_{next_slot}'...")
+    say(f"Setting boot partition to 'ota_{next_slot}'...")
     otadata = otadata.incremented_and_swapped(next_slot)
     write_otadata(esp, otadata_partition, otadata)
 
@@ -146,7 +147,7 @@ def boot_partition(esp, partition_table, label):
         raise ValueError(f"Partition {label} is not an OTA partition")
     ota_slot = partition.subtype & 0x0F
 
-    print(f"Setting boot partition to '{partition.name}'...")
+    say(f"Setting boot partition to '{partition.name}'...")
     otadata = otadata.incremented_and_swapped(ota_slot)
     otadata.otadata.ota_state = OtaImageState.VALID
     write_otadata(esp, otadata_partition, otadata)
@@ -170,7 +171,7 @@ def clear_boot_partition(esp, partition_table):
     if not otadata_partition:
         raise ValueError("No otadata partition found") # TODO Better error type
 
-    print("Clearing boot partition...")
+    say("Clearing boot partition...")
     esp.erase_region(offset=otadata_partition.offset, size=otadata_partition.size)
 
 

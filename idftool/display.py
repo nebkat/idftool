@@ -15,6 +15,15 @@ from esp_idf_defs.partitions import PartitionDefinition, APP_TYPE, DATA_TYPE, SU
 TYPE_STYLES = {"app": "cyan", "data": "magenta", "bootloader": "yellow", "partition_table": "yellow"}
 
 
+def say(*args) -> None:
+    """Print a line through esptool's logger, so a caller's own (``log.set_logger``) gets it
+    too. Escaped, as that logger renders Rich markup and a file name may hold brackets."""
+    from esptool.logger import log
+    from rich.markup import escape
+
+    log.print(escape(" ".join(str(a) for a in args)))
+
+
 @dataclass
 class Rows:
     """A table: rendered boxed by :func:`print_rows` on a terminal, or as Markdown."""

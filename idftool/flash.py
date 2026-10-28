@@ -27,6 +27,8 @@ from esp_pylib.logger import EspLog
 from esptool.logger import log
 from esptool.util import get_bytes, pad_to
 
+from idftool.display import say
+
 #: Keyword arguments of esptool's ``write_flash`` that idftool forwards. The ones without a
 #: flag below take images or lists rather than a yes/no, so they are library-only:
 #: ``encrypt_files`` (per-file encryption), ``diff_with`` (previously flashed images, zipped
@@ -386,23 +388,26 @@ class Progress:
         self._drawn = self.scanned
 
 
-def _say(prefix, args, file=None):
-    print(prefix + " ".join(str(a) for a in args), file=file or sys.stdout)
+def _quiet(original):
+    """What :func:`quiet_esptool` overrides on `original`, the logger's own class: routine
+    narration and progress go, while notes, warnings and errors are kept. They are printed
+    through `original`'s `print`, the one silenced here, so they still reach whichever logger
+    is installed, and this suppresses by kind rather than by matching message text."""
+    def keep(prefix, **print_options):
+        def method(self, *args, **kwargs):
+            original.print(self, prefix + " ".join(str(a) for a in args), **print_options)
+        return method
 
-
-#: What :func:`quiet_esptool` overrides: routine narration and progress go, while notes,
-#: warnings and errors are printed directly rather than through the silenced `print`, so
-#: this suppresses by kind rather than by matching message text.
-_QUIET = {
-    "print": lambda self, *args, **kwargs: None,
-    "progress_bar": lambda self, *args, **kwargs: None,
-    "stage": lambda self, *args, **kwargs: None,
-    "note": lambda self, *args, **kwargs: _say("Note: ", args),
-    "warning": lambda self, *args, **kwargs: _say("Warning: ", args),
-    "warn": lambda self, *args, **kwargs: _say("Warning: ", args),
-    "error": lambda self, *args, **kwargs: _say("", args, sys.stderr),
-    "err": lambda self, *args, **kwargs: _say("", args, sys.stderr),
-}
+    return {
+        "print": lambda self, *args, **kwargs: None,
+        "progress_bar": lambda self, *args, **kwargs: None,
+        "stage": lambda self, *args, **kwargs: None,
+        "note": keep("Note: "),
+        "warning": keep("Warning: "),
+        "warn": keep("Warning: "),
+        "error": keep("", file=sys.stderr),
+        "err": keep("", file=sys.stderr),
+    }
 
 
 @contextmanager
@@ -420,7 +425,7 @@ def quiet_esptool():
     target = EspLog.instance
     original = type(target)
     # A subclass of the logger's own class, so the swap is allowed whatever that class is.
-    target.__class__ = type("_QuietEsptool", (original,), _QUIET)
+    target.__class__ = type("_QuietEsptool", (original,), _quiet(original))
     try:
         yield
     finally:
@@ -449,7 +454,7 @@ def write_flash(esp, addr_data, flash_freq='keep', flash_mode='keep', flash_size
     if skip_flashed or diff:
         unavailable = flash_check_unavailable(esp, kwargs)
         if unavailable:
-            print(f"Note: not checking what is already in flash, {unavailable}")
+            say(f"Note: not checking what is already in flash, {unavailable}")
         else:
             if flash_size == 'detect':
                 # The comparison needs the bootloader header esptool will write.
@@ -490,9 +495,9 @@ def _plan_writes(esp, addr_data, diff, flash_freq, flash_mode, flash_size, kwarg
                 continue
 
         if len(prepared) > CHECK_FIRST_CHUNK_SIZE:
-            print(f"Comparing {described} against flash at {address:#010x}...")
+            say(f"Comparing {described} against flash at {address:#010x}...")
         if flash_matches(esp, address, prepared):
-            print(f"{described} at {address:#010x} is already in flash, skipping write")
+            say(f"{described} at {address:#010x} is already in flash, skipping write")
         else:
             planned.append(entry)
     return planned
@@ -504,7 +509,7 @@ def _write_changed_sectors(esp, address, prepared, described, kwargs):
     Returns False when the scan was abandoned before writing anything, leaving the caller to
     fall back to comparing the region as a whole.
     """
-    print(f"Comparing {described} against flash at {address:#010x}...")
+    say(f"Comparing {described} against flash at {address:#010x}...")
     written = runs = 0
     elapsed = 0.0
     abandoned = False
@@ -532,13 +537,13 @@ def _write_changed_sectors(esp, address, prepared, described, kwargs):
     # esptool reports what it wrote and how fast after every write; a differential one is
     # made of many, so the same figures are totalled up and reported once here instead.
     if written == 0:
-        print(f"{described} at {address:#010x} is already in flash, skipping write")
+        say(f"{described} at {address:#010x} is already in flash, skipping write")
     elif abandoned:
-        print(f"{described}: too much of it differs to keep comparing, wrote the remaining "
-              f"{Progress.size(written)} in full in {elapsed:.1f} seconds "
-              f"({Progress.rate(written, elapsed)})")
+        say(f"{described}: too much of it differs to keep comparing, wrote the remaining "
+            f"{Progress.size(written)} in full in {elapsed:.1f} seconds "
+            f"({Progress.rate(written, elapsed)})")
     else:
-        print(f"{described}: wrote {Progress.size(written)} of "
-              f"{Progress.size(len(prepared))} in {runs} region{'s' if runs != 1 else ''} "
-              f"in {elapsed:.1f} seconds ({Progress.rate(written, elapsed)})")
+        say(f"{described}: wrote {Progress.size(written)} of "
+            f"{Progress.size(len(prepared))} in {runs} region{'s' if runs != 1 else ''} "
+            f"in {elapsed:.1f} seconds ({Progress.rate(written, elapsed)})")
     return True

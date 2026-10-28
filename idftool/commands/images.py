@@ -12,6 +12,7 @@ from esp_idf_defs.partitions import PartitionTable
 
 from idftool.apps import find_bootloader, print_partition_table_and_apps
 from idftool.cli import cli, pass_state
+from idftool.display import say
 from idftool.flash import flash_options, option_group, write_flash, write_flash_options
 from idftool.params import BASED_INT
 from idftool.partitions import check_image_file, get_partition_address, require_partitions
@@ -174,7 +175,7 @@ def write_image(state, image_file, erase=True, **options):
         image_f.seek(esp.BOOTLOADER_FLASH_OFFSET)
         image_data = image_f.read()
 
-    print(f"Writing image '{image_file}'...")
+    say(f"Writing image '{image_file}'...")
     write_flash(
         esp=esp,
         addr_data=image_regions(image_data, esp.BOOTLOADER_FLASH_OFFSET,

@@ -5,16 +5,22 @@ in `factory`), so commands read and write real partition data and the tests chec
 """
 import hashlib
 import zipfile
+from types import SimpleNamespace
 
 import pytest
 from click.testing import CliRunner
-from esptool.targets import ESP32S3ROM
+from esptool.logger import TemplateLogger
+from esptool.targets import ESP32ROM, ESP32S2ROM, ESP32S3ROM
+from esp_idf_defs.partitions import PARTITION_TABLE_OFFSET
 
 from conftest import FIXTURES
 
 CHIP = FIXTURES / "esp32s3"
 FLASH_SIZE = 0x400000
 MAC = bytes.fromhex("7c2c679279c0")
+
+#: Where an ESP image header keeps its chip ID (``esp_image_header_t.chip_id``).
+CHIP_ID_FIELD = slice(12, 14)
 
 # From the fixture partition table.
 NVS = (0x9000, 0x6000)
@@ -42,6 +48,7 @@ class VirtualEsp:
         self.flash = bytearray(image.ljust(FLASH_SIZE, b"\xff"))
         self.resets = 0
         self.writes = []
+        self.reads = []
         self._begin = None
 
     def region(self, offset, size) -> bytes:
@@ -51,6 +58,7 @@ class VirtualEsp:
         return self
 
     def read_flash(self, offset, length, progress_fn=None):
+        self.reads.append((offset, length))
         return self.region(offset, length)
 
     def erase_region(self, offset, size):
@@ -126,14 +134,14 @@ def run(esp, tmp_path, monkeypatch):
 
     monkeypatch.chdir(tmp_path)
 
-    def invoke(*args, ok=True):
+    def invoke(*args, ok=True, stdout_only=False):
         result = CliRunner().invoke(cli, ["-p", "/dev/virtual", *map(str, args)])
         if ok:
             assert result.exit_code == 0, result.output + repr(result.exception)
         else:
             assert result.exit_code != 0, result.output
             return result.output + str(result.exception)
-        return result.output
+        return result.stdout if stdout_only else result.output
 
     return invoke
 
@@ -321,6 +329,195 @@ def test_dump_bundle_then_write_bundle_restores_the_partitions(run, tmp_path, es
     esp.erase_region(*FACTORY)
     run("write-bundle", "backup.zip")
     assert esp.region(*FACTORY) == original
+
+
+# --- a loader the caller already holds ------------------------------------------------------
+
+@pytest.fixture
+def held(esp, monkeypatch):
+    """`esp` as a loader the caller already holds: opening a connection of its own fails."""
+    import idftool.state as state
+
+    def connect(port, **_):
+        raise AssertionError(f"opened a second connection to {port}")
+
+    monkeypatch.setattr(state, "detect_chip", connect)
+    esp.serial_port = "virtual"
+    esp._port = SimpleNamespace(baudrate=115200)
+    return esp
+
+
+def test_an_attached_state_writes_an_image_through_the_held_loader(held):
+    from idftool import State, write_image
+
+    image = (CHIP / "flash-image.bin").read_bytes()
+    held.erase_region(0, FLASH_SIZE)
+    write_image(State.attached(held), CHIP / "flash-image.bin", erase=False)
+    assert held.region(0, len(image)) == image
+
+
+def for_chip(image: bytes, chip_id: int) -> bytes:
+    """An ESP image with an appended SHA-256, rebuilt for another chip: the header's chip ID
+    rewritten and the digest recomputed to match."""
+    data = bytearray(image)
+    data[CHIP_ID_FIELD] = chip_id.to_bytes(2, "little")
+    digest = -hashlib.sha256().digest_size
+    data[digest:] = hashlib.sha256(data[:digest]).digest()
+    return bytes(data)
+
+
+def image_booting_from_0x1000(tmp_path, chip_id):
+    """The fixture image with its bootloader moved to 0x1000, where the ESP32 and ESP32-S2
+    boot from, and rebuilt for `chip_id`."""
+    loader = for_chip((CHIP / "bootloader.bin").read_bytes(), chip_id)
+    image = bytearray((CHIP / "flash-image.bin").read_bytes())
+    image[:PARTITION_TABLE_OFFSET] = b"\xff" * PARTITION_TABLE_OFFSET
+    offset = ESP32ROM.BOOTLOADER_FLASH_OFFSET
+    image[offset:offset + len(loader)] = loader
+    path = tmp_path / f"chip-{chip_id}.img"
+    path.write_bytes(image)
+    return path
+
+
+@pytest.fixture
+def esp32(held):
+    """`held` as an ESP32, whose ROM boots from 0x1000 rather than from 0 as the S3's does."""
+    held.CHIP_NAME = ESP32ROM.CHIP_NAME
+    held.IMAGE_CHIP_ID = ESP32ROM.IMAGE_CHIP_ID
+    held.BOOTLOADER_FLASH_OFFSET = ESP32ROM.BOOTLOADER_FLASH_OFFSET
+    return held
+
+
+def test_an_attached_esp32_takes_its_bootloader_from_its_own_offset(esp32, tmp_path):
+    from idftool import State, write_image
+
+    image = image_booting_from_0x1000(tmp_path, ESP32ROM.IMAGE_CHIP_ID)
+    esp32.erase_region(0, FLASH_SIZE)
+    write_image(State.attached(esp32), image, erase=False)
+    loader = image.read_bytes()[ESP32ROM.BOOTLOADER_FLASH_OFFSET:PARTITION_TABLE_OFFSET]
+    assert esp32.region(ESP32ROM.BOOTLOADER_FLASH_OFFSET, len(loader)) == loader
+
+
+def test_an_attached_esp32_refuses_an_image_built_for_an_s3(esp32):
+    from idftool import State, write_image
+
+    before = esp32.region(0, FLASH_SIZE)
+    with pytest.raises(RuntimeError, match="Invalid bootloader"):
+        write_image(State.attached(esp32), CHIP / "flash-image.bin", erase=False)
+    assert esp32.region(0, FLASH_SIZE) == before
+
+
+def test_an_attached_esp32_refuses_an_image_built_for_an_esp32s2(esp32, tmp_path):
+    from idftool import State, write_image
+
+    image = image_booting_from_0x1000(tmp_path, ESP32S2ROM.IMAGE_CHIP_ID)
+    before = esp32.region(0, FLASH_SIZE)
+    with pytest.raises(RuntimeError, match="Chip ID mismatch"):
+        write_image(State.attached(esp32), image, erase=False)
+    assert esp32.region(0, FLASH_SIZE) == before
+
+
+class Narration(TemplateLogger):
+    """An esptool logger that keeps each line, as one forwarding to the caller's own log would."""
+
+    def __init__(self):
+        self.lines = []
+
+    def print(self, *args, **kwargs):
+        self.lines.append(" ".join(str(a) for a in args))
+
+    def note(self, message):
+        self.lines.append(message)
+
+    def warning(self, message):
+        self.lines.append(message)
+
+    def error(self, message):
+        self.lines.append(message)
+
+    def stage(self, finish=False):
+        pass
+
+    def progress_bar(self, *args, **kwargs):
+        pass
+
+    def set_verbosity(self, verbosity):
+        pass
+
+
+@pytest.fixture
+def narration(monkeypatch):
+    """A :class:`Narration` installed as esptool's logger for the length of the test."""
+    from esp_pylib.logger import EspLog
+    from esptool.logger import log
+
+    monkeypatch.setattr(EspLog, "instance", EspLog.instance)  # put back afterwards
+    logger = Narration()
+    log.set_logger(logger)
+    return logger
+
+
+def test_an_attached_state_narrates_to_esptools_logger_and_not_stdout(held, narration, capsys,
+                                                                   monkeypatch):
+    import idftool.flash as flash
+    from esptool.logger import log
+    from idftool import State, factory, write_image
+
+    fake = flash.esptool_write_flash
+
+    def write_flash(*args, **kwargs):
+        log.note("Cannot compress, writing uncompressed")  # as esptool does, mid-write
+        return fake(*args, **kwargs)
+
+    monkeypatch.setattr(flash, "esptool_write_flash", write_flash)
+
+    state = State.attached(held)
+    write_image(state, CHIP / "flash-image.bin", erase=False)
+    factory(state, CHIP / "app-v2.bin")
+
+    assert capsys.readouterr().out == ""
+    assert any(line.startswith("Writing image") for line in narration.lines)
+    assert any("to partition 'factory'" in line for line in narration.lines)
+    assert any("Cannot compress" in line for line in narration.lines)
+
+
+def test_every_write_through_an_attached_state_keeps_stdout_clean(held, narration, capsys,
+                                                              tmp_path, monkeypatch):
+    from idftool import (State, clear_boot, erase_partition, ota, set_boot, set_nvs,
+                         write_bundle, write_fs, write_nvs, write_partitions, write_table)
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "example.csv").write_text(
+        "key,type,encoding,value\nconfig,namespace,,\nserial,data,string,SN-0042\n")
+    (tmp_path / "assets").mkdir()
+    (tmp_path / "assets" / "a.txt").write_text("a")
+
+    state = State.attached(held)
+    ota(state, CHIP / "app-v2.bin")
+    set_boot(state, "ota_0")
+    clear_boot(state)
+    write_partitions(state, ["ota_1", str(CHIP / "app-v1.bin")])
+    erase_partition(state, "ota_1")
+    write_nvs(state, "nvs", "example.csv")
+    set_nvs(state, args=("nvs", "config:serial=SN-0043"), image_file=None, deletes=(),
+            namespace=None, output_file=None, do_rewrite=False, dry_run=False)
+    write_fs(state, "storage", "assets", None)
+    write_table(state, CHIP / "partitions.csv", force=False)
+    write_bundle(state, bundle("b.zip", {"ota_1.bin": app(2)}))
+
+    assert capsys.readouterr().out == ""
+    assert narration.lines
+
+
+def test_an_attached_state_reads_only_what_the_operation_needs(held):
+    from idftool import State, factory, write_image
+
+    state = State.attached(held)
+    write_image(state, CHIP / "flash-image.bin", erase=False)
+    assert held.reads == []  # the table comes from the image
+
+    factory(state, CHIP / "app-v2.bin")
+    assert {offset for offset, _ in held.reads} == {PARTITION_TABLE_OFFSET}
 
 
 # --- NVS and filesystems --------------------------------------------------------------------
@@ -511,16 +708,16 @@ def test_bundle_sets_nvs_from_a_csv(run, tmp_path, esp):
                      "manifest.json": {"ops": [{"op": "set-nvs", "file": "nvs/keys.csv"}]}})
     assert "keys from nvs/keys.csv" in run("print-bundle", "-f", "b.zip")
     run("write-bundle", "b.zip")
-    assert run("get-nvs", "nvs", "config:serial", "config:keep", "config:cert").splitlines()[:3] \
-        == ["SN-0050", "1", "cafe"]
+    assert run("get-nvs", "nvs", "config:serial", "config:keep", "config:cert",
+               stdout_only=True).splitlines() == ["SN-0050", "1", "cafe"]
 
 
 def test_nvs_on_the_device(run, tmp_path, esp):
     (tmp_path / "example.csv").write_text(
         "key,type,encoding,value\nconfig,namespace,,\nserial,data,string,SN-0042\n")
     run("write-nvs", "nvs", "example.csv")
-    # stdout holds just the value; the rest went to stderr, which the runner mixes in.
-    assert run("get-nvs", "nvs", "config:serial").splitlines()[0] == "SN-0042"
+    # stdout holds just the value; the rest goes to stderr.
+    assert run("get-nvs", "nvs", "config:serial", stdout_only=True) == "SN-0042\n"
     run("set-nvs", "nvs", "config:serial=SN-0043")
     assert "SN-0043" in run("print-nvs", "nvs")
     run("read-nvs", "nvs", "back.csv")
@@ -538,7 +735,8 @@ def test_encrypted_nvs_on_the_device(run, tmp_path, esp):
     assert "looks encrypted; pass --hmac-key" in run("print-nvs", "nvs", ok=False)
     assert "does not decrypt" in run("print-nvs", "nvs", "--hmac-key", "00" * 32, ok=False)
     run("set-nvs", "nvs", "config:serial=SN-0043", "--hmac-key", KEY)
-    assert run("get-nvs", "nvs", "config:serial", "--hmac-key", KEY).splitlines()[0] == "SN-0043"
+    assert run("get-nvs", "nvs", "config:serial", "--hmac-key", KEY,
+               stdout_only=True) == "SN-0043\n"
 
     bundle("b.zip", {"manifest.json": {"ops": [{"op": "set-nvs", "set": {"config:serial": "SN-0044"}}]}})
     esp.writes.clear()
