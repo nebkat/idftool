@@ -1894,14 +1894,21 @@ a single connection.</p>
 </code></pre></div>
 <p><code>State</code> also takes <code>mac=</code> and <code>probe=</code>, which behave like
 <a href="../guide/choosing-a-device/"><code>-m</code> and <code>--probe</code></a>.</p>
+<p>When you already hold a connection, <code>State.attached(esp)</code> drives it instead of
+opening one, and never resets the chip:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">idftool</span><span class="w"> </span><span class="kn">import</span> <span class="n">State</span><span class="p">,</span> <span class="n">write_bundle</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="n">write_bundle</span><span class="p">(</span><span class="n">State</span><span class="o">.</span><span class="n">attached</span><span class="p">(</span><span class="n">esp</span><span class="p">),</span> <span class="s2">"reflash.zip"</span><span class="p">)</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="n">esp</span><span class="o">.</span><span class="n">hard_reset</span><span class="p">()</span>  <span class="c1"># boot what was written, when you're ready</span>
+</code></pre></div>
 <p>Names are imported lazily, so <code>import idftool</code> has no side effects.</p>
 <h2 id="write-options">Write options<a class="headerlink" href="#write-options" title="Permanent link">&para;</a></h2>
 <p>The <a href="../reference/write-options/">write options</a> are keyword arguments, with the
 flag's name in snake case:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">idftool</span><span class="w"> </span><span class="kn">import</span> <span class="n">write_image</span><span class="p">,</span> <span class="n">write_nvs</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="n">write_image</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="s2">"flash.img"</span><span class="p">,</span> <span class="n">erase</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">diff</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="n">write_nvs</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="s2">"nvs"</span><span class="p">,</span> <span class="s2">"provision.csv"</span><span class="p">,</span> <span class="n">no_progress</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">idftool</span><span class="w"> </span><span class="kn">import</span> <span class="n">write_image</span><span class="p">,</span> <span class="n">write_nvs</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="n">write_image</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="s2">"flash.img"</span><span class="p">,</span> <span class="n">erase</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">diff</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="n">write_nvs</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="s2">"nvs"</span><span class="p">,</span> <span class="s2">"provision.csv"</span><span class="p">,</span> <span class="n">no_progress</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 </code></pre></div>
 <p><code>esptool</code> options that take data rather than a yes/no are available here only:
 <code>diff_with</code> and <code>no_diff_verify</code> (<code>esptool</code>'s
@@ -1917,13 +1924,13 @@ and returns the chosen device as a dict with <code>port</code>, <code>chip</code
 <p>Pass <code>identify</code> to name devices your own way. It's called with a connected
 <code>ESPLoader</code> for each port, and whatever it returns is shown in place of the
 chip name:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">idftool.ports</span><span class="w"> </span><span class="kn">import</span> <span class="n">select_device</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="k">def</span><span class="w"> </span><span class="nf">identify</span><span class="p">(</span><span class="n">esp</span><span class="p">):</span>
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>    <span class="k">return</span> <span class="n">read_board_name</span><span class="p">(</span><span class="n">esp</span><span class="p">)</span>  <span class="c1"># e.g. from a read-only NVS partition</span>
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>
-<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="n">found</span> <span class="o">=</span> <span class="n">select_device</span><span class="p">(</span><span class="mi">115200</span><span class="p">,</span> <span class="n">identify</span><span class="o">=</span><span class="n">identify</span><span class="p">,</span> <span class="n">message</span><span class="o">=</span><span class="s2">"Select a controller"</span><span class="p">)</span>
-<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="n">state</span><span class="o">.</span><span class="n">port</span> <span class="o">=</span> <span class="n">found</span><span class="p">[</span><span class="s2">"port"</span><span class="p">]</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">idftool.ports</span><span class="w"> </span><span class="kn">import</span> <span class="n">select_device</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="k">def</span><span class="w"> </span><span class="nf">identify</span><span class="p">(</span><span class="n">esp</span><span class="p">):</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>    <span class="k">return</span> <span class="n">read_board_name</span><span class="p">(</span><span class="n">esp</span><span class="p">)</span>  <span class="c1"># e.g. from a read-only NVS partition</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="n">found</span> <span class="o">=</span> <span class="n">select_device</span><span class="p">(</span><span class="mi">115200</span><span class="p">,</span> <span class="n">identify</span><span class="o">=</span><span class="n">identify</span><span class="p">,</span> <span class="n">message</span><span class="o">=</span><span class="s2">"Select a controller"</span><span class="p">)</span>
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="n">state</span><span class="o">.</span><span class="n">port</span> <span class="o">=</span> <span class="n">found</span><span class="p">[</span><span class="s2">"port"</span><span class="p">]</span>
 </code></pre></div>
 <p><code>identify</code> needs a connection, so every port is probed (and reset) when it's
 given, unless <code>probe=False</code>: then it runs only on ports probed with <code>p</code>. If it
