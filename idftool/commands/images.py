@@ -102,6 +102,24 @@ def cmd_dump_image(state, output_file, size):
     return dump_image(state, output_file, size)
 
 
+def image_regions(image_data, base, partitions, sector_size):
+    """`image_data`, which starts at flash offset `base`, cut at each partition's start and end.
+
+    esptool compares and diffs each region on its own. A cut that falls inside a sector is
+    left out: esptool writes whole sectors, so a region has to start on one.
+    """
+    end = base + len(image_data)
+    cuts = {base, end}
+    for partition in partitions:
+        if partition is None:
+            continue
+        for at in (partition.offset, partition.offset + partition.size):
+            if base < at < end and at % sector_size == 0:
+                cuts.add(at)
+    points = sorted(cuts)
+    return [(start, image_data[start - base:stop - base]) for start, stop in zip(points, points[1:])]
+
+
 def write_image(state, image_file, erase=True, **options):
     """Write a whole-flash image, **erasing the entire flash first** unless `erase` is False.
 
@@ -112,11 +130,13 @@ def write_image(state, image_file, erase=True, **options):
     about anyway, so it is usually unnecessary.
 
     It is also mutually exclusive with `skip_flashed`: nothing can already match on a chip
-    that was just wiped, so asking for both is an error rather than a silent no-op. Note that
-    a whole-flash image is written as a single region, so `skip_flashed` here is all or
-    nothing — the entire span has to match, which it stops doing as soon as the device boots
-    and writes its own NVS. Per-partition skipping is what `factory`, `ota` and `write` give
-    you; sector-level reflashing needs esptool's `diff_with`.
+    that was just wiped, so asking for both is an error rather than a silent no-op.
+
+    The image is written as one region per partition it covers (see :func:`image_regions`),
+    so with `erase` off, `skip_flashed` leaves every region the device already holds
+    unwritten, and `diff` writes only the sectors of the others that differ. A data partition
+    the image leaves blank and the device has written to differs, and is blanked again: the
+    flash ends up as writing the whole image would leave it.
 
     Any other keyword argument is forwarded to esptool's ``write_flash`` (see
     :data:`idftool.flash.WRITE_FLASH_OPTIONS`).
@@ -157,7 +177,10 @@ def write_image(state, image_file, erase=True, **options):
     print(f"Writing image '{image_file}'...")
     write_flash(
         esp=esp,
-        addr_data=[(esp.BOOTLOADER_FLASH_OFFSET, image_data)],
+        addr_data=image_regions(image_data, esp.BOOTLOADER_FLASH_OFFSET,
+                                [*loaded.partition_table, loaded.partition_table_entry,
+                                 loaded.bootloader_entry],
+                                esp.FLASH_SECTOR_SIZE),
         flash_size='detect',
         **write_flash_options(options, erase_all=erase),
     )

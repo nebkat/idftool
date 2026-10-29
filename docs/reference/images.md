@@ -54,11 +54,16 @@ idftool write-image --no-erase --diff build/full-flash.img
 `--skip-flashed` needs `--no-erase`: nothing can already match a chip that was
 just wiped, so asking for both is refused.
 
-`--skip-flashed` treats the image as one region, so it only skips when the
-whole image matches, which stops being true the moment the device writes its
-own NVS. `--diff` compares sector by sector and rewrites only what changed.
-To check whether a unit already runs a given build, flash just the app with
-[`ota`](firmware.md#ota) or [`factory`](firmware.md#factory).
+The image is written one partition at a time, using the partition table
+inside it. With `--no-erase`, `--skip-flashed` leaves out each partition the
+device already holds, and `--diff` rewrites only the sectors of the others that
+changed. A data partition the image leaves blank comes back blank if the device
+has written to it, so the flash ends up as writing the whole image would leave
+it.
+
+```bash
+idftool write-image --no-erase --skip-flashed --diff build/full-flash.img
+```
 
 Takes the [write options](write-options.md).
 

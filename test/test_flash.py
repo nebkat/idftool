@@ -646,3 +646,26 @@ def test_an_attached_state_drives_the_callers_connection_and_never_resets(monkey
     assert state.connect() is esp
     assert (state.port, state.baud, state.no_reset) == ("/dev/ttyACM0", 921600, True)
     assert state.primary_bootloader_offset == esp.BOOTLOADER_FLASH_OFFSET
+
+
+def test_an_image_is_written_as_one_region_per_partition():
+    import types
+
+    from idftool.commands.images import image_regions
+
+    def partition(offset, size):
+        return types.SimpleNamespace(offset=offset, size=size)
+
+    image = bytes(range(256)) * (0x30000 // 256)
+    regions = image_regions(image, 0x0, [
+        partition(0x0, 0x8000),        # bootloader
+        partition(0x8000, 0xc00),      # partition table, ending inside a sector
+        partition(0x9000, 0x7000),     # nvs
+        partition(0x10000, 0x100000),  # app, running past the image's end
+        None,
+    ], 0x1000)
+
+    assert [(offset, len(data)) for offset, data in regions] == [
+        (0x0, 0x8000), (0x8000, 0x1000), (0x9000, 0x7000), (0x10000, 0x20000),
+    ]
+    assert b"".join(data for _, data in regions) == image
