@@ -11,7 +11,7 @@ import rich_click as click
 from esptool.cmds import detect_chip
 
 from esp_pylib.constants import ESPRESSIF_VID
-from esp_pylib.serial_ports import get_port_list
+from esp_pylib.serial_ports import get_port_list, get_port_names
 
 from idftool import network
 from idftool.cli import cli, pass_state
@@ -290,6 +290,12 @@ def cmd_espefuse(state, espefuse_args):
     return run_espefuse(state, espefuse_args)
 
 
+def port_present(port) -> bool:
+    """Whether `port` is there to connect to. A Windows COM port is not a filesystem path, so a
+    port is also present when the port list names it; a network port always is."""
+    return network.is_network_port(port) or os.path.exists(port) or port in get_port_names()
+
+
 def enter_bootloader(state):
     baud, poll_interval = state.baud, 0.05
     if (state.mac or state.usb_serial) and not state.port:
@@ -305,8 +311,9 @@ def enter_bootloader(state):
             raise click.UsageError(
                 "enter-bootloader requires -p/--port, -m/--mac or --usb-serial")
         print(f"Waiting for {port}...", file=sys.stderr)
+    network.prepare(port)
     while True:
-        while not os.path.exists(port):
+        while not port_present(port):
             time.sleep(poll_interval)
         try:
             esp = detect_chip(port, baud=baud)
