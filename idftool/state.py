@@ -14,7 +14,7 @@ from esptool.cmds import detect_chip, detect_flash_size
 
 from esp_idf_defs.otadata import OtaDataParameters
 from esp_idf_defs.partitions import PartitionTable, PartitionDefinition, \
-    BOOTLOADER_TYPE, SUBTYPES, PARTITION_TABLE_TYPE
+    BOOTLOADER_TYPE, SUBTYPES, PARTITION_TABLE_OFFSET, PARTITION_TABLE_SIZE, PARTITION_TABLE_TYPE
 
 from esp_pylib.serial_ports import get_port_names
 
@@ -83,6 +83,21 @@ class State:
         #: Progress and status then belong on stderr instead — including the hard reset,
         #: which happens after the command has already printed its result.
         self.stdout_is_data = False
+
+    @classmethod
+    def attached(cls, esp: ESPLoader, *, partition_table_file=None, assume_yes=False) -> 'State':
+        """A state driving `esp`, a connection the caller already holds, for calling idftool's
+        commands as functions.
+
+        The chip is never reset: when it returns to running is the caller's decision. The
+        partition table is read off the device unless `partition_table_file` names one."""
+        state = cls(port=esp.serial_port, baud=esp._port.baudrate, no_reset=True,
+                    partition_table_file=partition_table_file,
+                    partition_table_offset=PARTITION_TABLE_OFFSET, partition_table_size=PARTITION_TABLE_SIZE,
+                    primary_bootloader_offset=esp.BOOTLOADER_FLASH_OFFSET, recovery_bootloader_offset=None,
+                    assume_yes=assume_yes)
+        state.esp = esp
+        return state
 
     def resolve_port(self, allow_none: bool = False) -> Optional[str]:
         """The port to connect to: ``-p``, else ``--mac``'s or ``--usb-serial``'s, else ask

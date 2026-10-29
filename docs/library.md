@@ -23,6 +23,16 @@ state.esp.hard_reset()  # the CLI does this after each command; here it's up to 
 `State` also takes `mac=` and `probe=`, which behave like
 [`-m` and `--probe`](guide/choosing-a-device.md).
 
+When you already hold a connection, `State.attached(esp)` drives it instead of
+opening one, and never resets the chip:
+
+```python
+from idftool import State, write_bundle
+
+write_bundle(State.attached(esp), "reflash.zip")
+esp.hard_reset()  # boot what was written, when you're ready
+```
+
 Names are imported lazily, so `import idftool` has no side effects.
 
 ## Write options

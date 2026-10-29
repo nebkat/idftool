@@ -627,3 +627,22 @@ def test_quiet_esptool_keeps_what_matters_and_restores_itself(capsys):
     out = capsys.readouterr().out
     assert "routine chatter" not in out
     assert "something worth knowing" in out
+
+
+def test_an_attached_state_drives_the_callers_connection_and_never_resets(monkeypatch):
+    import types
+
+    from esp_idf_defs.partitions import PartitionTable
+    import idftool.state as state_module
+
+    table = PartitionTable.from_csv((SAMPLES / "partitions.csv").read_text())
+    esp = _FakeEsp(0x8000, table.to_binary())
+    esp.serial_port = "/dev/ttyACM0"
+    esp._port = types.SimpleNamespace(baudrate=921600)
+    monkeypatch.setattr(state_module, "get_esp", lambda **_kwargs: pytest.fail("must not connect"))
+
+    state = state_module.State.attached(esp)
+
+    assert state.connect() is esp
+    assert (state.port, state.baud, state.no_reset) == ("/dev/ttyACM0", 921600, True)
+    assert state.primary_bootloader_offset == esp.BOOTLOADER_FLASH_OFFSET
