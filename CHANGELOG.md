@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [v1.6.3] — 2026-10-29
+
+### Fixed
+- `enter-bootloader -p` finds a Windows COM port or an `rfc2217://` port, rather
+  than waiting forever for a path that never appears.
+
 ## [v1.6.2] — 2026-10-29
 
 ### Changed
@@ -452,6 +458,7 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 ### Added
 - Initial release.
 
+[v1.6.3]: https://github.com/nebkat/idftool/releases/tag/v1.6.3
 [v1.6.2]: https://github.com/nebkat/idftool/releases/tag/v1.6.2
 [v1.6.1]: https://github.com/nebkat/idftool/releases/tag/v1.6.1
 [v1.6.0]: https://github.com/nebkat/idftool/releases/tag/v1.6.0
