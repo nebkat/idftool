@@ -834,6 +834,18 @@ def test_enter_bootloader_waits_for_the_port(monkeypatch):
     assert seen == ["/dev/virtual"] and "In download mode: ESP32-S3" in out
 
 
+@pytest.mark.parametrize("port", ["COM11", "rfc2217://bay-01:4000"])
+def test_enter_bootloader_finds_a_port_that_is_not_a_path(monkeypatch, port):
+    import idftool.commands.misc as misc
+    from idftool.cli import cli
+
+    seen = []
+    monkeypatch.setattr(misc, "get_port_names", lambda: ["COM11"])
+    monkeypatch.setattr(misc, "detect_chip", lambda port, **_: seen.append(port) or VirtualEsp(b""))
+    out = CliRunner().invoke(cli, ["-p", port, "enter-bootloader"]).output
+    assert seen == [port] and "In download mode: ESP32-S3" in out
+
+
 # --- app-info -------------------------------------------------------------------------------
 
 def test_app_info_describes_a_binary():
