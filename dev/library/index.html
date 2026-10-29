@@ -976,6 +976,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#output" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Output
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#choosing-a-device" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1828,6 +1839,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#output" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Output
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#choosing-a-device" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1917,6 +1939,17 @@ flag's name in snake case:</p>
 <p>An unknown option raises <code>TypeError</code> rather than being ignored. <code>esptool</code> reads
 its options with <code>kwargs.get</code>, so a misspelled one would otherwise be a write
 that quietly did something else.</p>
+<h2 id="output">Output<a class="headerlink" href="#output" title="Permanent link">&para;</a></h2>
+<p>A <code>State</code> from <code>State.attached</code> is quiet. It does not print the tables commands
+show on the way (the partition table, a filesystem's listing), nor read what
+only they show: otadata and each app's description. What the writes have to say
+goes through <code>esptool</code>'s logger, so a logger of your own receives idftool's
+lines along with <code>esptool</code>'s, and nothing reaches stdout:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">esptool.logger</span><span class="w"> </span><span class="kn">import</span> <span class="n">log</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="n">log</span><span class="o">.</span><span class="n">set_logger</span><span class="p">(</span><span class="n">MyLogger</span><span class="p">())</span>  <span class="c1"># an esptool.logger.TemplateLogger</span>
+</code></pre></div>
+<p><code>State(quiet=True)</code> does the same for a <code>State</code> that makes its own connection.</p>
 <h2 id="choosing-a-device">Choosing a device<a class="headerlink" href="#choosing-a-device" title="Permanent link">&para;</a></h2>
 <p><code>idftool.ports.select_device()</code> shows the <a href="../guide/choosing-a-device/">picker</a>
 and returns the chosen device as a dict with <code>port</code>, <code>chip</code>, <code>mac</code>, and
@@ -1924,13 +1957,13 @@ and returns the chosen device as a dict with <code>port</code>, <code>chip</code
 <p>Pass <code>identify</code> to name devices your own way. It's called with a connected
 <code>ESPLoader</code> for each port, and whatever it returns is shown in place of the
 chip name:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">idftool.ports</span><span class="w"> </span><span class="kn">import</span> <span class="n">select_device</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="k">def</span><span class="w"> </span><span class="nf">identify</span><span class="p">(</span><span class="n">esp</span><span class="p">):</span>
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>    <span class="k">return</span> <span class="n">read_board_name</span><span class="p">(</span><span class="n">esp</span><span class="p">)</span>  <span class="c1"># e.g. from a read-only NVS partition</span>
-<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>
-<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="n">found</span> <span class="o">=</span> <span class="n">select_device</span><span class="p">(</span><span class="mi">115200</span><span class="p">,</span> <span class="n">identify</span><span class="o">=</span><span class="n">identify</span><span class="p">,</span> <span class="n">message</span><span class="o">=</span><span class="s2">"Select a controller"</span><span class="p">)</span>
-<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="n">state</span><span class="o">.</span><span class="n">port</span> <span class="o">=</span> <span class="n">found</span><span class="p">[</span><span class="s2">"port"</span><span class="p">]</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">idftool.ports</span><span class="w"> </span><span class="kn">import</span> <span class="n">select_device</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="k">def</span><span class="w"> </span><span class="nf">identify</span><span class="p">(</span><span class="n">esp</span><span class="p">):</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>    <span class="k">return</span> <span class="n">read_board_name</span><span class="p">(</span><span class="n">esp</span><span class="p">)</span>  <span class="c1"># e.g. from a read-only NVS partition</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="n">found</span> <span class="o">=</span> <span class="n">select_device</span><span class="p">(</span><span class="mi">115200</span><span class="p">,</span> <span class="n">identify</span><span class="o">=</span><span class="n">identify</span><span class="p">,</span> <span class="n">message</span><span class="o">=</span><span class="s2">"Select a controller"</span><span class="p">)</span>
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="n">state</span><span class="o">.</span><span class="n">port</span> <span class="o">=</span> <span class="n">found</span><span class="p">[</span><span class="s2">"port"</span><span class="p">]</span>
 </code></pre></div>
 <p><code>identify</code> needs a connection, so every port is probed (and reset) when it's
 given, unless <code>probe=False</code>: then it runs only on ports probed with <code>p</code>. If it
