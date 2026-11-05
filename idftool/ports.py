@@ -82,6 +82,18 @@ USB_ADAPTERS = {
 }
 
 
+#: The USB vendors whose serial adapters an ESP board may sit behind.
+ESP_ADAPTER_VIDS = frozenset(vid for vid, _ in USB_ADAPTERS)
+
+
+def esp_ports(listed=None) -> list:
+    """The ports an ESP board may be on: those on an adapter from :data:`ESP_ADAPTER_VIDS`,
+    or every port when none is, in esptool's order. `listed` defaults to every port."""
+    if listed is None:
+        listed = serial_ports.get_port_list()
+    return [p for p in listed if p.vid in ESP_ADAPTER_VIDS] or list(listed)
+
+
 def adapter_name(port) -> str:
     """What kind of USB-serial adapter `port` is."""
     if port.vid is None:
