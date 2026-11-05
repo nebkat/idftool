@@ -1,0 +1,38 @@
+/* The two call-to-action boxes on the home page: install, or use the browser version. */
+.cta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1em;
+  margin: 1.5em 0;
+}
+
+.cta-box {
+  flex: 1 1 16em;
+  display: flex;
+  flex-direction: column;
+  padding: 0.9em 1.2em;
+  border: 2px solid var(--md-default-fg-color--lightest);
+  border-radius: 0.6em;
+  font-size: 0.8rem;
+}
+
+.cta-box:first-child {
+  border-color: var(--md-primary-fg-color);
+  background: color-mix(in srgb, var(--md-primary-fg-color) 6%, transparent);
+}
+
+.cta-box > p:first-child {
+  margin-top: 0;
+  font-size: 1.05rem;
+}
+
+/* Keep the buttons level when one box has more text than the other. */
+.cta-box > p:last-child {
+  margin-top: auto;
+  margin-bottom: 0;
+  padding-top: 0.6em;
+}
+
+.cta-box .md-button {
+  font-size: 0.8rem;
+}
