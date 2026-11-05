@@ -1970,6 +1970,14 @@ given, unless <code>probe=False</code>: then it runs only on ports probed with <
 raises, the device is still listed and usable, with the error next to it.</p>
 <p><code>State(identify=...)</code> uses it in the picker the same way as the CLI uses
 <a href="../guide/plugins/">plugins</a>.</p>
+<p>To find ports without asking, <code>idftool.ports.esp_ports()</code> lists the ones an ESP
+board may be on: those on a USB-serial adapter from <code>ESP_ADAPTER_VIDS</code>, the
+vendors idftool names in the picker, or every port when none is. Pass it a list
+of pyserial ports to filter your own selection instead:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">idftool.ports</span><span class="w"> </span><span class="kn">import</span> <span class="n">esp_ports</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="n">ports</span> <span class="o">=</span> <span class="p">[</span><span class="n">p</span><span class="o">.</span><span class="n">device</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">esp_ports</span><span class="p">()]</span>
+</code></pre></div>
 <h2 id="available-functions">Available functions<a class="headerlink" href="#available-functions" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
