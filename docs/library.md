@@ -99,6 +99,17 @@ raises, the device is still listed and usable, with the error next to it.
 `State(identify=...)` uses it in the picker the same way as the CLI uses
 [plugins](guide/plugins.md).
 
+To find ports without asking, `idftool.ports.esp_ports()` lists the ones an ESP
+board may be on: those on a USB-serial adapter from `ESP_ADAPTER_VIDS`, the
+vendors idftool names in the picker, or every port when none is. Pass it a list
+of pyserial ports to filter your own selection instead:
+
+```python
+from idftool.ports import esp_ports
+
+ports = [p.device for p in esp_ports()]
+```
+
 ## Available functions
 
 | Group | Functions |

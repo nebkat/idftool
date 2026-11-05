@@ -1026,6 +1026,31 @@ def test_a_probed_port_keeps_its_adapter():
     assert device_label(jtag) == "/dev/jtag — ESP32-S3 · ESP USB-Serial/JTAG · 9c:13:9e:1b:d4:6c"
 
 
+def test_esp_ports_are_those_on_a_known_adapter():
+    from idftool.ports import esp_ports
+
+    jtag = _usb_port("/dev/jtag", 0x303A, 0x1001, "9C:13:9E:1B:D4:6C")
+    bridge = _usb_port("/dev/bridge", 0x067B, 0x2303, "0001")
+    modem = _usb_port("/dev/modem", 0x1234, 0x0001, "0002")
+    assert esp_ports([modem, jtag, bridge]) == [jtag, bridge]
+
+
+def test_esp_ports_are_every_port_when_none_is_on_a_known_adapter():
+    from idftool.ports import esp_ports
+
+    modem = _usb_port("/dev/modem", 0x1234, 0x0001, "0002")
+    builtin = _usb_port("/dev/ttyS0", None, None, None)
+    assert esp_ports([modem, builtin]) == [modem, builtin]
+
+
+def test_esp_ports_lists_the_ports_itself(monkeypatch):
+    import idftool.ports as ports_module
+
+    jtag = _usb_port("/dev/jtag", 0x303A, 0x1001, "9C:13:9E:1B:D4:6C")
+    monkeypatch.setattr(ports_module.serial_ports, "get_port_list", lambda: [jtag])
+    assert ports_module.esp_ports() == [jtag]
+
+
 def test_a_usb_serial_finds_its_port(monkeypatch):
     from idftool.ports import find_port_for_usb_serial
 
