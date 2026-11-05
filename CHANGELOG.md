@@ -4,6 +4,13 @@ All notable changes to this project are documented here. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [v1.7.0] — 2026-11-05
+
+### Added
+- `idftool.ports.esp_ports()` lists the ports an ESP board may be on: those on a
+  USB-serial adapter from `ESP_ADAPTER_VIDS`, the vendors the picker names, or
+  every port when none is.
+
 ## [v1.6.3] — 2026-10-29
 
 ### Fixed
@@ -458,6 +465,7 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 ### Added
 - Initial release.
 
+[v1.7.0]: https://github.com/nebkat/idftool/releases/tag/v1.7.0
 [v1.6.3]: https://github.com/nebkat/idftool/releases/tag/v1.6.3
 [v1.6.2]: https://github.com/nebkat/idftool/releases/tag/v1.6.2
 [v1.6.1]: https://github.com/nebkat/idftool/releases/tag/v1.6.1
