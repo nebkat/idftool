@@ -34,3 +34,45 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           file: coverage.lcov
+
+  typecheck:
+    name: typecheck (python ${{ matrix.python }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.13"]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install
+        run: pip install -e ".[typing]"
+
+      - name: mypy --strict
+        run: mypy
+
+  package:
+    name: package
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Build
+        run: |
+          pip install build
+          python -m build
+
+      - name: Check py.typed is shipped
+        run: |
+          unzip -l dist/*.whl | grep -q 'idftool/py.typed'
+          tar -tzf dist/*.tar.gz | grep -q 'idftool/py.typed'

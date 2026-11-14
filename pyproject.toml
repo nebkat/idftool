@@ -38,6 +38,7 @@
 
 [project.optional-dependencies]
     test = ["pytest>=8", "pytest-cov>=7", "coverage>=7.10"]
+    typing = ["mypy==2.4.1", "types-pyserial"]
     # MkDocs 2.0 drops the plugin and theme system Material is built on.
     docs = ["mkdocs>=1.6,<2", "mkdocs-material~=9.7", "mike>=2"]
 
@@ -61,6 +62,18 @@
         "device: requires a real ESP connected via --port (skipped otherwise)",
         "slow: slow device test (reads or writes every partition)",
     ]
+
+[tool.mypy]
+    files = ["idftool"]
+    strict = true
+
+# Untyped: no py.typed and no stubs.
+[[tool.mypy.overrides]]
+    module = [
+        "esptool", "esptool.*", "espefuse", "espefuse.*", "esp_idf_monitor", "esp_idf_monitor.*",
+        "esp_idf_nvs_partition_gen", "esp_idf_nvs_partition_gen.*", "pyfatfs", "pyfatfs.*",
+    ]
+    ignore_missing_imports = true
 
 [tool.coverage.run]
     source = ["idftool"]
