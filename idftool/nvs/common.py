@@ -146,7 +146,7 @@ def set_entry_state(bitmap: bytearray, index: int, state: int) -> None:
     bitmap[byte] |= (state & 0b11) << offset
 
 
-def entry_crc(entry: bytes) -> int:
+def entry_crc(entry: bytes | bytearray) -> int:
     """The CRC32 an entry header should carry, over bytes [0:4] + [8:32]."""
     import zlib
     return zlib.crc32(bytes(entry[0:4]) + bytes(entry[8:32]), 0xFFFFFFFF) & 0xFFFFFFFF
@@ -158,7 +158,7 @@ def data_crc(payload: bytes) -> int:
     return zlib.crc32(bytes(payload), 0xFFFFFFFF) & 0xFFFFFFFF
 
 
-def header_crc(header: bytes) -> int:
+def header_crc(header: bytes | bytearray) -> int:
     """The CRC32 a page header should carry, over bytes [4:28]."""
     import zlib
     return zlib.crc32(bytes(header[4:28]), 0xFFFFFFFF) & 0xFFFFFFFF
@@ -297,4 +297,5 @@ def pack_primitive(type_name: str, value: int) -> bytes:
 
 def unpack_primitive(type_name: str, data: bytes) -> int:
     fmt, width = PRIMITIVES[type_name]
-    return struct.unpack(fmt, data[:width])[0]
+    value: int = struct.unpack(fmt, data[:width])[0]
+    return value

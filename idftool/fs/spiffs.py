@@ -12,7 +12,7 @@ are reassembled by collecting a file's data pages and ordering them by span inde
 which works regardless of where the device scattered them.
 """
 import struct
-from typing import Optional
+from typing import Optional, TypedDict
 
 from idftool.fs import spiffsgen
 from idftool.fs.common import FsEntry, FsError, SourceEntry, Volume
@@ -44,6 +44,12 @@ OBJ_ID_INDEX_FLAG = 0x8000
 CANDIDATE_PAGE_SIZES = (256, 128, 512, 1024, 2048)
 
 
+class _File(TypedDict):
+    name: Optional[str]
+    size: int
+    pages: dict[int, int]
+
+
 def _config(page_size: int, block_size: int, obj_name_len: int, meta_len: int,
             use_magic: bool, use_magic_len: bool) -> spiffsgen.SpiffsBuildConfig:
     return spiffsgen.SpiffsBuildConfig(
@@ -60,7 +66,7 @@ def _config(page_size: int, block_size: int, obj_name_len: int, meta_len: int,
 def create(sources: list[SourceEntry], size: int, *, page_size: int = PAGE_SIZE,
            block_size: int = BLOCK_SIZE, obj_name_len: int = OBJ_NAME_LEN,
            meta_len: int = META_LEN, use_magic: bool = True, use_magic_len: bool = True,
-           **_) -> bytes:
+           **_: object) -> bytes:
     """Build a SPIFFS image of exactly `size` bytes holding `sources`."""
     if size % block_size != 0:
         raise FsError(f"Filesystem size {size:#x} is not a multiple of the block size {block_size:#x}")
@@ -96,7 +102,7 @@ def _magic(page_size: int, blocks: int, block: int, use_magic_len: bool) -> int:
 
 class SpiffsVolume(Volume):
     def __init__(self, image: bytes, page_size: int = PAGE_SIZE, block_size: int = BLOCK_SIZE,
-                 obj_name_len: int = OBJ_NAME_LEN, meta_len: int = META_LEN):
+                 obj_name_len: int = OBJ_NAME_LEN, meta_len: int = META_LEN) -> None:
         if block_size % page_size or len(image) % block_size:
             raise FsError(f"SPIFFS image size {len(image):#x} is not a whole number of "
                           f"{block_size:#x}-byte blocks of {page_size:#x}-byte pages")
@@ -112,7 +118,7 @@ class SpiffsVolume(Volume):
         # The index page header is padded out to a 4-byte boundary before the size/type/name.
         self.index_header_len = self.data_header_len + -self.data_header_len % 4
 
-        self._files: dict[int, dict] = {}
+        self._files: dict[int, _File] = {}
         self._scan()
         if not self._files:
             # An empty volume is legitimate, so only reject images with no SPIFFS structure at all.
@@ -122,7 +128,7 @@ class SpiffsVolume(Volume):
     def _page(self, index: int) -> bytes:
         return self.image[index * self.page_size:(index + 1) * self.page_size]
 
-    def _scan(self):
+    def _scan(self) -> None:
         """Index every live page by walking each block's object lookup table."""
         for block in range(len(self.image) // self.block_size):
             lookup_start = block * self.block_size
@@ -182,12 +188,12 @@ class SpiffsVolume(Volume):
 
 
 def mount(image: bytes, *, page_size: int = PAGE_SIZE, block_size: int = BLOCK_SIZE,
-          obj_name_len: int = OBJ_NAME_LEN, meta_len: int = META_LEN, **_) -> SpiffsVolume:
+          obj_name_len: int = OBJ_NAME_LEN, meta_len: int = META_LEN, **_: object) -> SpiffsVolume:
     return SpiffsVolume(image, page_size, block_size, obj_name_len, meta_len)
 
 
 def detect(image: bytes, *, page_size: Optional[int] = None, block_size: int = BLOCK_SIZE,
-           **_) -> bool:
+           **_: object) -> bool:
     """Look for the SPIFFS volume magic in the object lookup table of every block.
 
     ESP-IDF enables ``CONFIG_SPIFFS_USE_MAGIC`` by default, which stamps a value derived
@@ -218,6 +224,6 @@ def detect(image: bytes, *, page_size: Optional[int] = None, block_size: int = B
 
 
 def describe(size: int, *, page_size: int = PAGE_SIZE, block_size: int = BLOCK_SIZE,
-             obj_name_len: int = OBJ_NAME_LEN, **_) -> str:
+             obj_name_len: int = OBJ_NAME_LEN, **_: object) -> str:
     return (f"SPIFFS, {size // block_size} blocks of {block_size:#x} bytes, "
             f"{page_size:#x}-byte pages, name limit {obj_name_len}")

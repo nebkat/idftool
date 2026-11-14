@@ -21,7 +21,7 @@ def _box(lines: list[str], title: str, width: int) -> list[str]:
     else:
         top = '╭' + '─' * (width - 2) + '╮'
 
-    body = []
+    body: list[str] = []
     for line in lines:
         line = line.expandtabs(4)
         if len(line) > inner:
@@ -102,7 +102,7 @@ def print_exception(exc: BaseException) -> None:
             print(sep, file=sys.stderr)
 
 
-def _excepthook(exc_type: type, exc_value: BaseException, exc_tb: Optional[TracebackType]) -> None:
+def _excepthook(exc_type: type[BaseException], exc_value: BaseException, exc_tb: Optional[TracebackType]) -> None:
     if issubclass(exc_type, KeyboardInterrupt):
         sys.__excepthook__(exc_type, exc_value, exc_tb)
         return

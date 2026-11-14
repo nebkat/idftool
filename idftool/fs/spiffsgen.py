@@ -138,7 +138,7 @@ class SpiffsObjLuPage(SpiffsPage):
         SpiffsPage.__init__(self, bix, build_config)
 
         self.obj_ids_limit = self.build_config.OBJ_LU_PAGES_OBJ_IDS_LIM
-        self.obj_ids = list()  # type: typing.List[ObjIdsItem]
+        self.obj_ids = list()  # type: typing.List[ObjIdsItem[SpiffsObjPageWithIdx]]
 
     def _calc_magic(self, blocks_lim):  # type: (int) -> int
         # Calculate the magic value mirroring computation done by the macro SPIFFS_MAGIC defined in

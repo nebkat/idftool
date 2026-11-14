@@ -1,6 +1,7 @@
 """Whole-flash images: ``create-image``, ``dump-image``, ``write-image``, ``print-image``."""
 import os.path
 import time
+from typing import Any, Iterable, Optional
 
 import rich_click as click
 
@@ -8,7 +9,7 @@ from esptool import flash_size_bytes
 from esptool.cmds import read_flash, merge_bin, detect_flash_size
 
 from esp_idf_defs import ImageMetadata, ChipId
-from esp_idf_defs.partitions import PartitionTable
+from esp_idf_defs.partitions import PartitionDefinition, PartitionTable
 
 from idftool.apps import find_bootloader, print_partition_table_and_apps
 from idftool.cli import cli, pass_state
@@ -16,17 +17,19 @@ from idftool.display import say
 from idftool.flash import flash_options, option_group, write_flash, write_flash_options
 from idftool.params import BASED_INT
 from idftool.partitions import check_image_file, get_partition_address, require_partitions
+from idftool.state import State
 
 # The erase is the option that needs finding, so keep it out of the pass-through panel.
 option_group('write-image', '--erase')
 
-def create_image(state, output_file, output_format, flash_partition_table, files):
+def create_image(state: State, output_file: str, output_format: str, flash_partition_table: bool,
+                 files: Iterable[str]) -> None:
     loaded = state.setup(needs_device=False)
     files = list(files)
     if len(files) % 2 != 0:
         raise ValueError("Files list must contain pairs of partition name and input file")
 
-    addr_data = []
+    addr_data: list[tuple[int, str | bytes]] = []
     for partition_name, input_file in list(zip(files[::2], files[1::2])):
         partition, address = get_partition_address(
             loaded.partition_table, loaded.partition_table_entry, loaded.bootloader_entry, partition_name)
@@ -61,11 +64,12 @@ def create_image(state, output_file, output_format, flash_partition_table, files
 @click.option('--flash-partition-table', is_flag=True, help='Include the partition table in the image')
 @click.argument('files', nargs=-1, required=True, metavar='PARTITION FILENAME ...')
 @pass_state
-def cmd_create_image(state, output_file, output_format, flash_partition_table, files):
+def cmd_create_image(state: State, output_file: str, output_format: str,
+                     flash_partition_table: bool, files: tuple[str, ...]) -> None:
     return create_image(state, output_file, output_format, flash_partition_table, files)
 
 
-def dump_image(state, output_file, size=None):
+def dump_image(state: State, output_file: Optional[str], size: Optional[int] = None) -> None:
     """Dump flash to an image file, the whole chip unless `size` bounds it.
 
     A large flash is mostly empty — everything past the last partition is erased — and it all
@@ -73,7 +77,7 @@ def dump_image(state, output_file, size=None):
     to time out. `size` reads only the first N bytes, which is usually all that is worth having.
     """
     esp = state.connect()
-    flash_size = flash_size_bytes(detect_flash_size(esp))
+    flash_size: int = flash_size_bytes(detect_flash_size(esp))
     if size is None:
         size = flash_size
     elif size > flash_size:
@@ -99,11 +103,12 @@ def dump_image(state, output_file, size=None):
 @click.option('--size', type=BASED_INT, default=None,
               help='Bytes to read from the start of flash  [default: the whole chip]')
 @pass_state
-def cmd_dump_image(state, output_file, size):
+def cmd_dump_image(state: State, output_file: Optional[str], size: Optional[int]) -> None:
     return dump_image(state, output_file, size)
 
 
-def image_regions(image_data, base, partitions, sector_size):
+def image_regions(image_data: bytes, base: int, partitions: Iterable[Optional[PartitionDefinition]],
+                  sector_size: int) -> list[tuple[int, bytes]]:
     """`image_data`, which starts at flash offset `base`, cut at each partition's start and end.
 
     esptool compares and diffs each region on its own. A cut that falls inside a sector is
@@ -121,7 +126,7 @@ def image_regions(image_data, base, partitions, sector_size):
     return [(start, image_data[start - base:stop - base]) for start, stop in zip(points, points[1:])]
 
 
-def write_image(state, image_file, erase=True, **options):
+def write_image(state: State, image_file: str, erase: bool = True, **options: Any) -> None:
     """Write a whole-flash image, **erasing the entire flash first** unless `erase` is False.
 
     The erase is a full chip erase, not just the span the image covers: everything past the
@@ -153,11 +158,14 @@ def write_image(state, image_file, erase=True, **options):
 
     loaded = state.setup(image_file=image_file)
     esp = loaded.esp
+    bootloader_entry = loaded.bootloader_entry
+    # setup() connects, and the connection gives the bootloader offset.
+    assert esp is not None and bootloader_entry is not None
     if os.path.getsize(image_file) == 0:
         raise RuntimeError(f"Image file '{image_file}' is empty")
     with open(image_file, 'rb') as f:
-        f.seek(loaded.bootloader_entry.offset)
-        bootloader_binary = f.read(loaded.bootloader_entry.size)
+        f.seek(bootloader_entry.offset)
+        bootloader_binary = f.read(bootloader_entry.size)
     try:
         bootloader_image_metadata = ImageMetadata.from_bytes(bootloader_binary)
     except (RuntimeError, ValueError) as e:
@@ -180,7 +188,7 @@ def write_image(state, image_file, erase=True, **options):
         esp=esp,
         addr_data=image_regions(image_data, esp.BOOTLOADER_FLASH_OFFSET,
                                 [*loaded.partition_table, loaded.partition_table_entry,
-                                 loaded.bootloader_entry],
+                                 bootloader_entry],
                                 esp.FLASH_SECTOR_SIZE),
         flash_size='detect',
         **write_flash_options(options, erase_all=erase),
@@ -194,7 +202,7 @@ def write_image(state, image_file, erase=True, **options):
               help='Erase the entire flash before writing')
 @flash_options
 @pass_state
-def cmd_write_image(state, image_file, erase, **options):
+def cmd_write_image(state: State, /, image_file: str, erase: bool, **options: Any) -> None:
     """Write a full flash image to the device.
 
     The whole flash is erased first, including whatever lies past the end of the image —
@@ -205,7 +213,7 @@ def cmd_write_image(state, image_file, erase, **options):
     return write_image(state, image_file, erase, **options)
 
 
-def print_image(state, image_file):
+def print_image(state: State, image_file: str) -> None:
     image_size = check_image_file(image_file, state.partition_table_offset)
     with open(image_file, 'rb') as f:
         f.seek(state.partition_table_offset)
@@ -234,5 +242,5 @@ def print_image(state, image_file):
 @cli.command('print-image', help='Print partition table and app info from a flash image file')
 @click.option('-f', '--file', 'image_file', required=True, help='Flash image file to read')
 @pass_state
-def cmd_print_image(state, image_file):
+def cmd_print_image(state: State, image_file: str) -> None:
     return print_image(state, image_file)

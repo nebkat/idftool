@@ -18,7 +18,8 @@
         # esp-pylib, which idftool quiets during writes; 5.6 vendors bitstring inside
         # espefuse, so neither idftool nor a frozen build needs the package.
         "esptool>=5.6,<6",
-        "esp-idf-defs~=0.1.5",
+        # 0.1.8 is the first typed release (py.typed).
+        "esp-idf-defs~=0.1.8",
         # Serial port discovery and sorting, shared with esptool (which moved this
         # code out to esp-pylib). Floor is 1.1.4 rather than 1.0: the sort key
         # changed shape in 1.1.4, and the picker relies on its ordering.
@@ -48,6 +49,9 @@
 
 [tool.setuptools]
     packages = ["idftool", "idftool.commands", "idftool.fs", "idftool.nvs"]
+
+[tool.setuptools.package-data]
+    idftool = ["py.typed"]
 
 [tool.setuptools_scm]
 

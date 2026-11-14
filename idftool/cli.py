@@ -4,6 +4,7 @@ Command modules import ``cli`` and ``pass_state`` from here and register themsel
 being imported (see :mod:`idftool.commands`)."""
 import contextlib
 import sys
+from typing import Optional
 
 import rich_click as click
 from click.core import ParameterSource
@@ -20,7 +21,7 @@ pass_state = click.make_pass_decorator(State)
 
 
 
-def reject_file_as_partition(name, command):
+def reject_file_as_partition(name: Optional[str], command: str) -> None:
     """Catch an image file passed where a partition name belongs.
 
     Commands that can read either a partition or a file take the partition as the positional
@@ -91,8 +92,10 @@ click.rich_click.COMMAND_GROUPS = {
 @click.option('--recovery-bootloader-offset', type=BASED_INT, default=None,
               help='Recovery bootloader offset (used when loading a table from CSV)')
 @click.pass_context
-def cli(ctx, port, mac, usb_serial, baud, probe, yes, no_reset, partition_table_file, partition_table_offset,
-        partition_table_size, primary_bootloader_offset, recovery_bootloader_offset):
+def cli(ctx: click.Context, port: Optional[str], mac: Optional[str], usb_serial: Optional[str],
+        baud: int, probe: bool, yes: bool, no_reset: bool, partition_table_file: Optional[str],
+        partition_table_offset: int, partition_table_size: int,
+        primary_bootloader_offset: Optional[int], recovery_bootloader_offset: Optional[int]) -> None:
     """Utility for flashing, provisioning, and interacting with Espressif SOCs running ESP-IDF."""
     if sum(bool(o) for o in (port, mac, usb_serial)) > 1:
         raise click.UsageError("-p/--port, -m/--mac and --usb-serial are mutually exclusive")
@@ -116,7 +119,7 @@ def cli(ctx, port, mac, usb_serial, baud, probe, yes, no_reset, partition_table_
 
 @cli.result_callback()
 @pass_state
-def _reset_after_command(state, result, **_global_options):
+def _reset_after_command(state: State, /, result: object, **_global_options: object) -> None:
     # Runs only after a command succeeds (a command that raises propagates past this), so the chip
     # is reset only on success. Offline commands never connect, so state.esp stays None.
     if state.esp is not None and not state.no_reset:

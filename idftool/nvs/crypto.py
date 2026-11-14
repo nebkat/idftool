@@ -9,6 +9,7 @@ import hmac
 import os.path
 import re
 import struct
+from typing import Iterator
 from dataclasses import dataclass
 from hashlib import sha256
 
@@ -53,7 +54,7 @@ def parse_hmac_key(value: str) -> bytes:
     return bytes.fromhex(digits)
 
 
-def _entries(data: bytes):
+def _entries(data: bytes) -> Iterator[tuple[int, int]]:
     """Offsets of every entry whose state is not EMPTY, and its state."""
     for page in range(0, len(data) - len(data) % PAGE_SIZE, PAGE_SIZE):
         bitmap = data[page + BITMAP_OFFSET:page + BITMAP_OFFSET + BITMAP_SIZE]

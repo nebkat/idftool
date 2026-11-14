@@ -192,4 +192,4 @@ def looks_like_wl(image: bytes) -> bool:
     if stored_crc != _crc32(config[:_CONFIG_T.size]):
         return False
     _, full_mem_size, page_size, sector_size, *_ = _CONFIG_T.unpack(config[:_CONFIG_T.size])
-    return full_mem_size == len(image) and page_size == SECTOR_SIZE and sector_size == SECTOR_SIZE
+    return bool(full_mem_size == len(image) and page_size == SECTOR_SIZE and sector_size == SECTOR_SIZE)

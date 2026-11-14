@@ -14,7 +14,7 @@ import os
 import struct
 from copy import copy
 from io import BytesIO
-from typing import Optional
+from typing import Any, Iterator, Optional
 
 from pyfatfs import FAT_OEM_ENCODING, PyFATException
 from pyfatfs.DosDateTime import DosDateTime
@@ -47,7 +47,7 @@ ERASED = b'\xff'
 class _Image(BytesIO):
     """BytesIO that survives being closed, so PyFat.close() can flush without losing the image."""
 
-    def close(self):
+    def close(self) -> None:
         pass
 
     def release(self) -> bytes:
@@ -62,7 +62,7 @@ def _fat_bytes(clusters: int, bits: int) -> int:
 
 
 def _geometry(size: int, sector_size: int, sectors_per_cluster: int,
-              fat_count: int, root_entries: int, fat_type: Optional[int]) -> dict:
+              fat_count: int, root_entries: int, fat_type: Optional[int]) -> dict[str, int]:
     """Work out the BPB geometry, picking the FAT width the cluster count implies."""
     total_sectors = size // sector_size
     root_dir_sectors = (root_entries * 32 + sector_size - 1) // sector_size
@@ -141,7 +141,7 @@ def _geometry(size: int, sector_size: int, sectors_per_cluster: int,
     }
 
 
-def _format(size: int, geometry: dict, volume_id: int) -> bytearray:
+def _format(size: int, geometry: dict[str, int], volume_id: int) -> bytearray:
     """Lay down a boot sector, empty FATs and an empty root directory."""
     sector_size = geometry['sector_size']
     total_sectors = geometry['total_sectors']
@@ -227,7 +227,7 @@ def _mkdir(fs: PyFat, parent: FATDirectoryEntry, name: str, dt: DosDateTime) -> 
     return entry
 
 
-def _mkfile(fs: PyFat, parent: FATDirectoryEntry, name: str, data: bytes, dt: DosDateTime):
+def _mkfile(fs: PyFat, parent: FATDirectoryEntry, name: str, data: bytes, dt: DosDateTime) -> None:
     # ATTR_ARCHIVE is what FatFs (and ESP-IDF's fatfsgen) sets on every new file; some readers,
     # including ESP-IDF's own fatfsparse.py, match on the attribute byte exactly and skip files
     # without it.
@@ -242,7 +242,7 @@ def _mkfile(fs: PyFat, parent: FATDirectoryEntry, name: str, data: bytes, dt: Do
 
 
 def create(sources: list[SourceEntry], size: int, *, wear_levelling: bool = True,
-           device_id: Optional[int] = None, **options) -> bytes:
+           device_id: Optional[int] = None, **options: Any) -> bytes:
     """Build a FAT image that fills a `size`-byte partition.
 
     With wear levelling (the default, and how ESP-IDF mounts a ``fat`` partition in SPI
@@ -257,7 +257,7 @@ def create(sources: list[SourceEntry], size: int, *, wear_levelling: bool = True
 def _build(sources: list[SourceEntry], size: int, *, sector_size: int = SECTOR_SIZE,
            sectors_per_cluster: int = SECTORS_PER_CLUSTER, fat_count: int = FAT_COUNT,
            root_entries: int = ROOT_ENTRIES, fat_type: Optional[int] = None,
-           volume_id: Optional[int] = None, **_) -> bytes:
+           volume_id: Optional[int] = None, **_: object) -> bytes:
     """Build a bare FAT image of exactly `size` bytes holding `sources`."""
     if size % sector_size != 0:
         raise FsError(f"Filesystem size {size:#x} is not a multiple of the sector size {sector_size:#x}")
@@ -290,7 +290,7 @@ def _build(sources: list[SourceEntry], size: int, *, sector_size: int = SECTOR_S
         for source in sources:
             # Split on '/' rather than via pathlib: source paths are always posix, and
             # pathlib would rewrite the separator (and so miss the key) on Windows.
-            parent_path, _, name = source.path.rpartition('/')
+            parent_path, _sep, name = source.path.rpartition('/')
             parent = directories[parent_path]
             dt = DosDateTime.fromtimestamp(source.mtime)
             if source.is_dir:
@@ -319,7 +319,7 @@ def _build(sources: list[SourceEntry], size: int, *, sector_size: int = SECTOR_S
 
 
 class FatVolume(Volume):
-    def __init__(self, image: bytes):
+    def __init__(self, image: bytes) -> None:
         self.fs = PyFat(encoding=FAT_OEM_ENCODING)
         try:
             self.fs.set_fp(_Image(image))
@@ -329,7 +329,7 @@ class FatVolume(Volume):
     def entries(self) -> list[FsEntry]:
         return list(self._walk(self.fs.root_dir))
 
-    def _walk(self, directory: FATDirectoryEntry, prefix: str = ''):
+    def _walk(self, directory: FATDirectoryEntry, prefix: str = '') -> Iterator[FsEntry]:
         dirs, files, _ = directory.get_entries()
         for entry in sorted(dirs + files, key=lambda e: e.get_short_name()):
             # Only names that don't fit 8.3 (or that would lose their case) carry a long
@@ -349,11 +349,11 @@ class FatVolume(Volume):
         chain = self.fs.get_cluster_chain(dentry.get_cluster())
         return b''.join(self.fs.read_cluster_contents(c) for c in chain)[:dentry.filesize]
 
-    def close(self):
+    def close(self) -> None:
         self.fs.close()
 
 
-def mount(image: bytes, *, wear_levelling: Optional[bool] = None, **_) -> FatVolume:
+def mount(image: bytes, *, wear_levelling: Optional[bool] = None, **_: object) -> FatVolume:
     """Open a FAT image, unwrapping wear levelling when the image turns out to have it."""
     if wear_levelling is None:
         wear_levelling = wl.looks_like_wl(image)
@@ -378,7 +378,7 @@ def detect(image: bytes) -> bool:
 def describe(size: int, *, sector_size: int = SECTOR_SIZE,
              sectors_per_cluster: int = SECTORS_PER_CLUSTER, fat_count: int = FAT_COUNT,
              root_entries: int = ROOT_ENTRIES, fat_type: Optional[int] = None,
-             wear_levelling: bool = True, **_) -> str:
+             wear_levelling: bool = True, **_: object) -> str:
     """One-line summary of the geometry a `size`-byte partition would be built with."""
     overhead = size - wl.filesystem_size(size) if wear_levelling else 0
     g = _geometry(size - overhead, sector_size, sectors_per_cluster, fat_count, root_entries, fat_type)

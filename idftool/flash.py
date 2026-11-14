@@ -19,6 +19,9 @@ import io
 import sys
 import time
 from contextlib import contextmanager, redirect_stdout
+from typing import IO, Any, Callable, Iterator, Mapping, Optional, Sequence, TypeVar, Union
+
+from esptool import ESPLoader
 
 import rich_click as click
 from esptool.cmds import _update_image_flash_params, detect_flash_size, \
@@ -28,6 +31,11 @@ from esptool.logger import log
 from esptool.util import get_bytes, pad_to
 
 from idftool.display import say
+
+#: What esptool writes from: a file name, the bytes themselves, or a binary file.
+ImageSource = Union[str, bytes, IO[bytes]]
+
+_Command = TypeVar('_Command', bound=Callable[..., Any])
 
 #: Keyword arguments of esptool's ``write_flash`` that idftool forwards. The ones without a
 #: flag below take images or lists rather than a yes/no, so they are library-only:
@@ -100,7 +108,7 @@ DIFF_MIN_SAMPLE_MAX = 0x40000
 DIFF_COALESCE_SECTORS = 2
 
 
-def flash_options(f):
+def flash_options(f: _Command) -> _Command:
     """Attach the write_flash pass-through flags shared by the flashing commands.
 
     Each defaults to None or False, meaning "leave the default alone", so a command that adds
@@ -133,7 +141,7 @@ def flash_options(f):
     return f
 
 
-def option_group(command, *options):
+def option_group(command: str, *options: str) -> None:
     """Give a flashing command a 'Write options' help panel of its own.
 
     Without one the pass-through flags bury the handful of options the command actually
@@ -145,7 +153,7 @@ def option_group(command, *options):
     ]
 
 
-def split_options(options):
+def split_options(options: Mapping[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
     """Split a command's keyword arguments into (write_flash options, everything else).
 
     For the commands whose ``**options`` already carry something else — ``write-fs`` and its
@@ -157,7 +165,7 @@ def split_options(options):
     return flash, rest
 
 
-def write_flash_options(options, **defaults):
+def write_flash_options(options: Mapping[str, Any], **defaults: Any) -> dict[str, Any]:
     """Turn a command's options into keyword arguments for :func:`write_flash`.
 
     Takes either shape: the values click produces for the flags above (where an untouched
@@ -187,8 +195,8 @@ def write_flash_options(options, **defaults):
     return kwargs
 
 
-def bytes_as_written(esp, address, data, flash_freq='keep', flash_mode='keep',
-                     flash_size='keep'):
+def bytes_as_written(esp: ESPLoader, address: int, data: bytes, flash_freq: str = 'keep',
+                     flash_mode: str = 'keep', flash_size: str = 'keep') -> bytes:
     """The bytes esptool would put in flash for `data` at `address`.
 
     Not always the bytes handed in: writes are padded to a 4-byte boundary, and an image at
@@ -207,8 +215,9 @@ def bytes_as_written(esp, address, data, flash_freq='keep', flash_mode='keep',
     return data
 
 
-def flash_matches(esp, address, data, first_chunk_size=CHECK_FIRST_CHUNK_SIZE,
-                  chunk_size=CHECK_CHUNK_SIZE):
+def flash_matches(esp: ESPLoader, address: int, data: bytes,
+                  first_chunk_size: int = CHECK_FIRST_CHUNK_SIZE,
+                  chunk_size: int = CHECK_CHUNK_SIZE) -> bool:
     """Whether flash at `address` already holds `data`, without reading any of it back.
 
     ``SPI_FLASH_MD5`` hashes a region on the device and returns the 16 bytes, so the cost is
@@ -235,7 +244,7 @@ def flash_matches(esp, address, data, first_chunk_size=CHECK_FIRST_CHUNK_SIZE,
     return True
 
 
-def flash_check_unavailable(esp, options):
+def flash_check_unavailable(esp: ESPLoader, options: Mapping[str, Any]) -> Optional[str]:
     """Why flash contents cannot be compared before writing, or None when they can.
 
     Mirrors the conditions esptool disables its own MD5 comparison under, plus ``diff_with``:
@@ -255,8 +264,10 @@ def flash_check_unavailable(esp, options):
     return None
 
 
-def plan_sector_writes(esp, address, data, on_scanned=None, sector_size=DIFF_SECTOR_SIZE,
-                       coalesce=DIFF_COALESCE_SECTORS):
+def plan_sector_writes(esp: ESPLoader, address: int, data: bytes,
+                       on_scanned: Optional[Callable[[int], None]] = None,
+                       sector_size: int = DIFF_SECTOR_SIZE,
+                       coalesce: int = DIFF_COALESCE_SECTORS) -> Iterator[tuple[int, int, str]]:
     """Yield the writes a sector-by-sector comparison calls for, as it finds them.
 
     Yields ``(offset, length, reason)`` relative to `address`. `reason` is ``'changed'`` for
@@ -284,7 +295,8 @@ def plan_sector_writes(esp, address, data, on_scanned=None, sector_size=DIFF_SEC
     total = len(data)
     minimum = min(max(total // DIFF_MIN_SAMPLE_FRACTION, DIFF_MIN_SAMPLE_MIN),
                   DIFF_MIN_SAMPLE_MAX)
-    run_start = run_end = None
+    run_start: Optional[int] = None
+    run_end = 0
     dirty = sectors = offset = 0
 
     while offset < total:
@@ -295,10 +307,10 @@ def plan_sector_writes(esp, address, data, on_scanned=None, sector_size=DIFF_SEC
                 run_start = offset
             run_end = offset + size
             dirty += 1
-        elif run_end is not None and offset - run_end >= coalesce * sector_size:
+        elif run_start is not None and offset - run_end >= coalesce * sector_size:
             # Far enough past the open run that a fresh write is cheaper than bridging.
             yield run_start, run_end - run_start, 'changed'
-            run_start = run_end = None
+            run_start = None
         offset += size
         sectors += 1
         if on_scanned is not None:
@@ -329,20 +341,21 @@ class Progress:
     class _StoppedShort(Exception):
         """Thrown into ``log.progress`` so a scan that stopped short isn't drawn as done."""
 
-    def __init__(self, description, total, enabled=True):
+    def __init__(self, description: str, total: int, enabled: bool = True) -> None:
         self.description, self.total, self.enabled = description, total, enabled and total > 0
         self.scanned = self.written = 0
-        self._shown = None
+        self._shown: Optional[int] = None
         self._drawn = 0
-        self._context = self._task = None
+        self._context: Any = None
+        self._task: Any = None
 
-    def __enter__(self):
+    def __enter__(self) -> 'Progress':
         self._context = log.progress(total=self.total, description=self.description,
                                      unit='B', disable=not self.enabled)
         self._task = self._context.__enter__()
         return self
 
-    def __exit__(self, *exc):
+    def __exit__(self, *exc: Any) -> None:
         if self.scanned < self.total:
             # An abandoned or failed scan never reaches 100%: end the line where it stopped.
             if self._shown is not None:
@@ -352,20 +365,20 @@ class Progress:
         self._context.__exit__(*exc)
 
     @staticmethod
-    def size(count):
+    def size(count: int) -> str:
         """A byte count as esptool's bar shows it, e.g. ``1.20MB``."""
         if count < 1024:
             return f'{count}B'
-        for unit in ('kB', 'MB'):
-            count /= 1024
-            if count < 1024 or unit == 'MB':
-                return f'{count:.2f}{unit}'
+        scaled = count / 1024
+        if scaled < 1024:
+            return f'{scaled:.2f}kB'
+        return f'{scaled / 1024:.2f}MB'
 
     @staticmethod
-    def rate(count, seconds):
+    def rate(count: int, seconds: float) -> str:
         return f'{count / seconds * 8 / 1000:.1f} kbit/s' if seconds > 0 else 'instant'
 
-    def update(self, scanned=None, written=None):
+    def update(self, scanned: Optional[int] = None, written: Optional[int] = None) -> None:
         """Redraw, but only when the percentage has actually moved.
 
         A megabyte is 256 sectors and a redraw apiece is wasted work on a smart terminal and
@@ -388,13 +401,13 @@ class Progress:
         self._drawn = self.scanned
 
 
-def _quiet(original):
+def _quiet(original: Any) -> dict[str, Callable[..., None]]:
     """What :func:`quiet_esptool` overrides on `original`, the logger's own class: routine
     narration and progress go, while notes, warnings and errors are kept. They are printed
     through `original`'s `print`, the one silenced here, so they still reach whichever logger
     is installed, and this suppresses by kind rather than by matching message text."""
-    def keep(prefix, **print_options):
-        def method(self, *args, **kwargs):
+    def keep(prefix: str, **print_options: Any) -> Callable[..., None]:
+        def method(self: Any, *args: object, **kwargs: Any) -> None:
             original.print(self, prefix + " ".join(str(a) for a in args), **print_options)
         return method
 
@@ -411,7 +424,7 @@ def _quiet(original):
 
 
 @contextmanager
-def quiet_esptool():
+def quiet_esptool() -> Iterator[None]:
     """Silence esptool's routine progress while it writes, keeping notes and warnings.
 
     A differential write calls ``write_flash`` once per run of changed sectors, and each call
@@ -432,8 +445,9 @@ def quiet_esptool():
         target.__class__ = original
 
 
-def write_flash(esp, addr_data, flash_freq='keep', flash_mode='keep', flash_size='keep',
-                **kwargs):
+def write_flash(esp: ESPLoader, addr_data: Sequence[tuple[int, ImageSource]],
+                flash_freq: str = 'keep', flash_mode: str = 'keep', flash_size: str = 'keep',
+                **kwargs: Any) -> None:
     """esptool's ``write_flash``, with ``skip_flashed`` implemented here and ``diff`` added.
 
     esptool's own ``skip_flashed`` hashes the whole region in one go before every write, so a
@@ -464,18 +478,20 @@ def write_flash(esp, addr_data, flash_freq='keep', flash_mode='keep', flash_size
             if not addr_data:
                 return
 
-    return esptool_write_flash(esp=esp, addr_data=addr_data, flash_freq=flash_freq,
-                               flash_mode=flash_mode, flash_size=flash_size, **kwargs)
+    esptool_write_flash(esp=esp, addr_data=addr_data, flash_freq=flash_freq,
+                        flash_mode=flash_mode, flash_size=flash_size, **kwargs)
 
 
-def _plan_writes(esp, addr_data, diff, flash_freq, flash_mode, flash_size, kwargs):
+def _plan_writes(esp: ESPLoader, addr_data: Sequence[tuple[int, ImageSource]], diff: bool,
+                 flash_freq: str, flash_mode: str, flash_size: str,
+                 kwargs: Mapping[str, Any]) -> list[tuple[int, ImageSource]]:
     """What of `addr_data` is left for esptool to write, after comparing it against flash.
 
     Entries compared a sector at a time are written here, as the comparison finds them, and
     do not come back. The rest are returned as they came in, so that esptool still sees the
     file names it prints and re-reads them itself.
     """
-    planned = []
+    planned: list[tuple[int, ImageSource]] = []
     for entry in addr_data:
         address, source = entry
         data, name = get_bytes(source)
@@ -503,7 +519,8 @@ def _plan_writes(esp, addr_data, diff, flash_freq, flash_mode, flash_size, kwarg
     return planned
 
 
-def _write_changed_sectors(esp, address, prepared, described, kwargs):
+def _write_changed_sectors(esp: ESPLoader, address: int, prepared: bytes, described: str,
+                           kwargs: Mapping[str, Any]) -> bool:
     """Compare `prepared` against flash a sector at a time, writing what differs as it goes.
 
     Returns False when the scan was abandoned before writing anything, leaving the caller to

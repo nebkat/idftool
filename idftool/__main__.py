@@ -14,11 +14,11 @@ from idftool.cli import cli
 import idftool.commands  # noqa: F401  (registers every command on `cli`)
 
 
-def _main():
+def _main() -> None:
     install_excepthook()
     try:
         cli.main(args=sys.argv[1:], standalone_mode=False)
-    except click.exceptions.Abort:
+    except click.Abort:
         sys.exit(130)
     except click.ClickException as e:
         e.show()

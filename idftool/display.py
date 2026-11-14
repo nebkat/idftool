@@ -4,7 +4,7 @@ Anything else (a pipe, a file, a captured test) gets a plain Markdown table, unc
 before the boxed ones existed."""
 import sys
 from dataclasses import dataclass, field
-from typing import Callable, Optional
+from typing import Callable, Mapping, Optional, Sequence
 
 from esp_idf_defs.app_description import AppDescription
 from esp_idf_defs.otadata import OtaDataParameters
@@ -15,7 +15,7 @@ from esp_idf_defs.partitions import PartitionDefinition, APP_TYPE, DATA_TYPE, SU
 TYPE_STYLES = {"app": "cyan", "data": "magenta", "bootloader": "yellow", "partition_table": "yellow"}
 
 
-def say(*args) -> None:
+def say(*args: object) -> None:
     """Print a line through esptool's logger, so a caller's own (``log.set_logger``) gets it
     too. Escaped, as that logger renders Rich markup and a file name may hold brackets."""
     from esptool.logger import log
@@ -28,7 +28,7 @@ def say(*args) -> None:
 class Rows:
     """A table: rendered boxed by :func:`print_rows` on a terminal, or as Markdown."""
     headings: tuple[str, ...]
-    rows: list[tuple[str, ...]]
+    rows: Sequence[tuple[str, ...]]
     #: Indexes of right-aligned columns, and a minimum width for each (for Markdown).
     right: dict[int, int] = field(default_factory=dict)
     #: Rich style per column, on a terminal.
@@ -39,7 +39,7 @@ class Rows:
         widths = [max([len(h), self.right.get(i, 0), *(len(r[i]) for r in self.rows)])
                   for i, h in enumerate(self.headings)]
 
-        def line(cells):
+        def line(cells: Sequence[str]) -> str:
             return '| ' + ' | '.join(c.rjust(w) if i in self.right else c.ljust(w)
                                      for i, (c, w) in enumerate(zip(cells, widths))) + ' |'
 
@@ -74,7 +74,7 @@ def print_rows(rows: Rows) -> None:
         console.print(rows.footer, style="dim")
 
 
-def _keyword(value: int, keywords: dict) -> str:
+def _keyword(value: int, keywords: Mapping[str, int]) -> str:
     return next((k for k, v in keywords.items() if v == value), str(value))
 
 
@@ -85,7 +85,7 @@ def _size(size: int) -> str:
     return f"0x{size:x}"
 
 
-def print_partition_table(partition_table: list[PartitionDefinition],
+def print_partition_table(partition_table: Sequence[PartitionDefinition],
                           read: Optional[Callable[[int, int], bytes]] = None,
                           otadata: Optional[OtaDataParameters] = None) -> None:
     """Print `partition_table`, with app descriptions if `read` is given and the active

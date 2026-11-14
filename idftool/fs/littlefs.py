@@ -66,7 +66,7 @@ def _fs(size: int, block_size: int, name_max: int, buffer: Optional[bytearray] =
 
 
 def create(sources: list[SourceEntry], size: int, *, block_size: int = BLOCK_SIZE,
-           name_max: int = NAME_MAX, disk_version: int = 0, **_) -> bytes:
+           name_max: int = NAME_MAX, disk_version: int = 0, **_: object) -> bytes:
     """Build a littlefs image of exactly `size` bytes holding `sources`."""
     fs = _fs(size, block_size, name_max, disk_version=disk_version)
     try:
@@ -85,11 +85,14 @@ def create(sources: list[SourceEntry], size: int, *, block_size: int = BLOCK_SIZ
 
 class LittleFsVolume(Volume):
     def __init__(self, image: bytes, block_size: Optional[int] = None,
-                 name_max: Optional[int] = None):
+                 name_max: Optional[int] = None) -> None:
         superblock = _superblock(image)
-        if superblock is None and block_size is None:
-            raise FsError("Not a littlefs image (no superblock found)")
-        found_block_size, _, found_name_max = superblock or (block_size, 0, 0)
+        if superblock is None:
+            if block_size is None:
+                raise FsError("Not a littlefs image (no superblock found)")
+            found_block_size, found_name_max = block_size, 0
+        else:
+            found_block_size, _, found_name_max = superblock
 
         block_size = block_size or found_block_size
         # littlefs refuses to mount when the image asks for a longer name than we allow, so
@@ -115,11 +118,12 @@ class LittleFsVolume(Volume):
 
     def read(self, entry: FsEntry) -> bytes:
         with self.fs.open(entry.handle, 'rb') as f:
-            return f.read()
+            data: bytes = f.read()
+            return data
 
 
 def mount(image: bytes, *, block_size: Optional[int] = None, name_max: Optional[int] = None,
-          **_) -> LittleFsVolume:
+          **_: object) -> LittleFsVolume:
     return LittleFsVolume(image, block_size=block_size, name_max=name_max)
 
 
@@ -127,5 +131,5 @@ def detect(image: bytes) -> bool:
     return _superblock(image) is not None
 
 
-def describe(size: int, *, block_size: int = BLOCK_SIZE, name_max: int = NAME_MAX, **_) -> str:
+def describe(size: int, *, block_size: int = BLOCK_SIZE, name_max: int = NAME_MAX, **_: object) -> str:
     return f"littlefs, {size // block_size} blocks of {block_size:#x} bytes, name_max {name_max}"

@@ -12,6 +12,7 @@ can legitimately contain a half-written entry — the firmware ignores those too
 ``strict=True`` to turn them into errors.
 """
 import struct
+from typing import Optional
 
 from idftool.display import Rows
 from idftool.nvs.common import (
@@ -162,6 +163,7 @@ def _reassemble(pages: list[NvsPage], errors: list[str], strict: bool) -> tuple[
                 continue
         elif entry.type in (TYPE_SZ, TYPE_BLOB):
             payload = entry.payload or b''
+            value: str | bytes
             if entry.type == TYPE_SZ:
                 # NVS stores strings with their terminating NUL; the CSV value does not have one.
                 value = payload.rstrip(b'\x00').decode('utf-8', errors='replace')
@@ -188,8 +190,9 @@ def _reassemble(pages: list[NvsPage], errors: list[str], strict: bool) -> tuple[
     return namespaces, entries
 
 
-def _join_blob(index_entry: RawEntry, namespace: str, chunks: dict, errors: list[str],
-               strict: bool):
+def _join_blob(index_entry: RawEntry, namespace: str,
+               chunks: dict[tuple[int, str, int], RawEntry], errors: list[str],
+               strict: bool) -> Optional[NvsEntry]:
     """Stitch a v2 blob back together from the chunks its index entry points at."""
     total = struct.unpack('<I', index_entry.data[0:4])[0]
     chunk_count = index_entry.data[4]

@@ -5,6 +5,7 @@ import json
 import os.path
 import sys
 import time
+from typing import TYPE_CHECKING, Any, Iterable, Optional, cast
 from zipfile import ZipFile
 
 import rich_click as click
@@ -13,22 +14,27 @@ from esptool import flash_size_bytes
 from esptool.cmds import detect_flash_size
 
 from esp_idf_defs import ImageMetadata
-from esp_idf_defs.partitions import BOOTLOADER_TYPE, PartitionTable
+from esp_idf_defs.partitions import BOOTLOADER_TYPE, PartitionDefinition, PartitionTable
 
 from idftool.apps import check_partition_image, parse_bootloader, print_app_info, \
     print_bootloader, print_partition_table_and_apps, validate_app_binary
-from idftool.bundle import MANIFEST, ROLE_PREFIX, ROLES, BundleError, Manifest, check_bundle, \
-    factory_target, is_ota_app, normalise_chip, nvs_target, read_bundle
+from idftool.bundle import MANIFEST, ROLE_PREFIX, ROLES, Bundle, BundleCheck, BundleError, \
+    Manifest, check_bundle, factory_target, is_ota_app, normalise_chip, nvs_target, read_bundle
 from idftool.cli import cli, pass_state
 from idftool.display import say
 from idftool.flash import flash_options, option_group, write_flash, write_flash_options
 from idftool.params import HMAC_KEY
 from idftool.partitions import get_partition
+from idftool.state import State
+
+if TYPE_CHECKING:
+    from idftool.nvs.crypto import NvsKeys
 
 # Keep the pass-through write options in a panel of their own.
 option_group('write-bundle', '--hmac-key')
 
-def create_bundle(state, output_file, flash_partition_table, files, manifest_file=None):
+def create_bundle(state: State, output_file: str, flash_partition_table: bool, files: Iterable[str],
+                  manifest_file: Optional[str] = None) -> None:
     loaded = state.setup(needs_device=False)
     files = list(files)
     if len(files) % 2 != 0:
@@ -85,13 +91,15 @@ def create_bundle(state, output_file, flash_partition_table, files, manifest_fil
               help='Add this manifest.json, and the files its ops name (relative to it)')
 @click.argument('files', nargs=-1, required=True, metavar='PARTITION FILENAME ...')
 @pass_state
-def cmd_create_bundle(state, output_file, flash_partition_table, manifest_file, files):
+def cmd_create_bundle(state: State, output_file: str, flash_partition_table: bool,
+                      manifest_file: Optional[str], files: tuple[str, ...]) -> None:
     return create_bundle(state, output_file, flash_partition_table, files, manifest_file)
 
 
-def dump_bundle(state, output_file):
+def dump_bundle(state: State, output_file: Optional[str]) -> None:
     loaded = state.setup()
     esp, partition_table = loaded.esp, loaded.partition_table
+    assert esp is not None  # setup() connects
     if not output_file:
         chip = esp.CHIP_NAME.lower().replace(' ', '-')
         try:
@@ -121,18 +129,18 @@ def dump_bundle(state, output_file):
 @cli.command('dump-bundle', help='Pack every partition from the device into a ZIP')
 @click.argument('output_file', required=False)
 @pass_state
-def cmd_dump_bundle(state, output_file):
+def cmd_dump_bundle(state: State, output_file: Optional[str]) -> None:
     return dump_bundle(state, output_file)
 
 
 
 
-def _read_bundle(state, input_file):
+def _read_bundle(state: State, input_file: str) -> Bundle:
     return read_bundle(input_file, state.partition_table_offset, state.primary_bootloader_offset,
                        state.recovery_bootloader_offset)
 
 
-def _choose_table(state, check) -> bool:
+def _choose_table(state: State, check: BundleCheck) -> bool:
     """Whether to write the bundle's differing table (False keeps the device's)."""
     if not check.table_changes:
         return False
@@ -159,10 +167,11 @@ def _choose_table(state, check) -> bool:
         raise click.Abort() from None
     if answer == "Cancel":
         raise click.Abort()
-    return answer == choices[0]
+    return bool(answer == choices[0])
 
 
-def write_bundle(state, input_file, hmac_key=None, **options):
+def write_bundle(state: State, input_file: str, hmac_key: Optional["NvsKeys"] = None,
+                 **options: Any) -> None:
     """Flash a bundle: its table, bootloader, role app and named partitions, then its
     manifest's ops. Everything is checked against the device before the first write.
     `hmac_key` decrypts an encrypted NVS partition for ``set-nvs`` ops. Keyword arguments go to
@@ -175,6 +184,8 @@ def write_bundle(state, input_file, hmac_key=None, **options):
     esp = state.connect()
     bundle = _read_bundle(state, input_file)
     manifest = bundle.manifest
+    # read_bundle sets them together with `role`.
+    role_file, role_app = cast(str, bundle.role_file), cast(bytes, bundle.role_app)
     say(f"Bundle: {bundle.name}" + (f" — {manifest.description}" if manifest and manifest.description else ""))
     for i, step in enumerate(bundle.outline(), 1):
         say(f"  {i}. {step}")
@@ -194,21 +205,22 @@ def write_bundle(state, input_file, hmac_key=None, **options):
     table = table if table is not None else PartitionTable()
     table_entry, bootloader_entry = state.virtual_entries(table)
 
-    def fits(what, data, partition):
+    def fits(what: str, data: bytes, partition: PartitionDefinition) -> None:
         if len(data) > partition.size:
             raise BundleError(f"{what} size {len(data):#x} exceeds partition {partition.name} "
                               f"size {partition.size:#x}")
 
-    def resolve(name):
-        return get_partition(table, table_entry, bootloader_entry, name)
+    def resolve(name: Optional[str]) -> PartitionDefinition:
+        # Every op that resolves a partition requires one (bundle.OPS).
+        return get_partition(table, table_entry, bootloader_entry, cast(str, name))
 
-    def read_file(name):
+    def read_file(name: str) -> bytes:
         if name not in bundle.files:
             raise BundleError(f"'{name}' is not in the bundle")
         return bundle.files[name]
 
     # Check every image before the first write.
-    force = options.get('force')
+    force = bool(options.get('force'))
     if bundle.bootloader is not None:
         if bootloader_entry is None:
             raise BundleError(f"The bootloader offset of {esp.CHIP_NAME} is not known")
@@ -216,10 +228,10 @@ def write_bundle(state, input_file, hmac_key=None, **options):
         fits("bootloader.bin", bundle.bootloader, bootloader_entry)
     role_image = None
     if bundle.role:
-        _, role_image = validate_app_binary(esp, bundle.role_app, bundle.role_file)
+        _, role_image = validate_app_binary(esp, role_app, role_file)
         if bundle.role == 'factory':
-            fits(bundle.role_file, bundle.role_app, factory_target(table))
-    named = []
+            fits(role_file, role_app, cast(PartitionDefinition, factory_target(table)))
+    named: list[tuple[PartitionDefinition, bytes]] = []
     for name, data in bundle.partitions.items():
         partition = resolve(name)
         fits(f"{name}.bin", data, partition)
@@ -228,9 +240,10 @@ def write_bundle(state, input_file, hmac_key=None, **options):
     nvs_edits = {}
     for op in bundle.ops:
         if op.op in ('write', 'write-fs'):
-            fits(op.file, bundle.files[op.file], resolve(op.partition))
+            file = cast(str, op.file)  # required by both (bundle.OPS)
+            fits(file, bundle.files[file], resolve(op.partition))
             if op.op == 'write':
-                check_partition_image(esp, resolve(op.partition), bundle.files[op.file], op.file, force)
+                check_partition_image(esp, resolve(op.partition), bundle.files[file], file, force)
         elif op.op == 'set-boot' and not is_ota_app(resolve(op.partition)):
             raise BundleError(f"manifest.json: op {op.index} (set-boot): "
                               f"'{op.partition}' is not an OTA app partition")
@@ -242,7 +255,7 @@ def write_bundle(state, input_file, hmac_key=None, **options):
                 raise BundleError(f"manifest.json: op {op.index} (set-nvs): {message}") from e
             # Where the table stays, check now that the key fits the partition.
             if not (bundle.table is not None and update_table):
-                check_nvs_key(esp, nvs_target(table, op.partition), hmac_key)
+                check_nvs_key(esp, cast(PartitionDefinition, nvs_target(table, op.partition)), hmac_key)
 
     write = write_flash_options(options, skip_flashed=True, diff=True)
 
@@ -258,16 +271,18 @@ def write_bundle(state, input_file, hmac_key=None, **options):
                         flash_size='detect', **write)
 
     if bundle.bootloader is not None:
+        assert bootloader_entry is not None  # checked above
         say(f"Writing bootloader (offset={bootloader_entry.offset:#x}, size={bootloader_entry.size:#x}) from bundle")
         write_flash(esp=esp, addr_data=[(bootloader_entry.offset, bundle.bootloader)],
                     flash_size='detect', **write)
 
     if bundle.role == 'factory':
-        flash_factory(esp, table, factory_target(table), bundle.role_app, role_image, options)
+        flash_factory(esp, table, cast(PartitionDefinition, factory_target(table)), role_app,
+                      cast(ImageMetadata, role_image), options)
     elif bundle.role == 'ota':
         partition = ota_partition(esp, table)
-        fits(bundle.role_file, bundle.role_app, partition)
-        flash_ota(esp, table, partition, bundle.role_app, role_image, options)
+        fits(role_file, role_app, partition)
+        flash_ota(esp, table, partition, role_app, cast(ImageMetadata, role_image), options)
 
     if named:
         for partition, _ in named:
@@ -279,7 +294,7 @@ def write_bundle(state, input_file, hmac_key=None, **options):
         say(f"Op {op.index}: {op.describe()}")
         if op.op in ('write', 'write-fs'):
             partition = resolve(op.partition)
-            write_flash(esp=esp, addr_data=[(partition.offset, bundle.files[op.file])],
+            write_flash(esp=esp, addr_data=[(partition.offset, bundle.files[cast(str, op.file)])],
                         flash_size='detect', **write)
         elif op.op == 'erase':
             partition = resolve(op.partition)
@@ -289,10 +304,11 @@ def write_bundle(state, input_file, hmac_key=None, **options):
                               {path: bundle.files[name] for path, name in op.put.items()},
                               op.delete, options)
         elif op.op == 'set-nvs':
-            edit_nvs_partition(esp, nvs_target(table, op.partition), nvs_edits[op.index],
+            edit_nvs_partition(esp, cast(PartitionDefinition, nvs_target(table, op.partition)),
+                               nvs_edits[op.index],
                                options, read_file, hmac_key)
         elif op.op == 'set-boot':
-            boot_partition(esp, table, op.partition)
+            boot_partition(esp, table, cast(str, op.partition))
         elif op.op == 'clear-boot':
             clear_boot_partition(esp, table)
 
@@ -303,11 +319,12 @@ def write_bundle(state, input_file, hmac_key=None, **options):
               help="HMAC key of an encrypted NVS partition the manifest's set-nvs edits")
 @flash_options
 @pass_state
-def cmd_write_bundle(state, input_file, hmac_key, **options):
+def cmd_write_bundle(state: State, /, input_file: str, hmac_key: Optional["NvsKeys"],
+                     **options: Any) -> None:
     return write_bundle(state, input_file, hmac_key, **options)
 
 
-def print_bundle(state, bundle_file):
+def print_bundle(state: State, bundle_file: str) -> None:
     bundle = _read_bundle(state, bundle_file)
     manifest = bundle.manifest
     print(f"Bundle: {bundle_file} ({os.path.getsize(bundle_file):#x} bytes)")
@@ -350,9 +367,10 @@ def print_bundle(state, bundle_file):
 
     if bundle.role:
         try:
-            image = ImageMetadata.from_bytes(bundle.role_app, app_required=True)
+            image = ImageMetadata.from_bytes(cast(bytes, bundle.role_app), app_required=True)
         except ValueError as e:
             raise BundleError(f"{bundle.role_file} is not a valid application binary: {e}")
+        assert image.app_description is not None  # app_required
         print()
         print(f"{bundle.role_file}:")
         print_app_info(image.app_description, image.header, indent="  ")
@@ -361,5 +379,5 @@ def print_bundle(state, bundle_file):
 @cli.command('print-bundle', help='Print what a bundle ZIP holds and what flashing it does')
 @click.option('-f', '--file', 'bundle_file', required=True, help='Bundle ZIP to read')
 @pass_state
-def cmd_print_bundle(state, bundle_file):
+def cmd_print_bundle(state: State, bundle_file: str) -> None:
     return print_bundle(state, bundle_file)

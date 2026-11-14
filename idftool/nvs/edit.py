@@ -15,13 +15,13 @@ Driven by ``set-nvs`` in :mod:`idftool.commands.nvs`.
 import io
 import struct
 from dataclasses import dataclass
-from typing import Optional, Union
+from typing import Optional, Union, cast
 
 from idftool.nvs.common import (
     BITMAP_OFFSET, BITMAP_SIZE, CHUNK_ANY, ENTRY_ERASED, ENTRY_SIZE, ENTRY_WRITTEN,
     FIRST_ENTRY_OFFSET, HEADER_SIZE, MAX_ENTRIES, MAX_KEY_LEN, PAGE_ACTIVE, PAGE_FULL,
     PAGE_SIZE, PAGE_UNINIT, PRIMITIVES, TYPE_BLOB, TYPE_BLOB_DATA, TYPE_BLOB_IDX, TYPE_SZ,
-    VERSION1, VERSION2, NvsEntry, NvsError, NvsImage,
+    VERSION1, VERSION2, NvsEntry, NvsError, NvsImage, Value,
     data_crc, entries_for, entry_crc, header_crc, pack_primitive, set_entry_state,
 )
 from idftool.nvs.parser import parse
@@ -213,14 +213,14 @@ class _Writer:
         page = self.page_with_room(1)
         self.append(page, encode_primitive(0, name, 'u8', index))
 
-    def write_item(self, ns_index: int, key: str, type_name: str, value,
+    def write_item(self, ns_index: int, key: str, type_name: str, value: Optional[Value],
                    previous: Optional[NvsEntry] = None) -> None:
         if type_name in PRIMITIVES:
             page = self.page_with_room(1)
-            self.append(page, encode_primitive(ns_index, key, type_name, value))
+            self.append(page, encode_primitive(ns_index, key, type_name, cast(int, value)))
         elif type_name == 'string':
             # NVS stores strings NUL-terminated, and never splits one across pages.
-            payload = value.encode() + b'\x00'
+            payload = cast(str, value).encode() + b'\x00'
             limit = MAX_STRING_SIZE[self.version]
             if len(payload) > limit:
                 raise NvsError(f"string '{key}' is {len(payload)} bytes, over the "
@@ -228,7 +228,7 @@ class _Writer:
             page = self.page_with_room(1 + entries_for(len(payload)))
             self.append(page, encode_varlen(ns_index, key, TYPE_SZ, payload))
         elif type_name == 'blob':
-            self._write_blob(ns_index, key, value, previous)
+            self._write_blob(ns_index, key, cast(bytes, value), previous)
         else:
             raise NvsError(f"Cannot write type '{type_name}'")
 
@@ -289,7 +289,7 @@ def _resolve(image: NvsImage, edit: Edit) -> tuple[Optional[NvsEntry], str]:
     return existing, existing.type
 
 
-def _same(entry: NvsEntry, type_name: str, value) -> bool:
+def _same(entry: NvsEntry, type_name: str, value: object) -> bool:
     return entry.type == type_name and entry.value == value
 
 
@@ -310,7 +310,7 @@ def apply(data: bytes, edits: list[Edit], *, force_rewrite: bool = False
             raise NvsError(f"Key '{edit.key}' is longer than the {MAX_KEY_LEN}-character "
                            f"NVS limit")
 
-    def compact():
+    def compact() -> tuple[bytes, list[Change], list[int], bool]:
         # _append mutates the model it walks, so a fallback always starts from a fresh parse
         # rather than whatever state the abandoned append left behind.
         pristine = parse(data)
@@ -447,14 +447,14 @@ def rewrite(image: NvsImage, edits: list[Edit]) -> bytes:
             if not keys:
                 continue
             nvs.write_namespace(namespace)
-            for key in keys:
-                entry = entries[(namespace, key)]
+            for name in keys:
+                entry = entries[(namespace, name)]
                 if entry.type == 'string':
-                    nvs.write_entry(key, entry.value, 'string')
+                    nvs.write_entry(name, entry.value, 'string')
                 elif entry.type == 'blob':
-                    nvs.write_entry(key, entry.value.hex(), 'hex2bin')
+                    nvs.write_entry(name, entry.value.hex(), 'hex2bin')
                 else:
-                    nvs.write_entry(key, int(entry.value), entry.type)
+                    nvs.write_entry(name, int(entry.value), entry.type)
 
     result = out.getvalue()
     if len(result) > image.size:

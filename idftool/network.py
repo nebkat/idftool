@@ -13,6 +13,8 @@ minutes:
 
 :func:`prepare` fixes both for this process before a network port is opened.
 """
+from typing import Any
+
 import serial
 import serial.rfc2217
 
@@ -26,11 +28,11 @@ NETWORK_SYNC_TIMEOUT = 1.0
 URL_HANDLERS = "idftool.urlhandler"
 
 
-def is_network_port(port) -> bool:
+def is_network_port(port: object) -> bool:
     return isinstance(port, str) and port.startswith(NETWORK_SCHEMES)
 
 
-def prepare(port) -> None:
+def prepare(port: object) -> None:
     """Make this process's esptool fit for `port`, before it is opened; nothing for a local
     port. Lasts for the process: esptool's timeouts are module-wide."""
     if not is_network_port(port):
@@ -46,18 +48,18 @@ class Rfc2217Serial(serial.rfc2217.Serial):
     """pyserial's RFC 2217 client, renegotiating the port's settings only when one of them
     changes rather than whenever any is set."""
 
-    negotiated = None
+    negotiated: tuple[Any, ...] | None = None
 
-    def _settings(self) -> tuple:
-        return (self._baudrate, self._bytesize, self._parity, self._stopbits,
-                self._rtscts, self._xonxoff)
+    def _settings(self) -> tuple[Any, ...]:
+        return (self._baudrate, self._bytesize, self._parity, self._stopbits,  # type: ignore[attr-defined]
+                self._rtscts, self._xonxoff)  # type: ignore[attr-defined]
 
-    def _reconfigure_port(self):
+    def _reconfigure_port(self) -> None:
         if self.negotiated == self._settings():
             return
-        super()._reconfigure_port()
+        super()._reconfigure_port()  # type: ignore[misc]
         self.negotiated = self._settings()
 
-    def close(self):
+    def close(self) -> None:
         self.negotiated = None
         super().close()

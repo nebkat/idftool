@@ -16,7 +16,7 @@ Only top-level entries count; files the manifest's ops use go in a subdirectory.
 import json
 import os.path
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Any, Callable, Collection, Optional, cast
 from zipfile import BadZipFile, ZipFile
 
 from esptool.targets import CHIP_DEFS
@@ -93,12 +93,12 @@ class Op:
     op: str
     partition: Optional[str] = None
     file: Optional[str] = None
-    put: dict = field(default_factory=dict)
-    delete: list = field(default_factory=list)
-    set: dict = field(default_factory=dict)
+    put: dict[str, str] = field(default_factory=dict)
+    delete: list[str] = field(default_factory=list)
+    set: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
-    def from_json(cls, index: int, data) -> 'Op':
+    def from_json(cls, index: int, data: object) -> 'Op':
         where = f"manifest.json: op {index}"
         if not isinstance(data, dict):
             raise BundleError(f"{where} must be an object")
@@ -157,7 +157,7 @@ class Manifest:
     ops: list[Op] = field(default_factory=list)
 
     @classmethod
-    def from_json(cls, data) -> 'Manifest':
+    def from_json(cls, data: object) -> 'Manifest':
         if not isinstance(data, dict):
             raise BundleError("manifest.json must be a JSON object")
         name = data.get('name')
@@ -215,7 +215,9 @@ class Bundle:
 
     def written_names(self) -> list[str]:
         """Partitions written or erased by name, by file or op."""
-        return list(self.partitions) + [op.partition for op in self.ops if op.op in WRITING_OPS]
+        # Every writing op names its partition (Op.from_json requires it).
+        return list(self.partitions) + [cast(str, op.partition) for op in self.ops
+                                        if op.op in WRITING_OPS]
 
     def outline(self) -> list[str]:
         """What flashing does, step by step."""
@@ -315,6 +317,7 @@ class Difference:
     def __str__(self) -> str:
         e, a = self.expected, self.actual
         if a is None:
+            assert e is not None  # a Difference has one side or both
             return f"{self.name}: new at {e.offset:#x} ({_size(e.size)})"
         if e is None:
             return f"{self.name}: removed (was at {a.offset:#x}, {_size(a.size)})"
@@ -379,7 +382,7 @@ class BundleCheck:
 
 
 def check_bundle(bundle: Bundle, device_table: Optional[PartitionTable],
-                 virtual_names=()) -> BundleCheck:
+                 virtual_names: Collection[Optional[str]] = ()) -> BundleCheck:
     """Check `bundle` against the device's table. Names resolve against the bundle's table if
     it carries one, else the device's; `virtual_names` (the bootloader, the table) always do."""
     table = bundle.table
@@ -387,12 +390,12 @@ def check_bundle(bundle: Bundle, device_table: Optional[PartitionTable],
     used: set[str] = set()
     problems: list[str] = []
 
-    def use_where(test):
+    def use_where(test: Callable[[PartitionDefinition], bool]) -> None:
         # Picked by kind, not name: an OTA flash may pick a slot either table has.
         for t in (table, device_table):
             used.update(p.name for p in t or () if test(p))
 
-    def need(name, what):
+    def need(name: str, what: str) -> None:
         if name in virtual_names:
             return
         if current is None:
@@ -401,7 +404,8 @@ def check_bundle(bundle: Bundle, device_table: Optional[PartitionTable],
             problems.append(f"{what}: '{name}' is not a partition on this device")
         used.add(name)
 
-    def need_where(test, kind, what):
+    def need_where(test: Callable[[PartitionDefinition], bool], kind: str,
+                   what: Optional[str]) -> None:
         if current is None:
             problems.append(f"{what}: the device has no partition table")
         elif not any(test(p) for p in current):
@@ -425,7 +429,8 @@ def check_bundle(bundle: Bundle, device_table: Optional[PartitionTable],
             if current is not None and (p := nvs_target(current, None)):
                 used.add(p.name)
         else:
-            need(op.partition, what)
+            # Every other op names its partition (Op.from_json requires it).
+            need(cast(str, op.partition), what)
             if op.op == 'set-boot':
                 use_where(_is_otadata)
 
@@ -445,7 +450,7 @@ def role_conflicts(bundle: Bundle, table: PartitionTable) -> list[str]:
     if not bundle.role:
         return []
     factory = factory_target(table)
-    problems = []
+    problems: list[str] = []
     for name in dict.fromkeys(bundle.written_names()):
         p = table.find_by_name(name)
         if p is None:

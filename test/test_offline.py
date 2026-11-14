@@ -1153,3 +1153,20 @@ def tool_argv(monkeypatch):
 ])
 def test_tools_get_the_chosen_device_and_options(tool_argv, tool, args, options, expected):
     assert tool_argv(tool, *args, **options) == expected
+
+
+def test_type_checkers_see_every_lazy_export():
+    """The TYPE_CHECKING imports in idftool/__init__.py stand in for its lazy __getattr__,
+    so they must name each export from the module that defines it."""
+    import ast
+    from pathlib import Path
+
+    import idftool
+
+    tree = ast.parse(Path(idftool.__file__).read_text())
+    seen = {alias.asname: node.module
+            for block in tree.body
+            if isinstance(block, ast.If) and getattr(block.test, "id", None) == "TYPE_CHECKING"
+            for node in block.body if isinstance(node, ast.ImportFrom)
+            for alias in node.names}
+    assert seen == idftool._EXPORTS

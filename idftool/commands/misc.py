@@ -5,6 +5,8 @@ import copy
 import os.path
 import sys
 import time
+from types import ModuleType
+from typing import Any, Iterable, Optional, Sequence, cast
 
 import rich_click as click
 
@@ -15,10 +17,11 @@ from esp_pylib.serial_ports import get_port_list, get_port_names
 
 from idftool import network
 from idftool.cli import cli, pass_state
-from idftool.ports import adapter_name, probe_port, prompt_for_port, quiet_esptool, \
+from idftool.ports import Record, adapter_name, probe_port, prompt_for_port, quiet_esptool, \
     usb_port_for_mac, usb_ports_for_serial
+from idftool.state import State
 
-def list_devices(state=None, probe=False):
+def list_devices(state: Optional[State] = None, probe: bool = False) -> None:
     """List the serial ports. With `probe`, connect to each to add its chip and MAC, and
     what ``state.identify`` names it, which resets the boards."""
     from rich import box
@@ -30,7 +33,7 @@ def list_devices(state=None, probe=False):
     if not ports:
         click.echo("No serial ports found.", err=True)
         return
-    probed = {}
+    probed: dict[str, Record] = {}
     if probe:
         click.echo(f"Probing {len(ports)} port(s)…", err=True)
         baud = state.baud if state is not None else 115200
@@ -49,11 +52,12 @@ def list_devices(state=None, probe=False):
     if probe:
         header += ["Chip", "MAC"]
     header += ["Type", "USB serial #", "USB ID", "Location"]
-    rows, styles = [], []
+    rows: list[list[str]] = []
+    styles: list[list[dict[str, Any]]] = []
     for p in ports:
         native = p.vid == ESPRESSIF_VID
         row = [p.device]
-        style = [{"fg": "green", "bold": True}]
+        style: list[dict[str, Any]] = [{"fg": "green", "bold": True}]
         if probe:
             found = probed[p.device]
             if identified:
@@ -69,7 +73,7 @@ def list_devices(state=None, probe=False):
         styles.append(style)
     console = Console(highlight=False)
     if console.is_terminal:
-        def rich_style(style):
+        def rich_style(style: dict[str, Any]) -> str:
             return " ".join(filter(None, ["bold" if style.get("bold") else "",
                                           "dim" if style.get("dim") else "", style.get("fg")]))
 
@@ -104,11 +108,11 @@ def list_devices(state=None, probe=False):
 @click.option('--probe/--no-probe', default=None,
               help='Connect to each port to add its chip and MAC (resets the boards)')
 @pass_state
-def cmd_devices(state, probe):
+def cmd_devices(state: State, probe: Optional[bool]) -> None:
     return list_devices(state, state.probe if probe is None else probe)
 
 
-def _has_option(args, *names) -> bool:
+def _has_option(args: Sequence[str], *names: str) -> bool:
     """Whether `args` give any of the options `names`, in any spelling (``-b 1``, ``-b1``,
     ``--baud=1``)."""
     return any(arg == name or arg.startswith(name + "=")
@@ -116,7 +120,7 @@ def _has_option(args, *names) -> bool:
                for arg in args for name in names)
 
 
-def _option_value(args, *names):
+def _option_value(args: Sequence[str], *names: str) -> Optional[str]:
     """The value `args` give the option `names`, in any spelling, else None."""
     for index, arg in enumerate(args):
         for name in names:
@@ -129,7 +133,7 @@ def _option_value(args, *names):
     return None
 
 
-def monitor(state, monitor_args=()):
+def monitor(state: State, monitor_args: Iterable[str] = ()) -> None:
     """Run esp-idf-monitor on the device chosen by ``-p``, ``-m`` or the picker, at ``-b``'s
     baud rate if given."""
     from esp_idf_monitor import idf_monitor
@@ -150,7 +154,7 @@ def monitor(state, monitor_args=()):
              context_settings=dict(ignore_unknown_options=True, help_option_names=[]))
 @click.argument('monitor_args', nargs=-1, type=click.UNPROCESSED)
 @pass_state
-def cmd_monitor(state, monitor_args):
+def cmd_monitor(state: State, monitor_args: tuple[str, ...]) -> None:
     return monitor(state, monitor_args)
 
 
@@ -168,7 +172,7 @@ IDF_PY_DEVICE_ACTIONS = {"monitor", "erase-flash", "read-otadata", "erase-otadat
 IDF_PY_BUILD_ACTIONS = {"dfu-flash", "uf2-flash", "efuse-common-table", "efuse-custom-table"}
 
 
-def idf_py_needs_device(args) -> bool:
+def idf_py_needs_device(args: Iterable[str]) -> bool:
     """Whether idf.py `args` include an action that talks to a device."""
     for arg in args:
         action = arg.replace("_", "-")
@@ -195,7 +199,7 @@ def _idf_py() -> list[str]:
     return [python, tools] if python else [tools]
 
 
-def _exec(argv):
+def _exec(argv: list[str]) -> None:
     """Replace this process with `argv`, so idf.py owns the terminal, signals and exit code."""
     if sys.platform == "win32":
         import subprocess
@@ -204,7 +208,7 @@ def _exec(argv):
     os.execv(argv[0], argv)
 
 
-def idf_py(state, idf_py_args=()):
+def idf_py(state: State, idf_py_args: Iterable[str] = ()) -> None:
     """Run idf.py, adding ``-p`` for the device chosen by ``-p``, ``-m``, ``--usb-serial`` or
     the picker when an action needs one, and ``-b`` if given."""
     args = list(idf_py_args)
@@ -220,7 +224,7 @@ def idf_py(state, idf_py_args=()):
              context_settings=dict(ignore_unknown_options=True, help_option_names=[]))
 @click.argument('idf_py_args', nargs=-1, type=click.UNPROCESSED)
 @pass_state
-def cmd_idf_py(state, idf_py_args):
+def cmd_idf_py(state: State, idf_py_args: tuple[str, ...]) -> None:
     return idf_py(state, idf_py_args)
 
 
@@ -228,12 +232,12 @@ def cmd_idf_py(state, idf_py_args):
 ESPTOOL_OFFLINE_COMMANDS = {"elf2image", "image-info", "merge-bin", "version"}
 
 
-def _tool_argv(state, args, needs_device) -> list[str]:
+def _tool_argv(state: State, args: Iterable[str], needs_device: bool) -> list[str]:
     """`args` for esptool or espefuse, with the chosen ``--port``, ``-b`` if given, and
     ``--no-reset``. Their own options win. idftool's ``-y`` is never passed on: to
     espefuse it would mean burning without asking."""
     args = list(args)
-    prefix = []
+    prefix: list[str] = []
     if needs_device and not _has_option(args, "-p", "--port", "--port-filter"):
         if port := state.resolve_port():
             prefix += ["--port", port]
@@ -246,13 +250,13 @@ def _tool_argv(state, args, needs_device) -> list[str]:
     return argv
 
 
-def _run(tool, argv) -> None:
+def _run(tool: ModuleType, argv: list[str]) -> None:
     """Run `tool`'s own command line on `argv`, as if it had been run itself."""
     sys.argv = [tool.__name__, *argv]
     tool._main()
 
 
-def run_esptool(state, esptool_args=()):
+def run_esptool(state: State, esptool_args: Iterable[str] = ()) -> None:
     """Run esptool on the device chosen by ``-p``, ``-m`` or the picker, when its command
     needs one."""
     import esptool
@@ -269,11 +273,11 @@ def run_esptool(state, esptool_args=()):
              context_settings=dict(ignore_unknown_options=True, help_option_names=[]))
 @click.argument('esptool_args', nargs=-1, type=click.UNPROCESSED)
 @pass_state
-def cmd_esptool(state, esptool_args):
+def cmd_esptool(state: State, esptool_args: tuple[str, ...]) -> None:
     return run_esptool(state, esptool_args)
 
 
-def run_espefuse(state, espefuse_args=()):
+def run_espefuse(state: State, espefuse_args: Iterable[str] = ()) -> None:
     """Run espefuse on the device chosen by ``-p``, ``-m`` or the picker."""
     import espefuse
 
@@ -286,24 +290,24 @@ def run_espefuse(state, espefuse_args=()):
              context_settings=dict(ignore_unknown_options=True, help_option_names=[]))
 @click.argument('espefuse_args', nargs=-1, type=click.UNPROCESSED)
 @pass_state
-def cmd_espefuse(state, espefuse_args):
+def cmd_espefuse(state: State, espefuse_args: tuple[str, ...]) -> None:
     return run_espefuse(state, espefuse_args)
 
 
-def port_present(port) -> bool:
+def port_present(port: str) -> bool:
     """Whether `port` is there to connect to. A Windows COM port is not a filesystem path, so a
     port is also present when the port list names it; a network port always is."""
     return network.is_network_port(port) or os.path.exists(port) or port in get_port_names()
 
 
-def enter_bootloader(state):
+def enter_bootloader(state: State) -> None:
     baud, poll_interval = state.baud, 0.05
     if (state.mac or state.usb_serial) and not state.port:
         # Only a USB serial number can name a port that isn't there yet.
         wanted = state.mac or state.usb_serial
         print(f"Waiting for {wanted}...", file=sys.stderr)
         while (port := usb_port_for_mac(state.mac) if state.mac
-               else next(iter(usb_ports_for_serial(state.usb_serial)), None)) is None:
+               else next(iter(usb_ports_for_serial(cast(str, state.usb_serial))), None)) is None:
             time.sleep(poll_interval)
     else:
         port = state.port or prompt_for_port()
@@ -327,5 +331,5 @@ def enter_bootloader(state):
 @cli.command('enter-bootloader', help='Fast-poll the serial port and drop the chip into ROM bootloader '
                                       'mode as soon as it appears, then exit without resetting')
 @pass_state
-def cmd_enter_bootloader(state):
+def cmd_enter_bootloader(state: State) -> None:
     return enter_bootloader(state)

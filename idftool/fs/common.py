@@ -6,6 +6,7 @@ cycle: ``idftool.fs`` imports every backend to build its registry.
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
+from types import TracebackType
 from typing import Any, Optional
 
 
@@ -55,13 +56,14 @@ class Volume:
     def read(self, entry: FsEntry) -> bytes:
         raise NotImplementedError
 
-    def close(self):
+    def close(self) -> None:
         pass
 
     def __enter__(self) -> 'Volume':
         return self
 
-    def __exit__(self, *exc):
+    def __exit__(self, exc_type: Optional[type[BaseException]], exc: Optional[BaseException],
+                 tb: Optional[TracebackType]) -> None:
         self.close()
 
 

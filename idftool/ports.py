@@ -8,7 +8,7 @@ import signal
 import sys
 import time
 from pathlib import Path
-from typing import Callable, Optional
+from typing import TYPE_CHECKING, Any, Callable, Iterable, Iterator, Optional, Protocol, Sequence, cast
 
 import questionary
 import rich_click as click
@@ -16,8 +16,31 @@ import rich_click as click
 import esp_pylib.serial_ports as serial_ports
 from esp_pylib.constants import ESPRESSIF_VID
 
+if TYPE_CHECKING:
+    from esptool import ESPLoader
+    from prompt_toolkit.key_binding import KeyBindings
+    from prompt_toolkit.key_binding.key_processor import KeyPressEvent
+    from serial.tools.list_ports_common import ListPortInfo
+
 #: Given a connected ``ESPLoader``, returns an object naming the device, or None.
 Identify = Callable[["ESPLoader"], object]
+
+class UsbPort(Protocol):
+    """What :func:`adapter_name` reads of a port: a pyserial ``ListPortInfo``, or anything
+    describing a USB port the same way."""
+    @property
+    def vid(self) -> Optional[int]: ...
+    @property
+    def pid(self) -> Optional[int]: ...
+    @property
+    def product(self) -> Optional[str]: ...
+    @property
+    def description(self) -> Optional[str]: ...
+
+
+#: What is known of a port: its ``port``, and ``chip``, ``mac``, ``error`` and the rest as
+#: :func:`usb_record` and :func:`probe_port` fill them in.
+Record = dict[str, Any]
 
 REFRESH = "\0refresh"
 MANUAL = "\0manual"
@@ -29,7 +52,7 @@ NONE = "\0none"
 CAN_KILL = sys.platform != "win32"
 
 
-def _style():
+def _style() -> questionary.Style:
     return questionary.Style([
         # Matches `idftool devices`: bold green ports, ESP USB in cyan, adapter chips in yellow.
         ("meta", "bold fg:cyan"),
@@ -44,7 +67,7 @@ def _style():
 
 
 @contextlib.contextmanager
-def quiet_esptool():
+def quiet_esptool() -> Iterator[None]:
     """Silence esptool's output."""
     from esptool.logger import log
 
@@ -86,7 +109,7 @@ USB_ADAPTERS = {
 ESP_ADAPTER_VIDS = frozenset(vid for vid, _ in USB_ADAPTERS)
 
 
-def esp_ports(listed=None) -> list:
+def esp_ports(listed: Optional[Iterable["ListPortInfo"]] = None) -> list["ListPortInfo"]:
     """The ports an ESP board may be on: those on an adapter from :data:`ESP_ADAPTER_VIDS`,
     or every port when none is, in esptool's order. `listed` defaults to every port."""
     if listed is None:
@@ -94,7 +117,7 @@ def esp_ports(listed=None) -> list:
     return [p for p in listed if p.vid in ESP_ADAPTER_VIDS] or list(listed)
 
 
-def adapter_name(port) -> str:
+def adapter_name(port: UsbPort) -> str:
     """What kind of USB-serial adapter `port` is."""
     if port.vid is None:
         return port.description or ""
@@ -103,7 +126,7 @@ def adapter_name(port) -> str:
             or port.product or port.description or "USB serial")
 
 
-def usb_record(port) -> dict:
+def usb_record(port: "ListPortInfo") -> Record:
     """What USB says about `port`, without opening it: an ESP USB-Serial/JTAG port's
     serial number is the chip's MAC."""
     native = port.vid == ESPRESSIF_VID
@@ -123,7 +146,8 @@ def port_holders(port: str) -> list[tuple[int, str]]:
                                 capture_output=True, text=True, timeout=5)
     except (OSError, subprocess.SubprocessError):
         return []
-    holders, pid = [], None
+    holders: list[tuple[int, str]] = []
+    pid: Optional[int] = None
     for line in listed.stdout.splitlines():
         if line.startswith("p"):
             pid = int(line[1:])
@@ -174,7 +198,7 @@ def _probe_failure(error: BaseException, port: Optional[str] = None) -> str:
 
     from serial import SerialException
 
-    seen = error
+    seen: Optional[BaseException] = error
     while seen is not None:
         code = getattr(seen, "errno", None)
         if code in (errno.EAGAIN, errno.EBUSY):
@@ -201,12 +225,12 @@ def _probe_failure(error: BaseException, port: Optional[str] = None) -> str:
     return f"{type(error).__name__}: {error}"
 
 
-def _release(esp) -> None:
+def _release(esp: "ESPLoader") -> None:
     """Reset the chip out of download mode and close the port."""
     with contextlib.suppress(Exception):
         esp.hard_reset()
     for attribute in ("_port", "port"):
-        handle = getattr(esp, attribute, None)
+        handle: Any = getattr(esp, attribute, None)
         if hasattr(handle, "close"):
             try:
                 handle.close()
@@ -214,7 +238,7 @@ def _release(esp) -> None:
                 pass
 
 
-def probe_port(port: str, baud: int, identify: Optional[Identify] = None) -> dict:
+def probe_port(port: str, baud: int, identify: Optional[Identify] = None) -> Record:
     """Chip, MAC and ``identify(esp)`` for `port`; failures go in ``error``."""
     from esptool.cmds import detect_chip
 
@@ -231,7 +255,7 @@ def probe_port(port: str, baud: int, identify: Optional[Identify] = None) -> dic
             mac = None
             with contextlib.suppress(Exception):
                 mac = ":".join(f"{b:02x}" for b in esp.read_mac("BASE_MAC"))
-            found = {"port": port, "chip": esp.CHIP_NAME, "mac": mac, "identity": None,
+            found: Record = {"port": port, "chip": esp.CHIP_NAME, "mac": mac, "identity": None,
                      "error": None}
             if identify is not None:
                 try:
@@ -243,7 +267,7 @@ def probe_port(port: str, baud: int, identify: Optional[Identify] = None) -> dic
             _release(esp)
 
 
-def device_fields(candidate: dict) -> tuple[str, str, str, str]:
+def device_fields(candidate: Record) -> tuple[str, str, str, str]:
     """``(port, adapter, name, detail)`` for display; `name` is empty until probed."""
     port, adapter = candidate["port"], candidate.get("adapter") or ""
     if candidate.get("error"):
@@ -261,12 +285,12 @@ def device_fields(candidate: dict) -> tuple[str, str, str, str]:
     return port, adapter, chip, mac or ""
 
 
-def _columns(cells, widths) -> str:
+def _columns(cells: Iterable[str], widths: Iterable[int]) -> str:
     """`cells` padded to `widths`, skipping columns no candidate fills."""
     return "   ".join(f"{c:<{w}}" for c, w in zip(cells, widths) if w).rstrip()
 
 
-def device_label(candidate: dict, widths: Optional[tuple[int, int, int]] = None) -> str:
+def device_label(candidate: Record, widths: Optional[tuple[int, int, int]] = None) -> str:
     """A device as one line, padded to `widths` if given."""
     port, adapter, what, detail = device_fields(candidate)
     if widths is not None:
@@ -276,13 +300,13 @@ def device_label(candidate: dict, widths: Optional[tuple[int, int, int]] = None)
     return f"{port} — " + " · ".join(filter(None, [what, adapter, detail]))
 
 
-def device_widths(candidates: list[dict]) -> tuple[int, int, int]:
+def device_widths(candidates: list[Record]) -> tuple[int, int, int]:
     """Port, adapter and name column widths for `candidates`."""
     rows = [device_fields(c) for c in candidates]
-    return tuple(max((len(r[i]) for r in rows), default=0) for i in range(3))
+    return cast(tuple[int, int, int], tuple(max((len(r[i]) for r in rows), default=0) for i in range(3)))
 
 
-def device_labels(candidates: list[dict]) -> list[str]:
+def device_labels(candidates: list[Record]) -> list[str]:
     """Column-aligned labels for `candidates`."""
     widths = device_widths(candidates)
     return [device_label(c, widths) for c in candidates]
@@ -346,7 +370,7 @@ def _probe_for_mac(mac: str, baud: int) -> Optional[str]:
         with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, len(others))) as pool:
             for found in pool.map(lambda p: probe_port(p, baud), others):
                 if found["mac"] == mac:
-                    return found["port"]
+                    return cast(Optional[str], found["port"])
     return None
 
 
@@ -355,7 +379,7 @@ def print_rerun_hint(port: str, mac: Optional[str] = None,
     """Print the command with ``-p`` filled in, and with ``-m`` if the MAC is known, else
     ``--usb-serial`` if the port has a serial number no other port shares."""
     arguments = [shlex.quote(a) for a in sys.argv[1:]]
-    alternative = None
+    alternative: Optional[list[str]] = None
     if mac:
         alternative = ["-m", mac]
     elif usb_serial and len(usb_ports_for_serial(usb_serial)) == 1:
@@ -397,7 +421,7 @@ def kill_holders(port: str) -> None:
 
 def select_device(baud: int, *, identify: Optional[Identify] = None,
                   message: str = "Select device", probe: Optional[bool] = None,
-                  allow_none: bool = False) -> Optional[dict]:
+                  allow_none: bool = False) -> Optional[Record]:
     """Ask the user to pick a device; returns its :func:`usb_record` or :func:`probe_port`
     record, or ``{"port": None}`` if `allow_none` and they chose no device.
 
@@ -417,6 +441,7 @@ def select_device(baud: int, *, identify: Optional[Identify] = None,
         if answer is NONE:
             return {"port": None}
         if answer is KILL:
+            assert found is not None
             kill_holders(found["port"])
             continue
         if answer is None or answer is QUIT:
@@ -432,6 +457,7 @@ def select_device(baud: int, *, identify: Optional[Identify] = None,
                 found = probe_port(typed, baud, identify)
             if found["error"]:
                 raise click.ClickException(f"{typed}: {found['error']}")
+        assert found is not None
         click.echo(click.style("Device: ", bold=True) + device_label(found), err=True)
         return found
 
@@ -447,25 +473,26 @@ def prompt_for_port(message: str = "Select port") -> Optional[str]:
         if answer is REFRESH:
             continue
         if answer is KILL:
+            assert found is not None
             kill_holders(found["port"])
             continue
         if answer is None or answer is QUIT:
             raise click.Abort()
         if answer is MANUAL:
-            return questionary.text("Port:").ask() or None
+            return cast(Optional[str], questionary.text("Port:").ask()) or None
         return answer
 
 
-def _pick(listed, baud: Optional[int], *, probe: bool, message: str,
+def _pick(listed: Sequence["ListPortInfo"], baud: Optional[int], *, probe: bool, message: str,
           identify: Optional[Identify] = None, allow_probe: bool = True,
-          allow_none: bool = False):
+          allow_none: bool = False) -> tuple[Optional[str], Optional[Record]]:
     """Show the picker once; returns ``(answer, record)``."""
     from questionary.prompts.common import InquirerControl
 
     ports = [p.device for p in listed]
-    results: dict[str, dict] = {p.device: usb_record(p) for p in listed}
+    results: dict[str, Record] = {p.device: usb_record(p) for p in listed}
     # Ports being connected to; the rest are only checked for a process holding them.
-    to_probe = set(ports) if probe else set()
+    to_probe: set[str] = set(ports) if probe else set()
 
     choices = [questionary.Choice(title="", value=p) for p in ports]
     if not ports:
@@ -487,20 +514,22 @@ def _pick(listed, baud: Optional[int], *, probe: bool, message: str,
     control = next(c for c in question.application.layout.find_all_controls()
                    if isinstance(c, InquirerControl))
     rows = dict(zip(ports, control.choices))
+    # questionary's prompts always carry their own bindings.
+    bindings = cast("KeyBindings", question.application.key_bindings)
 
-    @question.application.key_bindings.add("r", eager=True)
-    def _refresh(event):
+    @bindings.add("r", eager=True)
+    def _refresh(event: "KeyPressEvent") -> None:
         event.app.exit(result=REFRESH)
 
-    @question.application.key_bindings.add("q", eager=True)
-    def _quit(event):
+    @bindings.add("q", eager=True)
+    def _quit(event: "KeyPressEvent") -> None:
         event.app.exit(result=QUIT)
 
-    to_kill = {}
+    to_kill: dict[str, Any] = {}
 
     if CAN_KILL:
-        @question.application.key_bindings.add("k", eager=True)
-        def _kill(event):
+        @bindings.add("k", eager=True)
+        def _kill(event: "KeyPressEvent") -> None:
             if control.get_pointed_at().value in rows:
                 to_kill["port"] = control.get_pointed_at().value
                 event.app.exit(result=KILL)
@@ -526,7 +555,7 @@ def _pick(listed, baud: Optional[int], *, probe: bool, message: str,
             pending = port in to_probe and port not in checked
             if len(detail) > room > 1:
                 detail = detail[:room - 1] + "…"
-            title = [("class:node", f"{port:<{port_width}}")]
+            title: list[tuple[str, str]] = [("class:node", f"{port:<{port_width}}")]
             if adapter_width:
                 title += [("", "   "),
                           ("class:native" if results[port].get("native") else "class:adapter",
@@ -540,14 +569,14 @@ def _pick(listed, baud: Optional[int], *, probe: bool, message: str,
             row.title = title
 
     repaint()
-    executor = None
-    futures: list[concurrent.futures.Future] = []
+    executor: Optional[concurrent.futures.ThreadPoolExecutor] = None
+    futures: list[concurrent.futures.Future[Record]] = []
     if ports:
-        executor = concurrent.futures.ThreadPoolExecutor(max_workers=min(8, len(ports)))
-        latest: dict[str, concurrent.futures.Future] = {}
+        executor = pool = concurrent.futures.ThreadPoolExecutor(max_workers=min(8, len(ports)))
+        latest: dict[str, concurrent.futures.Future[Record]] = {}
 
-        def annotate(target: str):
-            def done(future):
+        def annotate(target: str) -> Callable[[concurrent.futures.Future[Record]], None]:
+            def done(future: concurrent.futures.Future[Record]) -> None:
                 if latest.get(target) is not future:
                     return  # superseded by a probe started with `p`
                 try:
@@ -561,21 +590,21 @@ def _pick(listed, baud: Optional[int], *, probe: bool, message: str,
                     question.application.invalidate()
             return done
 
-        def submit(task, target: str) -> None:
-            future = executor.submit(task, target)
+        def submit(task: Callable[[str], Record], target: str) -> None:
+            future = pool.submit(task, target)
             latest[target] = future
             future.add_done_callback(annotate(target))
             futures.append(future)
 
         for target in ports:
             if target in to_probe:
-                submit(lambda t: probe_port(t, baud, identify), target)
+                submit(lambda t: probe_port(t, cast(int, baud), identify), target)
             else:
                 submit(lambda t: {"error": held_reason(t)}, target)
 
         if allow_probe:
-            @question.application.key_bindings.add("p", eager=True)
-            def _probe(event):
+            @bindings.add("p", eager=True)
+            def _probe(event: "KeyPressEvent") -> None:
                 # Every press probes again (to see if a board is back, say), unless one is
                 # already in flight for this port.
                 target = control.get_pointed_at().value
@@ -583,7 +612,7 @@ def _pick(listed, baud: Optional[int], *, probe: bool, message: str,
                     to_probe.add(target)
                     checked.discard(target)
                     repaint()
-                    submit(lambda t: probe_port(t, baud, identify), target)
+                    submit(lambda t: probe_port(t, cast(int, baud), identify), target)
 
     try:
         with quiet_esptool():

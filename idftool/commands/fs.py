@@ -6,15 +6,26 @@ worth ~50 ms of import time that no other command should have to pay.
 """
 import os.path
 import sys
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Callable, Iterable, Mapping, Optional, TypeVar
 
 import rich_click as click
 
+from esptool import ESPLoader
+
+from esp_idf_defs.partitions import PartitionDefinition
 
 from idftool.cli import cli, pass_state, reject_file_as_partition
 from idftool.display import print_rows, say
 from idftool.flash import FLASH_OPTION_FLAGS, flash_options, split_options, write_flash, write_flash_options
 from idftool.params import BASED_INT
 from idftool.partitions import get_partition
+from idftool.state import Loaded, State
+
+if TYPE_CHECKING:
+    from rich_click.utils import OptionGroupDict
+
+F = TypeVar('F', bound=Callable[..., Any])
 
 FS_TYPE_CHOICE = click.Choice(['fatfs', 'littlefs', 'spiffs'])
 
@@ -22,7 +33,7 @@ FS_TYPE_CHOICE = click.Choice(['fatfs', 'littlefs', 'spiffs'])
 # a command actually needs. Keyed with a wildcard because the program name differs between
 # `idftool ...` and `python -m idftool ...`.
 for _fs_command in ('create-fs', 'write-fs', 'read-fs', 'extract-fs', 'print-fs', 'list-fs'):
-    click.rich_click.OPTION_GROUPS[f'* {_fs_command}'] = [
+    _groups: list["OptionGroupDict"] = [
         # Long names only: listing a short alias too renders the option twice.
         {'name': 'Options', 'options': ['--output', '--file', '--type', '--size',
                                         '--partition', '--help']},
@@ -34,11 +45,13 @@ for _fs_command in ('create-fs', 'write-fs', 'read-fs', 'extract-fs', 'print-fs'
         {'name': 'SPIFFS options', 'options': [
             '--spiffs-page-size', '--spiffs-block-size', '--spiffs-obj-name-len',
             '--spiffs-meta-len', '--spiffs-use-magic', '--spiffs-use-magic-len']},
-    ] + ([{'name': 'Write options', 'options': FLASH_OPTION_FLAGS}]
-         if _fs_command == 'write-fs' else [])
+    ]
+    if _fs_command == 'write-fs':
+        _groups.append({'name': 'Write options', 'options': FLASH_OPTION_FLAGS})
+    click.rich_click.OPTION_GROUPS[f'* {_fs_command}'] = _groups
 
 
-def fs_options(f):
+def fs_options(f: F) -> F:
     """Attach the per-filesystem tuning options shared by every fs command.
 
     Each defaults to None so the backend's own default — chosen to match ESP-IDF's
@@ -82,7 +95,7 @@ def fs_options(f):
     return f
 
 
-def _fs_options_for(fs_type, options):
+def _fs_options_for(fs_type: str, options: dict[str, Any]) -> dict[str, Any]:
     """Narrow a command's raw options down to the ones the chosen filesystem understands."""
     import idftool.fs as fs
     resolved = fs.backend_options(fs_type, options)
@@ -91,7 +104,7 @@ def _fs_options_for(fs_type, options):
     return resolved
 
 
-def _fs_partition(loaded, name):
+def _fs_partition(loaded: Loaded, name: str) -> PartitionDefinition:
     try:
         return get_partition(
             loaded.partition_table, loaded.partition_table_entry, loaded.bootloader_entry, name)
@@ -103,7 +116,8 @@ def _fs_partition(loaded, name):
         raise
 
 
-def create_fs(state, source, output_file, fs_type, size, partition, **options):
+def create_fs(state: State, source: str, output_file: str, fs_type: Optional[str],
+              size: Optional[int], partition: Optional[str], **options: Any) -> None:
     import idftool.fs as fs
     if (size is None) == (partition is None):
         raise click.UsageError("Provide exactly one of --size or --partition")
@@ -113,6 +127,7 @@ def create_fs(state, source, output_file, fs_type, size, partition, **options):
         loaded = state.setup(needs_device=False)
         part = _fs_partition(loaded, partition)
         size = part.size
+    assert size is not None
 
     fs_type = fs.resolve_type(fs_type, partition=part, what=f"'{source}'")
     opts = _fs_options_for(fs_type, options)
@@ -136,11 +151,13 @@ def create_fs(state, source, output_file, fs_type, size, partition, **options):
 @click.option('--partition', default=None, help='Partition name to take the size and type from')
 @fs_options
 @pass_state
-def cmd_create_fs(state, source, output_file, fs_type, size, partition, **options):
+def cmd_create_fs(state: State, /, source: str, output_file: str, fs_type: Optional[str],
+                  size: Optional[int], partition: Optional[str], **options: Any) -> None:
     return create_fs(state, source, output_file, fs_type, size, partition, **options)
 
 
-def write_fs(state, partition, source, fs_type, **options):
+def write_fs(state: State, partition: str, source: str, fs_type: Optional[str],
+             **options: Any) -> None:
     """Build a filesystem image (or take a prebuilt one) and flash it to `partition`.
 
     Keyword arguments are the per-filesystem knobs of :mod:`idftool.fs`, plus anything in
@@ -189,12 +206,12 @@ def write_fs(state, partition, source, fs_type, **options):
                 **write_flash_options(flash, skip_flashed=True, diff=True))
 
 
-def edit_fs_partition(esp, part, put, delete, options):
+def edit_fs_partition(esp: ESPLoader, part: PartitionDefinition, put: Mapping[str, bytes],
+                      delete: Iterable[str], options: dict[str, Any]) -> None:
     """Rebuild filesystem partition `part` on the device with files put (path → bytes) and
     deleted, writing back only what changes."""
     import shutil
     import tempfile
-    from pathlib import Path
 
     import idftool.fs as fs
 
@@ -206,7 +223,7 @@ def edit_fs_partition(esp, part, put, delete, options):
         with fs.mount(fs_type, data) as volume:
             fs.extract(volume, tmp)
 
-        def inside(path):
+        def inside(path: str) -> Path:
             target = (root / path.lstrip('/')).resolve()
             if target == root or not target.is_relative_to(root):
                 raise fs.FsError(f"'{path}' is not a path inside the filesystem")
@@ -243,15 +260,18 @@ def edit_fs_partition(esp, part, put, delete, options):
 @fs_options
 @flash_options
 @pass_state
-def cmd_write_fs(state, partition, source, fs_type, **options):
+def cmd_write_fs(state: State, /, partition: str, source: str, fs_type: Optional[str],
+                 **options: Any) -> None:
     return write_fs(state, partition, source, fs_type, **options)
 
 
-def read_fs(state, partition, destination, fs_type, **options):
+def read_fs(state: State, partition: str, destination: str, fs_type: Optional[str],
+            **options: Any) -> None:
     import idftool.fs as fs
     loaded = state.setup()
     part = _fs_partition(loaded, partition)
     print(f"Reading partition {part.name} (offset={part.offset:#x}, size={part.size:#x})")
+    assert loaded.esp is not None
     image = loaded.esp.read_flash(part.offset, part.size)
 
     fs_type = fs.resolve_type(fs_type, partition=part, image=image,
@@ -270,11 +290,13 @@ def read_fs(state, partition, destination, fs_type, **options):
               help='Filesystem to read  [default: from the partition subtype, else detected]')
 @fs_options
 @pass_state
-def cmd_read_fs(state, partition, destination, fs_type, **options):
+def cmd_read_fs(state: State, /, partition: str, destination: str, fs_type: Optional[str],
+                **options: Any) -> None:
     return read_fs(state, partition, destination, fs_type, **options)
 
 
-def extract_fs(state, image_file, destination, fs_type, **options):
+def extract_fs(state: State, image_file: str, destination: str, fs_type: Optional[str],
+               **options: Any) -> None:
     import idftool.fs as fs
     image = open(image_file, 'rb').read()
     fs_type = fs.resolve_type(fs_type, image=image, what=f"'{image_file}'")
@@ -292,11 +314,13 @@ def extract_fs(state, image_file, destination, fs_type, **options):
               help='Filesystem to read  [default: detected from the image]')
 @fs_options
 @pass_state
-def cmd_extract_fs(state, image_file, destination, fs_type, **options):
+def cmd_extract_fs(state: State, /, image_file: str, destination: str, fs_type: Optional[str],
+                   **options: Any) -> None:
     return extract_fs(state, image_file, destination, fs_type, **options)
 
 
-def print_fs(state, partition, image_file, fs_type, **options):
+def print_fs(state: State, partition: Optional[str], image_file: Optional[str],
+             fs_type: Optional[str], **options: Any) -> None:
     import idftool.fs as fs
     if (image_file is None) == (partition is None):
         raise click.UsageError("Provide exactly one of a partition name or --file")
@@ -307,9 +331,11 @@ def print_fs(state, partition, image_file, fs_type, **options):
         image = open(image_file, 'rb').read()
         source = f"'{image_file}'"
     else:
+        assert partition is not None
         loaded = state.setup()
         part = _fs_partition(loaded, partition)
         print(f"Reading partition {part.name} (offset={part.offset:#x}, size={part.size:#x})")
+        assert loaded.esp is not None
         image = loaded.esp.read_flash(part.offset, part.size)
         source = f"partition '{part.name}'"
 
@@ -328,5 +354,6 @@ def print_fs(state, partition, image_file, fs_type, **options):
               help='Filesystem to read  [default: from the partition subtype, else detected]')
 @fs_options
 @pass_state
-def cmd_print_fs(state, partition, image_file, fs_type, **options):
+def cmd_print_fs(state: State, /, partition: Optional[str], image_file: Optional[str],
+                 fs_type: Optional[str], **options: Any) -> None:
     return print_fs(state, partition, image_file, fs_type, **options)

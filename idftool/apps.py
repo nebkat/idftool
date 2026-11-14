@@ -7,13 +7,13 @@ from typing import Callable, ClassVar, Optional
 from esptool import ESPLoader
 from esptool.targets import CHIP_DEFS
 
-from esp_idf_defs import ImageMetadata, ChipId
+from esp_idf_defs import AppDescription, ImageHeader, ImageMetadata, ChipId
 from esp_idf_defs.partitions import PartitionTable, PartitionDefinition, APP_TYPE, BOOTLOADER_TYPE
 
 from idftool.display import print_partition_table
 
 #: Image chip ID → the flash offset that chip's ROM boots from.
-BOOTLOADER_OFFSETS = {chip.IMAGE_CHIP_ID: chip.BOOTLOADER_FLASH_OFFSET
+BOOTLOADER_OFFSETS: dict[int, int] = {chip.IMAGE_CHIP_ID: chip.BOOTLOADER_FLASH_OFFSET
                       for chip in CHIP_DEFS.values() if hasattr(chip, 'IMAGE_CHIP_ID')}
 
 
@@ -35,7 +35,7 @@ class BootloaderDescription:
             return None
         secure_version, version = data[3], struct.unpack_from('<I', data, 4)[0]
 
-        def text(raw):
+        def text(raw: bytes) -> str:
             return raw.split(b'\0', 1)[0].decode('utf-8', errors='replace')
 
         return cls(secure_version, version, text(data[8:40]), text(data[40:64]))
@@ -64,7 +64,7 @@ def identify_image(data: bytes) -> Optional[ImageInfo]:
     return ImageInfo('bootloader' if description else 'image', metadata, description)
 
 
-def _check_chip(esp: ESPLoader, image_metadata: ImageMetadata):
+def _check_chip(esp: ESPLoader, image_metadata: ImageMetadata) -> None:
     if image_metadata.header.chip_id.value != esp.IMAGE_CHIP_ID:
         raise RuntimeError(
             f"Chip ID mismatch: "
@@ -103,7 +103,7 @@ def validate_bootloader_binary(esp: ESPLoader, bootloader_binary: bytes, name: s
 
 
 def check_partition_image(esp: ESPLoader, partition: PartitionDefinition, data: bytes,
-                          name: str, force: bool = False):
+                          name: str, force: bool = False) -> None:
     """Check an image about to fill an app or bootloader partition. `force` warns instead."""
     try:
         # An erased slot (as dump-bundle saves an unused OTA partition) has no app to check.
@@ -159,7 +159,7 @@ def load_app_binary(esp: ESPLoader, app_binary_file: str, partition: PartitionDe
     return validate_app_binary(esp, app_binary)
 
 
-def print_app_info(desc, header, indent: str = ""):
+def print_app_info(desc: AppDescription, header: ImageHeader, indent: str = "") -> None:
     print(f"{indent}Project name:     {desc.project_name}")
     print(f"{indent}Version:          {desc.version}")
     print(f"{indent}IDF version:      {desc.idf_version}")
@@ -171,7 +171,7 @@ def print_app_info(desc, header, indent: str = ""):
     rev_range = f"rev {header.min_chip_rev_full} to {max_rev}" if max_rev else f"rev {header.min_chip_rev_full}+"
     print(f"{indent}Chip:             {header.chip_id.name} ({rev_range})")
 
-def print_bootloader(bootloader: Optional[Bootloader]):
+def print_bootloader(bootloader: Optional[Bootloader]) -> None:
     if bootloader is None:
         print("Bootloader: none")
         return
@@ -184,7 +184,7 @@ def print_partition_table_and_apps(
         partition_table: PartitionTable,
         read: Callable[[int, int], bytes],
         bootloader: Optional[Bootloader] = None,
-):
+) -> None:
     print_bootloader(bootloader)
     print()
     print_partition_table(partition_table, read)
@@ -196,6 +196,7 @@ def print_partition_table_and_apps(
             image_metadata = ImageMetadata.from_bytes(read(part.offset, part.size), app_required=True)
         except Exception:
             continue
+        assert image_metadata.app_description is not None  # app_required
         print()
         print(f"Partition '{part.name}' (offset={part.offset:#x}):")
         print_app_info(image_metadata.app_description, image_metadata.header, indent="  ")

@@ -9,7 +9,7 @@ from idftool.apps import parse_bootloader, print_app_info, print_bootloader
 from idftool.cli import cli
 
 
-def app_info(app_binary_file: str):
+def app_info(app_binary_file: str) -> None:
     """Print the app description embedded in a bare application binary."""
     if os.path.getsize(app_binary_file) == 0:
         raise RuntimeError(f"Application binary '{app_binary_file}' is empty")
@@ -29,11 +29,12 @@ def app_info(app_binary_file: str):
         return
 
     print(f"App: {app_binary_file} ({len(app_binary):#x} bytes)")
+    assert image_metadata.app_description is not None  # app_required
     print_app_info(image_metadata.app_description, image_metadata.header)
 
 
 @cli.command('app-info', aliases=['print-app'],
              help='Print the app description from an application binary')
 @click.option('-f', '--file', 'app_binary_file', required=True, help='Application binary to read')
-def cmd_app_info(app_binary_file):
+def cmd_app_info(app_binary_file: str) -> None:
     return app_info(app_binary_file)

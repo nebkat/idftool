@@ -5,7 +5,7 @@
 and returns a ``Loaded`` for the command to work with."""
 import sys
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, cast
 
 import rich_click as click
 
@@ -22,7 +22,7 @@ from idftool import network
 from idftool.display import print_partition_table
 from idftool.partitions import check_image_file, load_partition_table_file, read_otadata, \
     require_partitions
-from idftool.ports import find_port_for_mac, find_port_for_usb_serial, print_rerun_hint, \
+from idftool.ports import Identify, find_port_for_mac, find_port_for_usb_serial, print_rerun_hint, \
     select_device
 
 def get_esp(port: str | None, baud: int) -> ESPLoader:
@@ -57,10 +57,13 @@ class Loaded:
 class State:
     """Holds the global options and the (lazily-established) device connection."""
 
-    def __init__(self, *, port, baud, no_reset, partition_table_file, partition_table_offset,
-                 partition_table_size, primary_bootloader_offset, recovery_bootloader_offset,
-                 assume_yes=False, mac=None, usb_serial=None, probe=False, identify=None,
-                 baud_explicit=False, quiet=False):
+    def __init__(self, *, port: Optional[str], baud: int, no_reset: bool,
+                 partition_table_file: Optional[str], partition_table_offset: int,
+                 partition_table_size: int, primary_bootloader_offset: Optional[int],
+                 recovery_bootloader_offset: Optional[int], assume_yes: bool = False,
+                 mac: Optional[str] = None, usb_serial: Optional[str] = None, probe: bool = False,
+                 identify: Optional[Identify] = None, baud_explicit: bool = False,
+                 quiet: bool = False) -> None:
         self.port = port
         self.mac = mac
         self.usb_serial = usb_serial
@@ -88,7 +91,8 @@ class State:
         self.stdout_is_data = False
 
     @classmethod
-    def attached(cls, esp: ESPLoader, *, partition_table_file=None, assume_yes=False) -> 'State':
+    def attached(cls, esp: ESPLoader, *, partition_table_file: Optional[str] = None,
+                 assume_yes: bool = False) -> 'State':
         """A state driving `esp`, a connection the caller already holds, for calling idftool's
         commands as functions.
 
@@ -114,9 +118,10 @@ class State:
             return self.port
         found = select_device(self.baud, probe=self.probe, identify=self.identify,
                               allow_none=allow_none)
+        assert found is not None  # select_device asks whenever stdin is a terminal
         if found["port"] is not None:
             print_rerun_hint(found["port"], found.get("mac"), found.get("serial"))
-        return found["port"]
+        return cast(Optional[str], found["port"])
 
     def connect(self) -> ESPLoader:
         if self.esp is None:
@@ -128,7 +133,7 @@ class State:
                 self.primary_bootloader_offset = self.esp.BOOTLOADER_FLASH_OFFSET
         return self.esp
 
-    def _load_partition_table(self, image_file) -> PartitionTable:
+    def _load_partition_table(self, image_file: Optional[str]) -> PartitionTable:
         # Load from the most specific source available:
         # image file > --partition-table-file > the connected device.
         if image_file is not None:
@@ -144,6 +149,7 @@ class State:
                 recovery_bootloader_offset=self.recovery_bootloader_offset,
             )
         else:
+            assert self.esp is not None  # connected, as no file names the table
             try:
                 binary = self.esp.read_flash(offset=self.partition_table_offset, length=self.partition_table_size)
                 partition_table = PartitionTable.from_binary(binary)
@@ -151,7 +157,7 @@ class State:
                 raise RuntimeError("Partition table could not be loaded") from e
         return require_partitions(partition_table, "the loaded source")
 
-    def setup(self, *, needs_device=True, image_file=None) -> 'Loaded':
+    def setup(self, *, needs_device: bool = True, image_file: Optional[str] = None) -> 'Loaded':
         """Connect if required, load and print the partition table (unless `quiet`), and build
         the virtual partition-table/bootloader entries the command handlers expect.
 
@@ -171,7 +177,7 @@ class State:
 
         return Loaded(esp, partition_table, *self.virtual_entries(partition_table))
 
-    def _print_partition_table(self, partition_table):
+    def _print_partition_table(self, partition_table: PartitionTable) -> None:
         """Print the table, with each app's description and the active slot read off the device
         when there is one."""
         esp = self.esp
@@ -198,7 +204,9 @@ class State:
             return None
         return table if len(table) else None
 
-    def virtual_entries(self, partition_table):
+    def virtual_entries(
+            self, partition_table: PartitionTable
+    ) -> tuple[PartitionDefinition, Optional[PartitionDefinition]]:
         """The partition-table and bootloader entries names resolve to, as the table's own rows
         or at the configured offsets."""
         # Add a virtual partition table entry if not present

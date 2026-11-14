@@ -1,21 +1,26 @@
 """Firmware and boot selection: ``factory``, ``ota``, and the ``*-boot`` commands."""
+from typing import Any, Optional
+
 import rich_click as click
 
+from esptool import ESPLoader
 
+from esp_idf_defs import ImageMetadata
 from esp_idf_defs.otadata import OtaImageState
-from esp_idf_defs.partitions import APP_TYPE, DATA_TYPE, SUBTYPES
+from esp_idf_defs.partitions import APP_TYPE, DATA_TYPE, SUBTYPES, PartitionDefinition, PartitionTable
 
 from idftool.apps import load_app_binary
 from idftool.cli import cli, pass_state
 from idftool.display import say
 from idftool.flash import flash_options, option_group, write_flash, write_flash_options
 from idftool.partitions import read_otadata, write_otadata
+from idftool.state import State
 
 # Keep the pass-through write options in a panel of their own.
 option_group('factory')
 option_group('ota')
 
-def factory(state, app_binary_file, **options):
+def factory(state: State, app_binary_file: str, **options: Any) -> None:
     """Flash an app to the factory (or ota_0) partition and erase otadata.
 
     Only the flash sectors that differ are written, and nothing at all when the
@@ -32,7 +37,7 @@ def factory(state, app_binary_file, **options):
     flash_factory(esp, partition_table, partition, app_binary, image_metadata, options)
 
 
-def factory_partition(partition_table):
+def factory_partition(partition_table: PartitionTable) -> PartitionDefinition:
     """The partition a factory flash writes: factory, else ota_0."""
     for subtype in ('factory', 'ota_0'):
         partition = next((p for p in partition_table
@@ -42,12 +47,14 @@ def factory_partition(partition_table):
     raise ValueError("No factory or OTA partition found")
 
 
-def otadata_partition_of(partition_table):
+def otadata_partition_of(partition_table: PartitionTable) -> Optional[PartitionDefinition]:
     return next((p for p in partition_table
                  if p.type == DATA_TYPE and p.subtype == SUBTYPES[DATA_TYPE]['ota']), None)
 
 
-def flash_factory(esp, partition_table, partition, app_binary, image_metadata, options):
+def flash_factory(esp: ESPLoader, partition_table: PartitionTable, partition: PartitionDefinition,
+                  app_binary: bytes, image_metadata: ImageMetadata, options: dict[str, Any]) -> None:
+    assert image_metadata.app_description is not None  # an app image, validated
     say(f"Writing '{image_metadata.app_description.title}' to partition '{partition.name}'...")
     write_flash(esp=esp, addr_data=[(partition.offset, app_binary)],
                 **write_flash_options(options, skip_flashed=True, diff=True))
@@ -62,11 +69,11 @@ def flash_factory(esp, partition_table, partition, app_binary, image_metadata, o
 @click.argument('app_binary_file')
 @flash_options
 @pass_state
-def cmd_factory(state, app_binary_file, **options):
+def cmd_factory(state: State, /, app_binary_file: str, **options: Any) -> None:
     return factory(state, app_binary_file, **options)
 
 
-def ota(state, app_binary_file, **options):
+def ota(state: State, app_binary_file: str, **options: Any) -> None:
     """Write an app to the next OTA slot and switch the bootloader to it.
 
     Only the flash sectors that differ are written, and nothing at all when the
@@ -83,7 +90,7 @@ def ota(state, app_binary_file, **options):
     flash_ota(esp, partition_table, partition, app_binary, image_metadata, options)
 
 
-def ota_partition(esp, partition_table):
+def ota_partition(esp: ESPLoader, partition_table: PartitionTable) -> PartitionDefinition:
     """The next OTA slot, from the device's otadata."""
     _, otadata = read_otadata(esp, partition_table)
     next_slot = otadata.next_slot
@@ -96,7 +103,9 @@ def ota_partition(esp, partition_table):
     return partition
 
 
-def flash_ota(esp, partition_table, partition, app_binary, image_metadata, options):
+def flash_ota(esp: ESPLoader, partition_table: PartitionTable, partition: PartitionDefinition,
+              app_binary: bytes, image_metadata: ImageMetadata, options: dict[str, Any]) -> None:
+    assert image_metadata.app_description is not None  # an app image, validated
     otadata_partition, otadata = read_otadata(esp, partition_table)
     next_slot = partition.subtype - SUBTYPES[APP_TYPE]['ota_0']
     say(f"Writing '{image_metadata.app_description.title}' to partition '{partition.name}'...")
@@ -112,15 +121,15 @@ def flash_ota(esp, partition_table, partition, app_binary, image_metadata, optio
 @click.argument('app_binary_file')
 @flash_options
 @pass_state
-def cmd_ota(state, app_binary_file, **options):
+def cmd_ota(state: State, /, app_binary_file: str, **options: Any) -> None:
     return ota(state, app_binary_file, **options)
 
 
-def get_boot(state):
+def get_boot(state: State) -> None:
     loaded = state.setup()
     _, otadata = read_otadata(loaded.esp, loaded.partition_table)
 
-    if otadata.slot is None:
+    if otadata.otadata is None:
         print("OTA slot not set")
     else:
         print(f"OTA slot 'ota_{otadata.slot}' (seq={otadata.otadata.seq}, state={otadata.otadata.ota_state.name})")
@@ -128,16 +137,16 @@ def get_boot(state):
 
 @cli.command('get-boot', help='Show the currently-active OTA slot')
 @pass_state
-def cmd_get_boot(state):
+def cmd_get_boot(state: State) -> None:
     return get_boot(state)
 
 
-def set_boot(state, partition):
+def set_boot(state: State, partition: str) -> None:
     loaded = state.setup()
     boot_partition(loaded.esp, loaded.partition_table, partition)
 
 
-def boot_partition(esp, partition_table, label):
+def boot_partition(esp: ESPLoader, partition_table: PartitionTable, label: str) -> None:
     """Set otadata to boot the OTA partition `label` next."""
     otadata_partition, otadata = read_otadata(esp, partition_table)
     partition = partition_table[label]
@@ -149,6 +158,7 @@ def boot_partition(esp, partition_table, label):
 
     say(f"Setting boot partition to '{partition.name}'...")
     otadata = otadata.incremented_and_swapped(ota_slot)
+    assert otadata.otadata is not None  # incremented_and_swapped always sets it
     otadata.otadata.ota_state = OtaImageState.VALID
     write_otadata(esp, otadata_partition, otadata)
 
@@ -156,16 +166,16 @@ def boot_partition(esp, partition_table, label):
 @cli.command('set-boot', help='Force the next boot to a specific OTA partition')
 @click.argument('partition')
 @pass_state
-def cmd_set_boot(state, partition):
+def cmd_set_boot(state: State, partition: str) -> None:
     return set_boot(state, partition)
 
 
-def clear_boot(state):
+def clear_boot(state: State) -> None:
     loaded = state.setup()
     clear_boot_partition(loaded.esp, loaded.partition_table)
 
 
-def clear_boot_partition(esp, partition_table):
+def clear_boot_partition(esp: ESPLoader, partition_table: PartitionTable) -> None:
     """Erase otadata so the factory app boots."""
     otadata_partition = otadata_partition_of(partition_table)
     if not otadata_partition:
@@ -177,5 +187,5 @@ def clear_boot_partition(esp, partition_table):
 
 @cli.command('clear-boot', help='Erase otadata and let the bootloader fall back')
 @pass_state
-def cmd_clear_boot(state):
+def cmd_clear_boot(state: State) -> None:
     return clear_boot(state)

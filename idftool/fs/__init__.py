@@ -16,7 +16,7 @@ filesystem is meant: an explicit choice wins, then the partition's subtype, then
 what the image itself looks like.
 """
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional, Protocol
 
 from esp_idf_defs.partitions import DATA_TYPE, SUBTYPES, PartitionDefinition
 
@@ -28,7 +28,20 @@ __all__ = ['FsEntry', 'FsError', 'SourceEntry', 'Volume', 'FS_TYPES', 'create', 
            'detect', 'describe', 'extract', 'resolve_type', 'backend_options', 'collect',
            'listing_rows']
 
-BACKENDS = {module.NAME: module for module in (fatfs, littlefs, spiffs)}
+class Backend(Protocol):
+    """What each backend module offers."""
+    NAME: str
+
+    def create(self, sources: list[SourceEntry], size: int, **options: Any) -> bytes: ...
+
+    def mount(self, image: bytes, **options: Any) -> Volume: ...
+
+    def detect(self, image: bytes) -> bool: ...
+
+    def describe(self, size: int, **options: Any) -> str: ...
+
+
+BACKENDS: dict[str, Backend] = {module.NAME: module for module in (fatfs, littlefs, spiffs)}
 FS_TYPES = tuple(BACKENDS)
 
 #: Aliases accepted on the command line, including the partition subtype names.
@@ -64,14 +77,14 @@ FS_OPTIONS = {
 }
 
 
-def backend(fs_type: str):
+def backend(fs_type: str) -> Backend:
     fs_type = ALIASES.get(fs_type, fs_type)
     if fs_type not in BACKENDS:
         raise FsError(f"Unknown filesystem '{fs_type}' (expected one of {', '.join(FS_TYPES)})")
     return BACKENDS[fs_type]
 
 
-def backend_options(fs_type: str, params: dict) -> dict:
+def backend_options(fs_type: str, params: dict[str, Any]) -> dict[str, Any]:
     """Pick the options that apply to `fs_type` out of a command's parameters."""
     mapping = FS_OPTIONS[ALIASES.get(fs_type, fs_type)]
     return {kwarg: params[option] for option, kwarg in mapping.items()
@@ -127,16 +140,16 @@ def resolve_type(explicit: Optional[str] = None, partition: Optional[PartitionDe
                   f"Pass --type ({'/'.join(FS_TYPES)}).")
 
 
-def create(fs_type: str, source: str, size: int, **options) -> bytes:
+def create(fs_type: str, source: str, size: int, **options: Any) -> bytes:
     """Build an image of exactly `size` bytes from a host directory (or a single file)."""
     return backend(fs_type).create(collect(source), size, **options)
 
 
-def mount(fs_type: str, image: bytes, **options) -> Volume:
+def mount(fs_type: str, image: bytes, **options: Any) -> Volume:
     return backend(fs_type).mount(image, **options)
 
 
-def describe(fs_type: str, size: int, **options) -> str:
+def describe(fs_type: str, size: int, **options: Any) -> str:
     return backend(fs_type).describe(size, **options)
 
 

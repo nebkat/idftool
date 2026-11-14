@@ -7,9 +7,13 @@ that parse an image so the generate-only paths don't pay for it.
 import contextlib
 import os.path
 import sys
+from typing import TYPE_CHECKING, Any, Callable, Iterable, Mapping, Optional, TypeVar, cast
 
 import rich_click as click
 
+from esptool import ESPLoader
+
+from esp_idf_defs.partitions import PartitionDefinition
 
 from idftool.cli import cli, pass_state, reject_file_as_partition
 from idftool.display import print_rows, say
@@ -17,6 +21,18 @@ from idftool.flash import flash_options, option_group, write_flash, write_flash_
 from idftool.nvs import fit_nvs_binary, generate_nvs_image, looks_like_nvs_binary
 from idftool.params import BASED_INT, HMAC_KEY
 from idftool.partitions import get_partition
+from idftool.state import Loaded, State
+
+if TYPE_CHECKING:
+    from idftool.nvs import NvsEntry, NvsImage
+    from idftool.nvs.common import Value
+    from idftool.nvs.crypto import NvsKeys
+    from idftool.nvs.edit import Change, Edit
+
+F = TypeVar('F', bound=Callable[..., Any])
+
+#: Reads a file named in a value (``@path``) or a CSV ``file`` row.
+ReadFile = Callable[[str], bytes]
 
 # Keep the pass-through write options in a panel of their own.
 option_group('write-nvs', '--hmac-key')
@@ -24,13 +40,13 @@ option_group('set-nvs', '--file', '--csv', '--delete', '--namespace', '--output'
              '--hmac-key', '--dry-run')
 
 
-def hmac_key_option(f):
+def hmac_key_option(f: F) -> F:
     return click.option('--hmac-key', type=HMAC_KEY, default=None,
                         help='HMAC key of an encrypted NVS partition: 64 hex digits, or a file '
                              'with the raw key or the digits')(f)
 
 
-def _encrypt(image, hmac_key, data=None):
+def _encrypt(image: bytes, hmac_key: Optional["NvsKeys"], data: Optional[bytes] = None) -> bytes:
     """`image` encrypted with `hmac_key`, unless there is no key or `data` already was."""
     from idftool.nvs.crypto import encrypt, looks_encrypted
 
@@ -39,7 +55,7 @@ def _encrypt(image, hmac_key, data=None):
     return encrypt(image, hmac_key)
 
 
-def _nvs_partition(loaded, name):
+def _nvs_partition(loaded: Loaded, name: str) -> PartitionDefinition:
     try:
         return get_partition(
             loaded.partition_table, loaded.partition_table_entry, loaded.bootloader_entry, name)
@@ -51,12 +67,14 @@ def _nvs_partition(loaded, name):
         raise
 
 
-def create_nvs(state, csv_file, output_file, size, partition, hmac_key=None):
+def create_nvs(state: State, csv_file: str, output_file: str, size: Optional[int],
+               partition: Optional[str], hmac_key: Optional["NvsKeys"] = None) -> None:
     if (size is None) == (partition is None):
         raise click.UsageError("Provide exactly one of --size or --partition")
     if partition is not None:
         loaded = state.setup(needs_device=False)
         size = _nvs_partition(loaded, partition).size
+    assert size is not None
 
     data = open(csv_file, 'rb').read()
     if looks_like_nvs_binary(data):
@@ -78,26 +96,28 @@ def create_nvs(state, csv_file, output_file, size, partition, hmac_key=None):
 @click.option('--partition', default=None, help='Partition name to read the size from the partition table')
 @hmac_key_option
 @pass_state
-def cmd_create_nvs(state, csv_file, output_file, size, partition, hmac_key):
+def cmd_create_nvs(state: State, /, csv_file: str, output_file: str, size: Optional[int],
+                   partition: Optional[str], hmac_key: Optional["NvsKeys"]) -> None:
     return create_nvs(state, csv_file, output_file, size, partition, hmac_key)
 
 
-def write_nvs(state, partition, csv_file, hmac_key=None, **options):
+def write_nvs(state: State, partition: str, csv_file: str, hmac_key: Optional["NvsKeys"] = None,
+              **options: Any) -> None:
     """Generate an NVS image from CSV (or take a prebuilt one) and flash it. Keyword
     arguments go to esptool's ``write_flash`` (see
     :data:`idftool.flash.WRITE_FLASH_OPTIONS`)."""
     loaded = state.setup()
-    partition = _nvs_partition(loaded, partition)
+    part = _nvs_partition(loaded, partition)
     data = open(csv_file, 'rb').read()
     if looks_like_nvs_binary(data):
-        say(f"Using NVS binary '{csv_file}' for partition '{partition.name}' (size={partition.size:#x})...")
-        image = fit_nvs_binary(data, partition.size)
+        say(f"Using NVS binary '{csv_file}' for partition '{part.name}' (size={part.size:#x})...")
+        image = fit_nvs_binary(data, part.size)
     else:
-        say(f"Generating NVS image from '{csv_file}' for partition '{partition.name}' (size={partition.size:#x})...")
-        image = generate_nvs_image(csv_file, partition.size)
+        say(f"Generating NVS image from '{csv_file}' for partition '{part.name}' (size={part.size:#x})...")
+        image = generate_nvs_image(csv_file, part.size)
     image = _encrypt(image, hmac_key, data)
-    say(f"Writing NVS image to partition '{partition.name}' (offset={partition.offset:#x}, size={partition.size:#x})")
-    write_flash(esp=loaded.esp, addr_data=[(partition.offset, image)], flash_size='detect',
+    say(f"Writing NVS image to partition '{part.name}' (offset={part.offset:#x}, size={part.size:#x})")
+    write_flash(esp=loaded.esp, addr_data=[(part.offset, image)], flash_size='detect',
                 **write_flash_options(options, skip_flashed=True, diff=True))
 
 
@@ -107,7 +127,8 @@ def write_nvs(state, partition, csv_file, hmac_key=None, **options):
 @hmac_key_option
 @flash_options
 @pass_state
-def cmd_write_nvs(state, partition, csv_file, hmac_key, **options):
+def cmd_write_nvs(state: State, /, partition: str, csv_file: str, hmac_key: Optional["NvsKeys"],
+                  **options: Any) -> None:
     return write_nvs(state, partition, csv_file, hmac_key, **options)
 
 
@@ -115,7 +136,9 @@ def cmd_write_nvs(state, partition, csv_file, hmac_key, **options):
 # Reading
 # --------------------------------------------------------------------------------------
 
-def _load_image(state, partition, image_file, command='print-nvs', hmac_key=None):
+def _load_image(state: State, partition: Optional[str], image_file: Optional[str],
+                command: str = 'print-nvs', hmac_key: Optional["NvsKeys"] = None
+                ) -> tuple[bytes, Optional[PartitionDefinition], str]:
     """Get an NVS image off the device or from a file, decrypted with `hmac_key`.
 
     Returns ``(image bytes, partition or None, description)``.
@@ -124,7 +147,7 @@ def _load_image(state, partition, image_file, command='print-nvs', hmac_key=None
     return _decrypt(data, hmac_key, source), part, source
 
 
-def _decrypt(data, hmac_key, source):
+def _decrypt(data: bytes, hmac_key: Optional["NvsKeys"], source: str) -> bytes:
     from idftool.nvs import NvsError
     from idftool.nvs.crypto import decrypt, looks_encrypted
 
@@ -135,7 +158,8 @@ def _decrypt(data, hmac_key, source):
     return data
 
 
-def _read_image(state, partition, image_file, command):
+def _read_image(state: State, partition: Optional[str], image_file: Optional[str], command: str
+                ) -> tuple[bytes, Optional[PartitionDefinition], str]:
     if (image_file is None) == (partition is None):
         raise click.UsageError("Provide exactly one of a partition name or --file")
     reject_file_as_partition(partition, command)
@@ -146,18 +170,21 @@ def _read_image(state, partition, image_file, command):
             print(f"Warning: '{image_file}' does not look like an NVS image", file=sys.stderr)
         return data, None, f"'{image_file}'"
 
+    assert partition is not None
     loaded = state.setup()
     part = _nvs_partition(loaded, partition)
     say(f"Reading partition {part.name} (offset={part.offset:#x}, size={part.size:#x})")
+    assert loaded.esp is not None
     return loaded.esp.read_flash(part.offset, part.size), part, f"partition '{part.name}'"
 
 
-def _report_errors(image):
+def _report_errors(image: "NvsImage") -> None:
     for error in image.errors:
         print(f"Warning: {error}", file=sys.stderr)
 
 
-def print_nvs(state, partition, image_file, pages, hmac_key=None):
+def print_nvs(state: State, partition: Optional[str], image_file: Optional[str], pages: bool,
+              hmac_key: Optional["NvsKeys"] = None) -> None:
     import idftool.nvs as nvs
     data, _, source = _load_image(state, partition, image_file, hmac_key=hmac_key)
     image = nvs.parse(data)
@@ -178,11 +205,13 @@ def print_nvs(state, partition, image_file, pages, hmac_key=None):
 @click.option('--pages', is_flag=True, help='Also show the page map (state, sequence, how full)')
 @hmac_key_option
 @pass_state
-def cmd_print_nvs(state, partition, image_file, pages, hmac_key):
+def cmd_print_nvs(state: State, /, partition: Optional[str], image_file: Optional[str],
+                  pages: bool, hmac_key: Optional["NvsKeys"]) -> None:
     return print_nvs(state, partition, image_file, pages, hmac_key)
 
 
-def extract_nvs(state, image_file, csv_file, hmac_key=None):
+def extract_nvs(state: State, image_file: str, csv_file: str,
+                hmac_key: Optional["NvsKeys"] = None) -> None:
     """Dump an NVS image file to CSV. The device-side equivalent is :func:`read_nvs`."""
     import idftool.nvs as nvs
     data, _, source = _load_image(state, None, image_file, hmac_key=hmac_key)
@@ -200,11 +229,13 @@ def extract_nvs(state, image_file, csv_file, hmac_key=None):
 @click.argument('csv_file')
 @hmac_key_option
 @pass_state
-def cmd_extract_nvs(state, image_file, csv_file, hmac_key):
+def cmd_extract_nvs(state: State, /, image_file: str, csv_file: str,
+                    hmac_key: Optional["NvsKeys"]) -> None:
     return extract_nvs(state, image_file, csv_file, hmac_key)
 
 
-def read_nvs(state, partition, csv_file, hmac_key=None):
+def read_nvs(state: State, partition: str, csv_file: str,
+             hmac_key: Optional["NvsKeys"] = None) -> None:
     """Read an NVS partition off the device and dump it to CSV."""
     import idftool.nvs as nvs
     data, _, source = _load_image(state, partition, None, 'read-nvs', hmac_key)
@@ -221,7 +252,8 @@ def read_nvs(state, partition, csv_file, hmac_key=None):
 @click.argument('csv_file')
 @hmac_key_option
 @pass_state
-def cmd_read_nvs(state, partition, csv_file, hmac_key):
+def cmd_read_nvs(state: State, /, partition: str, csv_file: str,
+                 hmac_key: Optional["NvsKeys"]) -> None:
     return read_nvs(state, partition, csv_file, hmac_key)
 
 
@@ -236,14 +268,14 @@ With `--namespace` set, `key=value` and `:key:type=value` work too — a leading
 second one also names a type the spec is rejected rather than guessed at."""
 
 
-def _read_host_file(path):
+def _read_host_file(path: str) -> bytes:
     try:
         return open(path, 'rb').read()
     except OSError as e:
         raise click.UsageError(f"Cannot read value file '{path}': {e}")
 
 
-def _parse_value(type_name, text, read_file=_read_host_file):
+def _parse_value(type_name: str, text: str, read_file: ReadFile = _read_host_file) -> "Value":
     """Turn the text after the ``=`` into the value the entry will hold. ``@path`` values
     come from `read_file`."""
     from idftool.nvs import NvsError
@@ -272,7 +304,8 @@ def _parse_value(type_name, text, read_file=_read_host_file):
         raise NvsError(f"'{text}' is not a valid {type_name} value")
 
 
-def _parse_set(spec, default_namespace, read_file=_read_host_file):
+def _parse_set(spec: str, default_namespace: Optional[str],
+               read_file: ReadFile = _read_host_file) -> "Edit":
     """Parse a ``--set`` spec into an Edit."""
     from idftool.nvs import PRIMITIVES, NvsError
     from idftool.nvs.edit import Edit
@@ -284,6 +317,7 @@ def _parse_set(spec, default_namespace, read_file=_read_host_file):
 
     known = list(PRIMITIVES) + ['string', 'blob']
 
+    type_name: Optional[str]
     if len(parts) == 1:
         namespace, key, type_name = default_namespace, parts[0], None
     elif len(parts) == 2:
@@ -317,11 +351,11 @@ def _parse_set(spec, default_namespace, read_file=_read_host_file):
 
     # With no type given the value can only be decoded once the existing entry is known, so
     # hand the raw text through and let the editor resolve it.
-    value = _parse_value(type_name, text, read_file) if type_name else text
+    value: "Value" = _parse_value(type_name, text, read_file) if type_name else text
     return Edit(namespace, key, type_name, value)
 
 
-def _parse_delete(spec, default_namespace):
+def _parse_delete(spec: str, default_namespace: Optional[str]) -> "Edit":
     from idftool.nvs.edit import Edit
 
     parts = spec.split(':')
@@ -338,7 +372,7 @@ def _parse_delete(spec, default_namespace):
     return Edit(namespace, key)
 
 
-def _fill_blob(encoding, value, key):
+def _fill_blob(encoding: str, value: str, key: str) -> bytes:
     """The bytes of a ``blob_fill(N;0xPP)`` or ``blob_sz_fill(N;0xPP)`` value."""
     import re
     import struct
@@ -354,7 +388,8 @@ def _fill_blob(encoding, value, key):
     return prefix + data + bytes([pad]) * (length - len(data))
 
 
-def _csv_value(key, row_type, encoding, value, read_file):
+def _csv_value(key: str, row_type: str, encoding: str, value: str,
+               read_file: ReadFile) -> tuple[str, "Value"]:
     """``(type, value)`` of one ``nvs_partition_gen`` CSV row."""
     import base64
     import binascii
@@ -389,7 +424,7 @@ def _csv_value(key, row_type, encoding, value, read_file):
     raise click.UsageError(f"'{key}': unknown encoding '{encoding}'")
 
 
-def csv_edits(text, source, read_file=_read_host_file):
+def csv_edits(text: str, source: str, read_file: ReadFile = _read_host_file) -> list["Edit"]:
     """Edits setting every key in an ``nvs_partition_gen`` CSV, the format ``create-nvs``
     takes and ``read-nvs`` writes. ``file`` rows are read through `read_file`."""
     import csv
@@ -398,7 +433,8 @@ def csv_edits(text, source, read_file=_read_host_file):
     rows = csv.DictReader(line for line in text.splitlines() if not line.startswith('#'))
     if not rows.fieldnames or not {'key', 'type', 'encoding', 'value'} <= set(rows.fieldnames):
         raise click.UsageError(f"{source} needs a 'key,type,encoding,value' header")
-    edits, namespace = [], None
+    edits: list[Edit] = []
+    namespace: Optional[str] = None
     for row in rows:
         key, row_type = row['key'], (row['type'] or '').strip()
         if row_type == 'namespace':
@@ -415,7 +451,7 @@ def csv_edits(text, source, read_file=_read_host_file):
     return edits
 
 
-def _read_csv(path):
+def _read_csv(path: str) -> list["Edit"]:
     try:
         text = open(path, encoding='utf-8').read()
     except OSError as e:
@@ -423,37 +459,40 @@ def _read_csv(path):
     return csv_edits(text, f"'{path}'")
 
 
-def _resolve_untyped(image, edits, read_file=_read_host_file):
+def _resolve_untyped(image: "NvsImage", edits: list["Edit"],
+                     read_file: ReadFile = _read_host_file) -> list["Edit"]:
     """Fill in the type of any ``--set`` that didn't give one, from the entry it replaces —
     an earlier edit of the same key, or else the image's."""
     from idftool.nvs.edit import Edit
 
-    resolved, types = [], {}
+    resolved: list[Edit] = []
+    types: dict[str, Optional[str]] = {}
     for edit in edits:
         if edit.is_delete or edit.type is not None:
             resolved.append(edit)
             types[edit.qualified] = edit.type
             continue
+        text = cast(str, edit.value)
         existing = image.get(edit.namespace, edit.key)
-        type_name = types.get(edit.qualified, existing and existing.type)
+        type_name = types.get(edit.qualified, existing.type if existing is not None else None)
         if type_name is None:
             from idftool.nvs import PRIMITIVES, NvsError
             known = ', '.join(list(PRIMITIVES) + ['string', 'blob'])
             raise NvsError(
                 f"'{edit.namespace}:{edit.key}' is not in the image, so its type cannot be "
-                f"inferred — write it as {edit.namespace}:{edit.key}:<type>={edit.value} "
+                f"inferred — write it as {edit.namespace}:{edit.key}:<type>={text} "
                 f"(types: {known})")
         types[edit.qualified] = type_name
         resolved.append(Edit(edit.namespace, edit.key, type_name,
-                             _parse_value(type_name, edit.value, read_file)))
+                             _parse_value(type_name, text, read_file)))
     return resolved
 
 
-def _contiguous_writes(offset, image, dirty):
+def _contiguous_writes(offset: int, image: bytes, dirty: Iterable[int]) -> list[tuple[int, bytes]]:
     """Group dirty page indices into (address, data) runs so a device write is one erase run."""
     from idftool.nvs import PAGE_SIZE
 
-    writes = []
+    writes: list[tuple[int, bytes]] = []
     for page in dirty:
         if writes and writes[-1][0] + len(writes[-1][1]) == offset + page * PAGE_SIZE:
             writes[-1] = (writes[-1][0],
@@ -464,23 +503,25 @@ def _contiguous_writes(offset, image, dirty):
     return [(addr, bytes(data)) for addr, data in writes]
 
 
-def _describe(change):
+def _describe(change: "Change") -> str:
     if change.action == 'unchanged':
         return f"  = {change.edit.qualified} unchanged"
     if change.action == 'deleted':
         return f"  - {change.edit.qualified} ({change.type}) deleted"
     if change.action == 'added':
         return f"  + {change.edit.qualified} ({change.type}) = {_short(change.edit.value)}"
+    assert change.before is not None
     return (f"  ~ {change.edit.qualified} ({change.type}): "
             f"{_short(change.before.value)} -> {_short(change.edit.value)}")
 
 
-def _short(value, limit=48):
+def _short(value: object, limit: int = 48) -> str:
     text = value.hex() if isinstance(value, bytes) else str(value)
     return text if len(text) <= limit else f'{text[:limit]}…'
 
 
-def _write_pages(esp, part, result, dirty, options, hmac_key=None):
+def _write_pages(esp: ESPLoader, part: PartitionDefinition, result: bytes, dirty: list[int],
+                 options: Mapping[str, Any], hmac_key: Optional["NvsKeys"] = None) -> None:
     # Only the pages that actually differ go back to the device. Flash erases in 4 KiB
     # sectors and a page is exactly one sector, so a partial write is safe here.
     # A page's ciphertext depends only on its plaintext and position, so the dirty pages hold.
@@ -492,13 +533,14 @@ def _write_pages(esp, part, result, dirty, options, hmac_key=None):
                 **write_flash_options(options, skip_flashed=True, diff=True))
 
 
-def manifest_edits(set_values, deletes, read_file, csv_file=None):
+def manifest_edits(set_values: Mapping[str, object], deletes: Iterable[str], read_file: ReadFile,
+                   csv_file: Optional[str] = None) -> list["Edit"]:
     """Edits from a bundle manifest's ``set-nvs`` op: the keys of `csv_file`, then ``ns:key`` →
     ``type:value`` (or a bare value for a key that exists), then ``ns:key`` deletes."""
     from idftool.nvs import PRIMITIVES
 
     known = list(PRIMITIVES) + ['string', 'blob']
-    edits = (csv_edits(read_file(csv_file).decode('utf-8'), f"'{csv_file}'", read_file)
+    edits: list[Edit] = (csv_edits(read_file(csv_file).decode('utf-8'), f"'{csv_file}'", read_file)
              if csv_file else [])
     for qualified, value in set_values.items():
         value = str(value)
@@ -512,12 +554,14 @@ def manifest_edits(set_values, deletes, read_file, csv_file=None):
     return edits + [_parse_delete(d, None) for d in deletes]
 
 
-def check_nvs_key(esp, part, hmac_key):
+def check_nvs_key(esp: ESPLoader, part: PartitionDefinition, hmac_key: Optional["NvsKeys"]) -> None:
     """Raise if NVS partition `part` can't be read with `hmac_key` (or without one)."""
     _decrypt(esp.read_flash(part.offset, part.size), hmac_key, f"partition '{part.name}'")
 
 
-def edit_nvs_partition(esp, part, edits, options, read_file=_read_host_file, hmac_key=None):
+def edit_nvs_partition(esp: ESPLoader, part: PartitionDefinition, edits: list["Edit"],
+                       options: Mapping[str, Any], read_file: ReadFile = _read_host_file,
+                       hmac_key: Optional["NvsKeys"] = None) -> None:
     """Apply `edits` to NVS partition `part` on the device, writing only the pages that change."""
     import idftool.nvs as nvs
     from idftool.nvs.edit import apply
@@ -535,24 +579,27 @@ def edit_nvs_partition(esp, part, edits, options, read_file=_read_host_file, hma
     _write_pages(esp, part, result, dirty, options, hmac_key)
 
 
-def _split_target(args, image_file, what):
+def _split_target(args: Iterable[str], image_file: Optional[str], what: str
+                  ) -> tuple[Optional[str], list[str]]:
     """Separate an optional leading partition name from the specs that follow it.
 
     ``--file`` means every positional is a spec; without it the first one names the partition,
     matching ``read``/``write``/``erase``. Click cannot express that conditional arity, so it
     is done by hand.
     """
-    args = list(args)
+    listed = list(args)
     if image_file is not None:
-        return None, args
-    if not args:
+        return None, listed
+    if not listed:
         raise click.UsageError(
             f"Provide a partition name (or --file) and at least one {what}")
-    return args[0], args[1:]
+    return listed[0], listed[1:]
 
 
-def set_nvs(state, args, image_file, deletes, namespace, output_file, do_rewrite, dry_run,
-            hmac_key=None, csv_files=(), **options):
+def set_nvs(state: State, args: Iterable[str], image_file: Optional[str], deletes: Iterable[str],
+            namespace: Optional[str], output_file: Optional[str], do_rewrite: bool, dry_run: bool,
+            hmac_key: Optional["NvsKeys"] = None, csv_files: Iterable[str] = (),
+            **options: Any) -> None:
     """Set or delete keys in an NVS partition or image. Keyword arguments go to esptool's
     ``write_flash`` (see :data:`idftool.flash.WRITE_FLASH_OPTIONS`)."""
     import idftool.nvs as nvs
@@ -600,6 +647,7 @@ def set_nvs(state, args, image_file, deletes, namespace, output_file, do_rewrite
         _write_pages(state.esp, part, result, dirty, options, hmac_key)
     else:
         target = output_file or image_file
+        assert target is not None
         with open(target, 'wb') as f:
             f.write(_encrypt(result, hmac_key))
         say(f"Wrote {len(result):#x} bytes to '{target}'")
@@ -623,8 +671,10 @@ def set_nvs(state, args, image_file, deletes, namespace, output_file, do_rewrite
 @hmac_key_option
 @flash_options
 @pass_state
-def cmd_set_nvs(state, args, image_file, csv_files, deletes, namespace, output_file, do_rewrite,
-                dry_run, hmac_key, **options):
+def cmd_set_nvs(state: State, /, args: tuple[str, ...], image_file: Optional[str],
+                csv_files: tuple[str, ...], deletes: tuple[str, ...], namespace: Optional[str],
+                output_file: Optional[str], do_rewrite: bool, dry_run: bool,
+                hmac_key: Optional["NvsKeys"], **options: Any) -> None:
     """Set or delete keys in an NVS partition on the device, or in an image file with --file.
 
     A SPEC is `namespace:key=value`, or `namespace:key:type=value` to give the type of a key
@@ -641,7 +691,7 @@ def cmd_set_nvs(state, args, image_file, csv_files, deletes, namespace, output_f
                    hmac_key, csv_files, **options)
 
 
-def _parse_get(spec, default_namespace):
+def _parse_get(spec: str, default_namespace: Optional[str]) -> tuple[str, str]:
     parts = spec.split(':')
     if len(parts) == 1:
         namespace, key = default_namespace, parts[0]
@@ -656,7 +706,8 @@ def _parse_get(spec, default_namespace):
     return namespace, key
 
 
-def get_nvs(state, args, image_file, namespace, raw, hmac_key=None):
+def get_nvs(state: State, args: Iterable[str], image_file: Optional[str], namespace: Optional[str],
+            raw: bool, hmac_key: Optional["NvsKeys"] = None) -> None:
     import idftool.nvs as nvs
 
     partition, specs = _split_target(args, image_file, "KEY")
@@ -681,7 +732,7 @@ def get_nvs(state, args, image_file, namespace, raw, hmac_key=None):
         image = nvs.parse(data)
         _report_errors(image)
 
-        values = []
+        values: list[NvsEntry] = []
         for ns, key in keys:
             entry = image.get(ns, key)
             if entry is None:
@@ -711,7 +762,8 @@ def get_nvs(state, args, image_file, namespace, raw, hmac_key=None):
               help='Write the value to stdout as raw bytes rather than a line of text')
 @hmac_key_option
 @pass_state
-def cmd_get_nvs(state, args, image_file, namespace, raw, hmac_key):
+def cmd_get_nvs(state: State, /, args: tuple[str, ...], image_file: Optional[str],
+                namespace: Optional[str], raw: bool, hmac_key: Optional["NvsKeys"]) -> None:
     """Print the value of one or more keys, from a partition on the device or --file.
 
     A KEY is `namespace:key`, or just `key` with `--namespace`. Values are printed bare, one

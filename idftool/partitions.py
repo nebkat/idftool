@@ -6,7 +6,7 @@ binary. Everything here works on a table plus, where a device is involved, an
 ``ESPLoader`` — no CLI state."""
 import os.path
 import re
-from typing import Optional, Literal
+from typing import Optional, Literal, cast
 
 from esptool import ESPLoader
 
@@ -129,7 +129,9 @@ def read_otadata(esp: ESPLoader, partition_table: PartitionTable) -> tuple[Parti
 
     return otadata_partition, OtaDataParameters(otadata, a_or_b, ota_app_count)
 
-def write_otadata(esp: ESPLoader, partition: PartitionDefinition, otadata: OtaDataParameters):
+def write_otadata(esp: ESPLoader, partition: PartitionDefinition, otadata: OtaDataParameters) -> None:
+    """Write `otadata`'s entry, which must be set, to its sector of `partition`."""
+    assert otadata.otadata is not None
     esp.flash_begin(
         size=OtaDataSelectEntry.SIZE,
         offset=partition.offset + (0 if otadata.a_or_b == 'a' else esp.FLASH_SECTOR_SIZE)
@@ -229,7 +231,7 @@ def load_partition_table_file(
 def resolve_partition_table_format(output_file: Optional[str], explicit: Optional[str]) -> Literal['csv', 'bin']:
     """Pick the output format from an explicit flag, else the output file extension (default csv)."""
     if explicit:
-        return explicit
+        return cast(Literal['csv', 'bin'], explicit)
     if output_file:
         ext = os.path.splitext(output_file)[1].lower()
         if ext == '.csv':
@@ -241,7 +243,7 @@ def resolve_partition_table_format(output_file: Optional[str], explicit: Optiona
             f"pass --format csv|bin or use a .csv/.bin extension")
     return 'csv'
 
-def write_partition_table_file(partition_table: PartitionTable, output_file: str, output_format: Literal['csv', 'bin']):
+def write_partition_table_file(partition_table: PartitionTable, output_file: str, output_format: Literal['csv', 'bin']) -> None:
     """Serialise a partition table to CSV or binary and write it to output_file."""
     if output_format == 'csv':
         data = partition_table.to_csv().encode('utf-8')

@@ -1,5 +1,6 @@
 """Raw partition I/O: ``read``, ``write``, ``erase``, ``view``."""
 import os.path
+from typing import Any, Iterable
 
 import rich_click as click
 
@@ -10,12 +11,13 @@ from idftool.cli import cli, pass_state
 from idftool.display import say
 from idftool.flash import flash_options, option_group, write_flash, write_flash_options
 from idftool.partitions import get_partition_address, get_partition_slice
+from idftool.state import State
 
 # Keep the pass-through write options in a panel of their own.
 option_group('write')
 
-def hexdump(data: bytes, start = 0, width = 16):
-    def to_printable_ascii(byte):
+def hexdump(data: bytes, start: int = 0, width: int = 16) -> None:
+    def to_printable_ascii(byte: int) -> str:
         return chr(byte) if 32 <= byte <= 126 else "."
 
     # If start is not aligned, print an empty row with padding
@@ -32,11 +34,11 @@ def hexdump(data: bytes, start = 0, width = 16):
         misalignment = 0
 
 
-def read_partition(state, partition, output_file):
+def read_partition(state: State, partition: str, output_file: str) -> None:
     loaded = state.setup()
-    partition, address, length = get_partition_slice(
+    target, address, length = get_partition_slice(
         loaded.partition_table, loaded.partition_table_entry, loaded.bootloader_entry, partition)
-    print(f"Reading partition {partition.name} (offset={address:#x}, size={length:#x})")
+    print(f"Reading partition {target.name} (offset={address:#x}, size={length:#x})")
     read_flash(loaded.esp, address=address, size=length, output=output_file)
 
 
@@ -44,20 +46,20 @@ def read_partition(state, partition, output_file):
 @click.argument('partition')
 @click.argument('output_file')
 @pass_state
-def cmd_read(state, partition, output_file):
+def cmd_read(state: State, partition: str, output_file: str) -> None:
     return read_partition(state, partition, output_file)
 
 
-def write_partitions(state, files, **options):
+def write_partitions(state: State, files: Iterable[str], **options: Any) -> None:
     """Write files to named partitions. Keyword arguments go to esptool's ``write_flash``
     (see :data:`idftool.flash.WRITE_FLASH_OPTIONS`)."""
     loaded = state.setup()
-    files = list(files)
-    if len(files) % 2 != 0:
+    names_and_files = list(files)
+    if len(names_and_files) % 2 != 0:
         raise ValueError("Files list must contain pairs of partition name and input file")
 
-    addr_data = []
-    for partition_name, input_file in list(zip(files[::2], files[1::2])):
+    addr_data: list[tuple[int, str]] = []
+    for partition_name, input_file in list(zip(names_and_files[::2], names_and_files[1::2])):
         partition, address = get_partition_address(
             loaded.partition_table, loaded.partition_table_entry, loaded.bootloader_entry, partition_name)
         input_file_size = os.path.getsize(input_file)
@@ -66,7 +68,7 @@ def write_partitions(state, files, **options):
         if address == partition.offset:
             with open(input_file, 'rb') as f:
                 check_partition_image(loaded.esp, partition, f.read(), f"'{input_file}'",
-                                      options.get('force'))
+                                      bool(options.get('force')))
         addr_data.append((address, input_file))
         say(f"Writing file {input_file} (size={input_file_size:#x}) to partition {partition.name} (offset={address:#x}, size={partition.size:#x})")
 
@@ -82,35 +84,36 @@ def write_partitions(state, files, **options):
 @click.argument('files', nargs=-1, required=True, metavar='PARTITION FILENAME ...')
 @flash_options
 @pass_state
-def cmd_write(state, files, **options):
+def cmd_write(state: State, /, files: tuple[str, ...], **options: Any) -> None:
     return write_partitions(state, files, **options)
 
 
-def erase_partition(state, partition):
+def erase_partition(state: State, partition: str) -> None:
     loaded = state.setup()
-    partition, address, length = get_partition_slice(
+    target, address, length = get_partition_slice(
         loaded.partition_table, loaded.partition_table_entry, loaded.bootloader_entry, partition)
-    say(f"Erasing partition {partition.name} (offset={address:#x}, size={length:#x})")
+    say(f"Erasing partition {target.name} (offset={address:#x}, size={length:#x})")
     erase_region(loaded.esp, address=address, size=length)
 
 
 @cli.command('erase', help='Erase a partition (or slice)')
 @click.argument('partition')
 @pass_state
-def cmd_erase(state, partition):
+def cmd_erase(state: State, partition: str) -> None:
     return erase_partition(state, partition)
 
 
-def view_partition(state, partition, width, output):
+def view_partition(state: State, partition: str, width: int, output: str) -> None:
     loaded = state.setup()
-    partition, address, length = get_partition_slice(
+    target, address, length = get_partition_slice(
         loaded.partition_table, loaded.partition_table_entry, loaded.bootloader_entry, partition)
-    print(f"Viewing partition {partition.name} (offset={address:#x}, size={length:#x})")
+    print(f"Viewing partition {target.name} (offset={address:#x}, size={length:#x})")
+    assert loaded.esp is not None  # setup() connects by default
     buffer = loaded.esp.read_flash(offset=address, length=length)
     if output == 'str':
         print(buffer.decode('utf-8', errors='replace'), flush=True)
     elif output == 'hex':
-        hexdump(buffer, address - partition.offset, width)
+        hexdump(buffer, address - target.offset, width)
     else:
         raise ValueError(f"Invalid output type {output}")
 
@@ -121,5 +124,5 @@ def view_partition(state, partition, width, output):
 @click.option('--hex', 'output', flag_value='hex', default=True, help='Output as a hex dump')
 @click.option('-s', '--string', 'output', flag_value='str', help='Output as a string')
 @pass_state
-def cmd_view(state, partition, width, output):
+def cmd_view(state: State, partition: str, width: int, output: str) -> None:
     return view_partition(state, partition, width, output)
