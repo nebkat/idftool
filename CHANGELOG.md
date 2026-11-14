@@ -4,6 +4,24 @@ All notable changes to this project are documented here. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [v1.8.0] — 2026-11-13
+
+### Added
+- idftool ships a `py.typed` marker: the library is annotated and passes
+  `mypy --strict`, so a strict project type-checks its calls into idftool
+  without `follow_untyped_imports`. `from idftool import State, write_image`
+  and the other re-exports carry their real types.
+
+### Changed
+- Requires esp-idf-defs 0.1.8, its first typed release.
+
+### Fixed
+- `get-boot`, `ota` and the partition table's active marker count only `ota_0`
+  to `ota_15` as OTA slots; a `test` app partition made them pick the wrong
+  slot once the OTA sequence passed the number of real slots.
+- `app-info`, `print-image` and `print-bundle` show an app's real maximum chip
+  revision (esp-idf-defs 0.1.8 reads it from the right header offset).
+
 ## [v1.7.0] — 2026-11-05
 
 ### Added
@@ -465,6 +483,7 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 ### Added
 - Initial release.
 
+[v1.8.0]: https://github.com/nebkat/idftool/releases/tag/v1.8.0
 [v1.7.0]: https://github.com/nebkat/idftool/releases/tag/v1.7.0
 [v1.6.3]: https://github.com/nebkat/idftool/releases/tag/v1.6.3
 [v1.6.2]: https://github.com/nebkat/idftool/releases/tag/v1.6.2
