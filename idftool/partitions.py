@@ -12,7 +12,7 @@ from esptool import ESPLoader
 
 from esp_idf_defs.otadata import OtaDataParameters, OtaDataSelectEntry
 from esp_idf_defs.partitions import PartitionTable, PartitionDefinition, APP_TYPE, DATA_TYPE, \
-    NUM_PARTITION_SUBTYPE_APP_OTA, SUBTYPES, get_encoding
+    SUBTYPES, get_encoding
 
 PARTITION_SLICE_REGEX = re.compile(r"^(?P<partition>.+?)(?:\[(?:(?P<start>[-+]?(?:0x)?[0-9A-Fa-f]+)?(?::(?P<stop>[-+]?(?:0x)?[0-9A-Fa-f]+)?)?)?])?$")
 PARTITION_OFFSET_REGEX = re.compile(r"^(?P<partition>.+?)(?:\[(?:(?P<start>[-+]?(?:0x)?[0-9A-Fa-f]+)?)?])?$")
@@ -108,7 +108,7 @@ def read_otadata(esp: ESPLoader, partition_table: PartitionTable) -> tuple[Parti
     ota_app_count = len(list(
         part for part in partition_table if
         part.type == APP_TYPE and SUBTYPES[APP_TYPE]['ota_0'] <= part.subtype <=
-        SUBTYPES[APP_TYPE]['ota_15'] + NUM_PARTITION_SUBTYPE_APP_OTA)
+        SUBTYPES[APP_TYPE]['ota_15'])
     )
     if ota_app_count == 0:
         raise ValueError("No OTA partitions found") # TODO Better error type

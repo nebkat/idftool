@@ -1170,3 +1170,27 @@ def test_type_checkers_see_every_lazy_export():
             for node in block.body if isinstance(node, ast.ImportFrom)
             for alias in node.names}
     assert seen == idftool._EXPORTS
+
+
+def test_read_otadata_counts_only_ota_slots():
+    """A test app (subtype 0x20) is not an OTA slot, so it leaves the slot arithmetic alone."""
+    from esp_idf_defs.otadata import OtaDataSelectEntry
+    from esp_idf_defs.partitions import PartitionTable
+
+    from idftool.partitions import read_otadata
+
+    table = PartitionTable.from_csv(
+        "otadata,data,ota,0xd000,0x2000\n"
+        "ota_0,app,ota_0,0x10000,1M\n"
+        "ota_1,app,ota_1,,1M\n"
+        "test,app,test,,1M\n")
+
+    class Esp:
+        FLASH_SECTOR_SIZE = 0x1000
+
+        def read_flash(self, offset, length):
+            entry = OtaDataSelectEntry(3) if offset == 0xd000 else None
+            return entry.to_bytes() if entry else b'\xff' * length
+
+    _, otadata = read_otadata(Esp(), table)
+    assert (otadata.app_count, otadata.slot, otadata.next_slot) == (2, 0, 1)
