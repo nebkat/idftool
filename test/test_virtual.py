@@ -941,6 +941,38 @@ def test_r_refreshes_and_q_quits(picker):
         picker("q")
 
 
+def test_the_cursor_starts_on_the_default_port(picker):
+    assert picker("\r", default="/dev/bridge")["port"] == "/dev/bridge"
+    # A default no longer listed starts at the top.
+    assert picker("\r", default="/dev/gone")["port"] == "/dev/jtag0"
+
+
+def test_quit_can_be_left_out(picker):
+    """Without it q does nothing, and Refresh is the last row: one more down wraps to the
+    first port, where the Quit row would have been."""
+    assert picker("q\r", allow_quit=False)["port"] == "/dev/jtag0"
+    past_refresh = "\x1b[B" * 5 + "\r"  # three ports, manual, refresh, then one more
+    assert picker(past_refresh, allow_quit=False)["port"] == "/dev/jtag0"
+
+
+def test_list_ports_chooses_what_is_offered(picker):
+    """The adapter port left out, the cursor's second row is the manual entry."""
+    import idftool.ports as ports
+
+    only_jtag = lambda: [p for p in ports.serial_ports.get_port_list() if "jtag" in p.device]  # noqa: E731
+    assert picker("\x1b[B\x1b[B\r/dev/typed\r", list_ports=only_jtag)["port"] == "/dev/typed"
+
+
+def test_back_returns_none(picker):
+    assert picker("\x1b[D", allow_back=True) is None
+    back_row = "\x1b[B" * 5 + "\r"  # three ports, manual, refresh, then Back
+    assert picker(back_row, allow_back=True) is None
+
+
+def test_left_does_nothing_without_back(picker):
+    assert picker("\x1b[D\r")["port"] == "/dev/jtag0"
+
+
 def test_a_held_port_is_shown_and_refused(picker, monkeypatch):
     import rich_click as click
 
