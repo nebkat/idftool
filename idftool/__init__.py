@@ -20,6 +20,7 @@ _SOURCES = {
     'idftool.state': ('State', 'Loaded', 'get_esp'),
     'idftool.cli': ('pass_state',),
     'idftool.flash': ('WRITE_FLASH_OPTIONS',),
+    'idftool.apps': ('partition_table_offset',),
     'idftool.commands.misc': ('list_devices', 'monitor', 'idf_py', 'run_esptool',
                               'run_espefuse', 'enter_bootloader'),
     'idftool.commands.partition_io': ('read_partition', 'write_partitions', 'erase_partition',
@@ -44,6 +45,7 @@ if TYPE_CHECKING:
     from idftool.state import get_esp as get_esp
     from idftool.cli import pass_state as pass_state
     from idftool.flash import WRITE_FLASH_OPTIONS as WRITE_FLASH_OPTIONS
+    from idftool.apps import partition_table_offset as partition_table_offset
     from idftool.commands.misc import list_devices as list_devices
     from idftool.commands.misc import monitor as monitor
     from idftool.commands.misc import idf_py as idf_py

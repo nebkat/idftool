@@ -20,7 +20,8 @@ from esp_idf_defs.partitions import PartitionTable, PartitionDefinition, \
 from esp_pylib.serial_ports import get_port_names
 
 from idftool import network
-from idftool.apps import BOOTLOADER_OFFSETS, device_partition_table_offset, recorded_partition_table_offset
+from idftool.apps import BOOTLOADER_OFFSETS, device_flash_size, device_partition_table_offset, \
+    recorded_partition_table_offset
 from idftool.display import print_partition_table, say
 from idftool.partitions import check_image_file, image_reader, is_erased, load_partition_table_file, \
     read_otadata, require_partitions
@@ -186,11 +187,7 @@ class State:
         if bootloader is None:
             bootloader = self.esp.BOOTLOADER_FLASH_OFFSET
         esp = self.esp
-
-        def flash_size() -> Optional[int]:
-            detected = detect_flash_size(esp)
-            return flash_size_bytes(detected) if detected else None
-        return device_partition_table_offset(esp, bootloader, flash_size)
+        return device_partition_table_offset(esp, bootloader, lambda: device_flash_size(esp))
 
     def resolve_table_offset(self, recorded: Optional[int], *, writing: bool = False, force: bool = False) -> int:
         """``--partition-table-offset``, else `recorded`, else ESP-IDF's default. An explicit

@@ -5,12 +5,13 @@ from dataclasses import dataclass
 from typing import Callable, ClassVar, Optional
 from weakref import WeakKeyDictionary
 
-from esptool import ESPLoader
+from esptool import ESPLoader, flash_size_bytes
+from esptool.cmds import detect_flash_size
 from esptool.targets import CHIP_DEFS
 
 from esp_idf_defs import AppDescription, ImageHeader, ImageMetadata, ChipId
 from esp_idf_defs.partitions import PartitionTable, PartitionDefinition, APP_TYPE, BOOTLOADER_TYPE, \
-    PARTITION_TABLE_SIZE
+    PARTITION_TABLE_OFFSET, PARTITION_TABLE_SIZE
 
 from idftool.display import print_partition_table
 
@@ -210,6 +211,25 @@ def device_partition_table_offset(esp: ESPLoader, bootloader_offset: int,
         _device_table_offsets[esp] = recorded_partition_table_offset(
             lambda offset, length: esp.read_flash(offset, length), [bootloader_offset], flash_size())
     return _device_table_offsets[esp]
+
+
+def partition_table_offset(esp: ESPLoader, bootloader_offset: Optional[int] = None) -> int:
+    """Where the partition table is on the chip `esp` is connected to: where its bootloader, at
+    `bootloader_offset` (the chip's own by default), records it, else ESP-IDF's default, 0x8000.
+
+    For a caller driving its own connection, so a tool needs no rule of its own for where a
+    device's table is. Read once per connection (:func:`forget_device_partition_table_offset`).
+    Raises if the bootloader records an offset that can't be a partition table's."""
+    if bootloader_offset is None:
+        bootloader_offset = esp.BOOTLOADER_FLASH_OFFSET
+    recorded = device_partition_table_offset(esp, bootloader_offset, lambda: device_flash_size(esp))
+    return recorded if recorded is not None else PARTITION_TABLE_OFFSET
+
+
+def device_flash_size(esp: ESPLoader) -> Optional[int]:
+    """The flash size the chip `esp` is connected to reports, in bytes, or None if it reports none."""
+    detected = detect_flash_size(esp)
+    return flash_size_bytes(detected) if detected else None
 
 
 def forget_device_partition_table_offset(esp: ESPLoader) -> None:

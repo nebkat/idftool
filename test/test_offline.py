@@ -370,6 +370,8 @@ def _flaky_state(monkeypatch):
                                primary_bootloader_offset=None, recovery_bootloader_offset=None)
     state.esp = _FlakyEsp(0x8000, table.to_binary())
     monkeypatch.setattr(state_module, "detect_flash_size", lambda esp: "16MB")
+    import idftool.apps as apps_module
+    monkeypatch.setattr(apps_module, "detect_flash_size", lambda esp: "16MB")
     return state
 
 
