@@ -22,6 +22,9 @@ this project adheres to [Semantic Versioning](https://semver.org/).
   `--partition-table-offset` or the table's own `partition_table` row, is
   refused by `write-table`, `write-image` and `write-bundle` unless `--force`,
   and read from there with a warning by everything else.
+- `idftool.partition_table_offset(esp)` says where the partition table is on
+  the chip an `ESPLoader` is connected to, by the same rule, for a tool that
+  drives its own connection (esp-dut reads the table there).
 
 ### Changed
 - Erased flash where the partition table should be is reported as "No partition
