@@ -13,12 +13,12 @@ from idftool.flash import write_flash
 from idftool.params import INPUT_FILE
 from idftool.partitions import load_partition_table_file, resolve_partition_table_format, \
     write_partition_table_file
-from idftool.state import State
+from idftool.state import State, check_table_row
 
 def print_table(state: State, table_file: Optional[str]) -> None:
     if table_file:
         partition_table = load_partition_table_file(
-            table_file, state.partition_table_offset,
+            table_file, state.table_offset(),
             state.primary_bootloader_offset, state.recovery_bootloader_offset)
         print(f"Partition table: {table_file}")
         print()
@@ -39,7 +39,7 @@ def cmd_print_table(state: State, table_file: Optional[str]) -> None:
 def create_table(state: State, input_file: str, output_file: str,
                  output_format: Optional[str]) -> None:
     partition_table = load_partition_table_file(
-        input_file, state.partition_table_offset,
+        input_file, state.table_offset(),
         state.primary_bootloader_offset, state.recovery_bootloader_offset)
     resolved_format = resolve_partition_table_format(output_file, output_format)
     write_partition_table_file(partition_table, output_file, resolved_format)
@@ -90,12 +90,16 @@ def cmd_dump_table(state: State, output_file: Optional[str], output_format: Opti
 
 def write_table(state: State, table_file: str, force: bool) -> None:
     esp = state.connect()
+    # Where the device's bootloader reads its table.
+    recorded = state.recorded_table_offset()
+    table_offset = state.resolve_table_offset(recorded, writing=True, force=force)
     partition_table = load_partition_table_file(
-        table_file, state.partition_table_offset,
+        table_file, table_offset,
         state.primary_bootloader_offset, state.recovery_bootloader_offset)
+    check_table_row(partition_table, recorded, writing=True, force=force)
 
     try:
-        partition_table.verify(partition_table_offset=state.partition_table_offset)
+        partition_table.verify(partition_table_offset=table_offset)
     except RuntimeError as e:
         if not force:
             raise RuntimeError(
@@ -108,17 +112,18 @@ def write_table(state: State, table_file: str, force: bool) -> None:
     if not state.quiet:
         print_partition_table(partition_table)
         print()
-    say(f"Writing partition table ({len(binary):#x} bytes) to offset {state.partition_table_offset:#x}...")
+    say(f"Writing partition table ({len(binary):#x} bytes) to offset {table_offset:#x}...")
     say("Note: this replaces only the partition map; existing partition data on flash is not moved, "
         "resized, or erased. A table that no longer matches the flash contents can make the device unbootable.")
-    write_flash(esp=esp, addr_data=[(state.partition_table_offset, binary)], flash_size='detect',
+    write_flash(esp=esp, addr_data=[(table_offset, binary)], flash_size='detect',
                 skip_flashed=True, diff=True)
     say("Partition table written")
 
 
 @cli.command('write-table', help='Flash a partition table from a CSV or binary file to the device')
 @click.argument('table_file', type=INPUT_FILE)
-@click.option('--force', is_flag=True, help='Flash even if the partition table fails verification')
+@click.option('--force', is_flag=True, help="Flash even if the partition table fails verification, or isn't where the bootloader "
+                   "records it")
 @pass_state
 def cmd_write_table(state: State, table_file: str, force: bool) -> None:
     return write_table(state, table_file, force)

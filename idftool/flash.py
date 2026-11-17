@@ -34,6 +34,7 @@ from rich.segment import ControlType
 from rich.text import Text
 from esptool.util import get_bytes, pad_to
 
+from idftool.apps import BOOTLOADER_DESCRIPTIONS_END, forget_device_partition_table_offset
 from idftool.display import say
 
 #: What esptool writes from: a file name, the bytes themselves, or a binary file.
@@ -135,7 +136,7 @@ def flash_options(f: _Command) -> _Command:
         click.option('--encrypt', is_flag=True, help='Encrypt the data as it is written'),
         click.option('--force', is_flag=True,
                      help='Ignore safety and content checks (chip mismatch, secure boot, '
-                          'flash size)'),
+                          'flash size, partition table offset)'),
         click.option('--ignore-flash-enc-efuse', is_flag=True,
                      help='Ignore the flash encryption eFuse settings'),
         click.option('--no-progress', is_flag=True, help='Do not print progress while writing'),
@@ -652,6 +653,8 @@ def write_flash(esp: ESPLoader, addr_data: Sequence[tuple[int, ImageSource]],
 
     Every other keyword argument goes straight through.
     """
+    if any(address < BOOTLOADER_DESCRIPTIONS_END for address, _ in addr_data):
+        forget_device_partition_table_offset(esp)
     skip_flashed = kwargs.pop('skip_flashed', False)
     diff = kwargs.pop('diff', False)
     if skip_flashed or diff:

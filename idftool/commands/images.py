@@ -16,7 +16,8 @@ from idftool.cli import cli, pass_state
 from idftool.display import say
 from idftool.flash import flash_options, option_group, write_flash, write_flash_options
 from idftool.params import BASED_INT, INPUT_FILE, fetch_pairs
-from idftool.partitions import check_image_file, get_partition_address, require_partitions
+from idftool.partitions import check_image_file, get_partition_address, image_reader, is_erased, \
+    require_partitions
 from idftool.state import State
 
 # The erase is the option that needs finding, so keep it out of the pass-through panel.
@@ -156,7 +157,7 @@ def write_image(state: State, image_file: str, erase: bool = True, **options: An
             "chip that was just wiped. Pass --no-erase (erase=False) to write only the "
             "regions that differ.")
 
-    loaded = state.setup(image_file=image_file)
+    loaded = state.setup(image_file=image_file, writing=True, force=bool(options.get('force')))
     esp = loaded.esp
     bootloader_entry = loaded.bootloader_entry
     # setup() connects, and the connection gives the bootloader offset.
@@ -214,29 +215,24 @@ def cmd_write_image(state: State, /, image_file: str, erase: bool, **options: An
 
 
 def print_image(state: State, image_file: str) -> None:
-    image_size = check_image_file(image_file, state.partition_table_offset)
+    image_size = os.path.getsize(image_file)
     with open(image_file, 'rb') as f:
-        f.seek(state.partition_table_offset)
-        partition_table_binary = f.read(state.partition_table_size)
+        read = image_reader(f, image_size)
+        table_offset = state.table_offset(read, image_size)
+        check_image_file(image_file, table_offset)
+        partition_table_binary = read(table_offset, state.partition_table_size)
+        if is_erased(partition_table_binary):
+            raise RuntimeError(f"No partition table in the image at offset {table_offset:#x}: the flash there is erased")
         try:
             partition_table = PartitionTable.from_binary(partition_table_binary)
         except (RuntimeError, ValueError) as e:
-            raise RuntimeError(f"Could not parse partition table at offset {state.partition_table_offset:#x}") from e
-        require_partitions(partition_table, f"image at offset {state.partition_table_offset:#x}")
-
-        def read(offset: int, length: int) -> bytes:
-            if offset >= image_size:
-                return b"\xff" * length
-            f.seek(offset)
-            data = f.read(length)
-            if len(data) < length:
-                data += b"\xff" * (length - len(data))
-            return data
+            raise RuntimeError(f"Could not parse partition table at offset {table_offset:#x}") from e
+        require_partitions(partition_table, f"image at offset {table_offset:#x}")
 
         print(f"Image: {image_file} ({image_size:#x} bytes)")
         print()
         print_partition_table_and_apps(
-            partition_table, read, find_bootloader(read, state.partition_table_offset))
+            partition_table, read, find_bootloader(read, table_offset))
 
 
 @cli.command('print-image', help='Print partition table and app info from a flash image file')

@@ -341,7 +341,8 @@ def test_create_and_print_bundle(run_offline, assets, tmp_path):
 
 
 class _FlakyEsp:
-    """ESPLoader stand-in that serves the partition table and fails every other read."""
+    """ESPLoader stand-in that serves the partition table and an erased bootloader, and fails every
+    other read."""
     FLASH_SECTOR_SIZE = 0x1000
     BOOTLOADER_FLASH_OFFSET = 0x0
     CHIP_NAME = "ESP32-S3"
@@ -354,6 +355,8 @@ class _FlakyEsp:
         from esptool.util import FatalError
         if offset == self.table_offset:
             return self.table_binary
+        if offset + length <= self.table_offset:
+            return b'\xff' * length
         raise FatalError("Failed to read flash block (result was 01050000: Comms error)")
 
 

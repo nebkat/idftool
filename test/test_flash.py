@@ -107,7 +107,8 @@ def test_write_image_allows_skip_flashed_without_the_erase():
 
 
 class _FakeEsp:
-    """ESPLoader stand-in that serves the partition table and nothing else."""
+    """ESPLoader stand-in that serves the partition table, over flash erased everywhere else
+    (so there is no bootloader to record where the table is)."""
     FLASH_SECTOR_SIZE = 0x1000
     BOOTLOADER_FLASH_OFFSET = 0x0
     CHIP_NAME = "ESP32-S3"
@@ -117,10 +118,9 @@ class _FakeEsp:
         self.table_binary = table_binary
 
     def read_flash(self, offset, length, *args, **kwargs):
-        from esptool.util import FatalError
         if offset == self.table_offset:
             return self.table_binary
-        raise FatalError("no flash here")
+        return b"\xff" * length
 
 
 def test_options_reach_esptool(monkeypatch, tmp_path):

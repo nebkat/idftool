@@ -16,8 +16,9 @@ from esptool.cmds import detect_flash_size
 from esp_idf_defs import ImageMetadata
 from esp_idf_defs.partitions import BOOTLOADER_TYPE, PartitionDefinition, PartitionTable
 
-from idftool.apps import check_partition_image, parse_bootloader, print_app_info, \
-    print_bootloader, print_partition_table_and_apps, validate_app_binary
+from idftool.apps import bootloader_offset_of, check_partition_image, parse_bootloader, \
+    partition_table_offset_recorded_by, print_app_info, print_bootloader, print_partition_table_and_apps, \
+    validate_app_binary
 from idftool.bundle import MANIFEST, ROLE_PREFIX, ROLES, Bundle, BundleCheck, BundleError, \
     Manifest, check_bundle, factory_target, is_ota_app, normalise_chip, nvs_target, read_bundle
 from idftool.cli import cli, pass_state
@@ -25,7 +26,7 @@ from idftool.display import say
 from idftool.flash import flash_options, option_group, write_flash, write_flash_options
 from idftool.params import HMAC_KEY, INPUT_FILE, fetch_pairs
 from idftool.partitions import get_partition
-from idftool.state import State
+from idftool.state import State, check_table_row
 
 if TYPE_CHECKING:
     from idftool.nvs.crypto import NvsKeys
@@ -135,9 +136,28 @@ def cmd_dump_bundle(state: State, output_file: Optional[str]) -> None:
 
 
 
-def _read_bundle(state: State, input_file: str) -> Bundle:
-    return read_bundle(input_file, state.partition_table_offset, state.primary_bootloader_offset,
-                       state.recovery_bootloader_offset)
+def _read_bundle(state: State, input_file: str, *, writing: bool = False,
+                 force: bool = False) -> tuple[Bundle, int]:
+    """The bundle, and where its table goes: where the bootloader that boots it records it, its
+    own bootloader.bin if it has one, else the device's (see :meth:`State.resolve_table_offset`).
+    `writing` and `force` are as :func:`check_table_offset`'s."""
+    def read(table_offset: int) -> Bundle:
+        return read_bundle(input_file, table_offset, state.primary_bootloader_offset,
+                           state.recovery_bootloader_offset)
+
+    provisional = state.resolve_table_offset(None)
+    bundle = read(provisional)
+    bootloader_offset = bootloader_offset_of(bundle.bootloader) if bundle.bootloader is not None else None
+    if bundle.bootloader is not None and bootloader_offset is not None:
+        recorded = partition_table_offset_recorded_by(bundle.bootloader, bootloader_offset)
+    else:
+        recorded = state.recorded_table_offset()
+    table_offset = state.resolve_table_offset(recorded, writing=writing, force=force)
+    if table_offset != provisional:
+        bundle = read(table_offset)
+    if bundle.table is not None:
+        check_table_row(bundle.table, recorded, writing=writing, force=force)
+    return bundle, table_offset
 
 
 def _choose_table(state: State, check: BundleCheck) -> bool:
@@ -182,7 +202,7 @@ def write_bundle(state: State, input_file: str, hmac_key: Optional["NvsKeys"] = 
     from idftool.commands.nvs import check_nvs_key, edit_nvs_partition, manifest_edits
 
     esp = state.connect()
-    bundle = _read_bundle(state, input_file)
+    bundle, table_offset = _read_bundle(state, input_file, writing=True, force=bool(options.get('force')))
     manifest = bundle.manifest
     # read_bundle sets them together with `role`.
     role_file, role_app = cast(str, bundle.role_file), cast(bytes, bundle.role_app)
@@ -195,7 +215,8 @@ def write_bundle(state: State, input_file: str, hmac_key: Optional["NvsKeys"] = 
                           f"an {esp.CHIP_NAME}")
 
     device_table = state.read_device_table()
-    virtual = {e.name for e in state.virtual_entries(bundle.table or device_table or PartitionTable()) if e}
+    virtual = {e.name for e in state.virtual_entries(bundle.table or device_table or PartitionTable(),
+                                                      partition_table_offset=table_offset) if e}
     check = check_bundle(bundle, device_table, virtual)
     if check.blocker:
         raise BundleError(check.blocker)
@@ -203,7 +224,7 @@ def write_bundle(state: State, input_file: str, hmac_key: Optional["NvsKeys"] = 
     table = bundle.table if bundle.table is not None and (update_table or not check.differences) \
         else device_table
     table = table if table is not None else PartitionTable()
-    table_entry, bootloader_entry = state.virtual_entries(table)
+    table_entry, bootloader_entry = state.virtual_entries(table, partition_table_offset=table_offset)
 
     def fits(what: str, data: bytes, partition: PartitionDefinition) -> None:
         if len(data) > partition.size:
@@ -325,7 +346,7 @@ def cmd_write_bundle(state: State, /, input_file: str, hmac_key: Optional["NvsKe
 
 
 def print_bundle(state: State, bundle_file: str) -> None:
-    bundle = _read_bundle(state, bundle_file)
+    bundle, _ = _read_bundle(state, bundle_file)
     manifest = bundle.manifest
     print(f"Bundle: {bundle_file} ({os.path.getsize(bundle_file):#x} bytes)")
     if manifest:
