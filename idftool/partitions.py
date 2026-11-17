@@ -6,7 +6,7 @@ binary. Everything here works on a table plus, where a device is involved, an
 ``ESPLoader`` — no CLI state."""
 import os.path
 import re
-from typing import Optional, Literal, cast
+from typing import IO, Callable, Literal, Optional, cast
 
 from esptool import ESPLoader
 
@@ -153,6 +153,22 @@ def check_image_file(path: str, partition_table_offset: int) -> int:
             f"Image file '{path}' ({image_size:#x} bytes) is smaller than the partition table "
             f"offset {partition_table_offset:#x}; it does not appear to contain a partition table")
     return image_size
+
+def image_reader(f: IO[bytes], size: int) -> Callable[[int, int], bytes]:
+    """A ``read(offset, length)`` over the flash image open in `f`, `size` bytes long, reading past
+    its end as erased flash."""
+    def read(offset: int, length: int) -> bytes:
+        if offset >= size:
+            return b"\xff" * length
+        f.seek(offset)
+        return f.read(length).ljust(length, b"\xff")
+    return read
+
+
+def is_erased(data: bytes) -> bool:
+    """Whether `data` is all erased flash (0xFF)."""
+    return data.count(0xFF) == len(data)
+
 
 def require_partitions(partition_table: PartitionTable, source: str) -> PartitionTable:
     """Raise a clear error if a parsed partition table contains no partitions."""

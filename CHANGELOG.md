@@ -4,6 +4,21 @@ All notable changes to this project are documented here. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- The partition table is read where the bootloader records it: the
+  `partition_table_offset` field esp-idf#19102 proposes for
+  `esp_bootloader_desc_t`. Device commands take it from the device's
+  bootloader, `print-image` and `write-image` from the image's, and
+  `write-bundle` from the bundle's `bootloader.bin` when it carries one.
+  Bootloaders without the field leave it 0, and the table is then at 0x8000
+  as before; `--partition-table-offset` still overrides both.
+
+### Changed
+- Erased flash where the partition table should be is reported as "No partition
+  table in … at offset 0x…: the flash there is erased", not as an empty table.
+
 ## [v1.8.0] — 2026-11-13
 
 ### Added

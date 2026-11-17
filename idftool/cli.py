@@ -83,8 +83,10 @@ click.rich_click.COMMAND_GROUPS = {
 @click.option('--no-reset', is_flag=True, help='Do not reset the chip after operations')
 @click.option('--partition-table-file', default=None,
               help='Path to a partition table CSV or binary file to use instead of reading from the device')
-@click.option('--partition-table-offset', type=BASED_INT, default=PARTITION_TABLE_OFFSET, show_default=True,
-              help='Partition table offset (where to read the table from flash, or place it when loading from CSV)')
+@click.option('--partition-table-offset', type=BASED_INT, default=None,
+              help='Partition table offset (where to read the table from flash, or place it when loading from CSV). '
+                   f'Default: where the bootloader records it (esp-idf#19102), else {PARTITION_TABLE_OFFSET:#x}. '
+                   'Writing a table elsewhere than the bootloader records needs --force')
 @click.option('--partition-table-size', type=BASED_INT, default=PARTITION_TABLE_SIZE, show_default=True,
               help='Partition table size')
 @click.option('--primary-bootloader-offset', type=BOOTLOADER_OFFSET, default=None,
@@ -94,7 +96,7 @@ click.rich_click.COMMAND_GROUPS = {
 @click.pass_context
 def cli(ctx: click.Context, port: Optional[str], mac: Optional[str], usb_serial: Optional[str],
         baud: int, probe: bool, yes: bool, no_reset: bool, partition_table_file: Optional[str],
-        partition_table_offset: int, partition_table_size: int,
+        partition_table_offset: Optional[int], partition_table_size: int,
         primary_bootloader_offset: Optional[int], recovery_bootloader_offset: Optional[int]) -> None:
     """Utility for flashing, provisioning, and interacting with Espressif SOCs running ESP-IDF."""
     if sum(bool(o) for o in (port, mac, usb_serial)) > 1:

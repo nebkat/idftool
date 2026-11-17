@@ -16,7 +16,7 @@ idftool -p /dev/cu.usbmodem1101 --no-reset get-boot
 | `-y`, `--yes` | Don't ask which device to use. |
 | `--no-reset` | Skip the [hard reset](https://docs.espressif.com/projects/esptool/en/latest/esp32/esptool/advanced-options.html#reset-after-operation-after) after a command. Also passed to [`monitor`](monitor.md#monitor). |
 | `--partition-table-file PATH` | Use a CSV or binary partition table from disk instead of reading the device's. |
-| `--partition-table-offset OFFSET` | Where the partition table lives in flash. Default `0x8000`. |
+| `--partition-table-offset OFFSET` | Where the partition table lives in flash. Default: where the bootloader records it ([esp-idf#19102](https://github.com/espressif/esp-idf/pull/19102)), else `0x8000`. Writing a table elsewhere than the bootloader records needs `--force`; reading from there only warns. |
 | `--partition-table-size SIZE` | Size of the partition table region. Default `0x1000`. |
 | `--primary-bootloader-offset OFFSET` | Bootloader offset, or a chip name like `esp32s3`. Only needed to address `bootloader` by name offline; taken from the chip otherwise. |
 | `--recovery-bootloader-offset OFFSET` | Recovery bootloader offset. Same scope as above. |

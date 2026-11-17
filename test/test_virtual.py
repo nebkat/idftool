@@ -517,7 +517,8 @@ def test_an_attached_state_reads_only_what_the_operation_needs(held):
     assert held.reads == []  # the table comes from the image
 
     factory(state, CHIP / "app-v2.bin")
-    assert {offset for offset, _ in held.reads} == {PARTITION_TABLE_OFFSET}
+    # The bootloader's description, for where the table is, then the table.
+    assert {offset for offset, _ in held.reads} == {0x0, PARTITION_TABLE_OFFSET}
 
 
 # --- NVS and filesystems --------------------------------------------------------------------
@@ -1092,3 +1093,136 @@ def test_monitor_aliases(monkeypatch, name):
 
 def test_idf_py_passes_help_through(idf_py):
     assert idf_py("idf.py", "--help") == ["idf.py", "--help"]
+
+
+# --- Where the bootloader records the partition table ------------------------------------------
+
+def recording(image: bytes, table_offset: int, recorded: int) -> bytes:
+    """`image` with its table moved to `table_offset`, and its bootloader recording `recorded` where
+    esp-idf#19102 puts it."""
+    moved = bytearray(image)
+    moved[table_offset:table_offset + 0xC00] = image[PARTITION_TABLE_OFFSET:PARTITION_TABLE_OFFSET + 0xC00]
+    moved[PARTITION_TABLE_OFFSET:PARTITION_TABLE_OFFSET + 0xC00] = b"\xff" * 0xC00
+    moved[0x20 + 64:0x20 + 68] = recorded.to_bytes(4, "little")
+    return bytes(moved)
+
+
+def test_a_stock_bootloader_records_no_table_offset():
+    from idftool.apps import BootloaderDescription
+    image = (CHIP / "flash-image.bin").read_bytes()
+    assert BootloaderDescription.from_bytes_or_none(image[0x20:]).partition_table_offset == 0
+
+
+def test_the_table_is_read_where_the_devices_bootloader_records_it(run, esp):
+    esp.flash[:] = recording(bytes(esp.flash), 0x12000, 0x12000)
+    assert "phy_init" in run("print-table")
+
+
+def test_an_explicit_table_offset_is_read_with_a_warning(run, esp):
+    esp.flash[:] = recording(bytes(esp.flash), 0x12000, 0x12000)
+    out = run("--partition-table-offset", "0x8000", "print-table", ok=False)
+    assert ("--partition-table-offset puts the partition table at 0x8000, but the bootloader records "
+            "0x12000; reading 0x8000") in out
+    assert "No partition table in the device at offset 0x8000: the flash there is erased" in out
+
+
+def test_an_explicit_table_offset_the_bootloader_records_is_not_warned_about(run, esp):
+    esp.flash[:] = recording(bytes(esp.flash), 0x12000, 0x12000)
+    out = run("--partition-table-offset", "0x12000", "print-table")
+    assert "phy_init" in out and "Warning" not in out
+
+
+def test_a_table_is_not_written_where_the_bootloader_would_not_find_it(run, esp, tmp_path):
+    esp.flash[:] = recording(bytes(esp.flash), 0x12000, 0x12000)
+    (tmp_path / "t.csv").write_text("nvs, data, nvs, 0x13000, 0x6000,\n")
+    out = run("--partition-table-offset", "0x8000", "write-table", "t.csv", ok=False)
+    assert "but the bootloader records 0x12000, so it would not find the table there" in out
+    assert esp.region(0x8000, 2) == b"\xff\xff"
+    run("--partition-table-offset", "0x8000", "write-table", "t.csv", "--force")
+    assert esp.region(0x8000, 2) == b"\xaa\x50"
+
+
+def test_a_table_whose_own_row_the_bootloader_does_not_record_is_not_written(run, esp, tmp_path):
+    esp.flash[:] = recording(bytes(esp.flash), 0x12000, 0x12000)
+    (tmp_path / "t.csv").write_text("part_table, partition_table, primary, 0x8000, 0x1000,\n"
+                                    "nvs, data, nvs, 0x13000, 0x6000,\n")
+    run("create-table", "t.csv", "t.bin")  # a binary table keeps its row where it was made
+    out = run("write-table", "t.bin", ok=False)
+    assert "The table's part_table row puts the partition table at 0x8000, but the bootloader records 0x12000" in out
+
+
+def test_an_image_is_not_written_with_its_table_where_its_bootloader_would_not_find_it(run, tmp_path):
+    image = (CHIP / "flash-image.bin").read_bytes()
+    (tmp_path / "moved.bin").write_bytes(recording(image, 0x12000, 0x12000))
+    out = run("--partition-table-offset", "0x8000", "write-image", tmp_path / "moved.bin", ok=False)
+    assert "but the bootloader records 0x12000, so it would not find the table there" in out
+
+
+def test_without_a_recorded_offset_the_table_is_at_esp_idfs_default(run, esp):
+    esp.flash[:] = recording(bytes(esp.flash), 0x12000, 0)
+    out = run("print-table", ok=False)
+    assert "No partition table in the device at offset 0x8000: the flash there is erased" in out
+
+
+def test_a_recorded_offset_that_cannot_be_a_table_is_refused(run, esp):
+    esp.flash[:] = recording(bytes(esp.flash), 0x12000, 0x12001)
+    assert "records partition table offset 0x12001, which can't be one" in run("print-table", ok=False)
+
+
+def test_an_image_is_read_where_its_own_bootloader_records_its_table(run, tmp_path):
+    image = (CHIP / "flash-image.bin").read_bytes()
+    (tmp_path / "moved.bin").write_bytes(recording(image, 0x12000, 0x12000))
+    (tmp_path / "unrecorded.bin").write_bytes(recording(image, 0x12000, 0))
+    assert "phy_init" in run("print-image", "-f", tmp_path / "moved.bin")
+    out = run("print-image", "-f", tmp_path / "unrecorded.bin", ok=False)
+    assert "No partition table in the image at offset 0x8000: the flash there is erased" in out
+
+
+def test_the_devices_bootloader_is_read_once_until_idftool_writes_over_it(held):
+    from idftool import State
+    from idftool.flash import write_flash
+
+    held.flash[:] = recording(bytes(held.flash), 0x12000, 0x12000)
+    state = State.attached(held)
+    assert state.table_offset() == state.table_offset() == 0x12000
+    assert [offset for offset, _ in held.reads].count(0x0) == 1
+
+    write_flash(esp=held, addr_data=[(0x0, recording(bytes(held.flash), 0x12000, 0)[:0x1000])])
+    assert state.table_offset() == PARTITION_TABLE_OFFSET
+
+
+def test_a_recorded_offset_past_the_end_of_flash_is_refused(run, esp):
+    esp.flash[:] = recording(bytes(esp.flash), 0x12000, FLASH_SIZE)
+    assert "which can't be one" in run("print-table", ok=False)
+
+
+def test_a_bundle_s_table_goes_where_its_bootloader_records_it(run, esp):
+    bootloader = recording(bytes(esp.flash), 0x12000, 0x12000)[:0x8000]
+    table = "nvs, data, nvs, 0x13000, 0x6000,\nfactory, app, factory, 0x20000, 0x30000,\n"
+    bundle("b.zip", {"bootloader.bin": bootloader, "partition_table.csv": table})
+    run("-y", "write-bundle", "b.zip", "--force")  # the patched description breaks its checksum
+    assert esp.region(0x12000, 2) == b"\xaa\x50"
+
+
+def test_a_bundle_s_table_is_not_written_where_its_bootloader_would_not_find_it(run, esp):
+    bootloader = recording(bytes(esp.flash), 0x12000, 0x12000)[:0x8000]
+    table = "nvs, data, nvs, 0x13000, 0x6000,\nfactory, app, factory, 0x20000, 0x30000,\n"
+    bundle("b.zip", {"bootloader.bin": bootloader, "partition_table.csv": table})
+    out = run("-y", "--partition-table-offset", "0x8000", "write-bundle", "b.zip", ok=False)
+    assert "but the bootloader records 0x12000, so it would not find the table there" in out
+
+
+def test_the_public_api_takes_the_offset_by_name():
+    from esp_idf_defs.partitions import PartitionTable
+    from idftool import State
+    from idftool.state import Loaded
+
+    loaded = Loaded(None, PartitionTable(), None, None)
+    assert loaded.partition_table_offset == PARTITION_TABLE_OFFSET
+    state = State(port=None, baud=115200, no_reset=True, partition_table_file=None,
+                  partition_table_offset=0x9000, partition_table_size=0xC00,
+                  primary_bootloader_offset=0x0, recovery_bootloader_offset=None)
+    assert state.partition_table_offset == 0x9000
+    assert state.virtual_entries(PartitionTable())[0].offset == 0x9000
+    state.partition_table_offset = None
+    assert state.partition_table_offset == PARTITION_TABLE_OFFSET
