@@ -93,6 +93,7 @@ class VirtualEsp:
 
 @pytest.fixture
 def esp(monkeypatch):
+    import idftool.apps as apps
     import idftool.commands.bundles as bundles
     import idftool.commands.images as images
     import idftool.commands.partition_io as partition_io
@@ -116,7 +117,7 @@ def esp(monkeypatch):
             f.write(device.region(address, size))
 
     monkeypatch.setattr(state, "detect_chip", lambda port, **_: device)
-    for module in (state, table, images, flash, bundles):
+    for module in (apps, state, table, images, flash, bundles):
         monkeypatch.setattr(module, "detect_flash_size", lambda esp: "4MB")
     monkeypatch.setattr(flash, "esptool_write_flash", write_flash)
     monkeypatch.setattr(images, "read_flash", read_flash)
@@ -1167,6 +1168,37 @@ def test_without_a_recorded_offset_the_table_is_at_esp_idfs_default(run, esp):
 def test_a_recorded_offset_that_cannot_be_a_table_is_refused(run, esp):
     esp.flash[:] = recording(bytes(esp.flash), 0x12000, 0x12001)
     assert "records partition table offset 0x12001, which can't be one" in run("print-table", ok=False)
+
+
+def test_a_caller_with_its_own_connection_finds_the_table_where_the_bootloader_records_it(esp):
+    """partition_table_offset is for a tool that drives its own ESPLoader, such as esp-dut."""
+    from idftool import partition_table_offset
+    from idftool.apps import forget_device_partition_table_offset
+
+    esp.flash[:] = recording(bytes(esp.flash), 0x12000, 0x12000)
+    assert partition_table_offset(esp) == 0x12000
+
+    forget_device_partition_table_offset(esp)
+    esp.flash[:] = recording(bytes(esp.flash), 0x12000, 0)
+    assert partition_table_offset(esp) == PARTITION_TABLE_OFFSET
+
+
+def test_a_caller_with_its_own_connection_reads_the_bootloader_once(esp):
+    from idftool import partition_table_offset
+
+    esp.flash[:] = recording(bytes(esp.flash), 0x12000, 0x12000)
+    partition_table_offset(esp)
+    reads = len(esp.reads)
+    assert partition_table_offset(esp) == 0x12000
+    assert len(esp.reads) == reads
+
+
+def test_a_caller_with_its_own_connection_is_refused_an_offset_that_cannot_be_a_table(esp):
+    from idftool import partition_table_offset
+
+    esp.flash[:] = recording(bytes(esp.flash), 0x12000, 0x12001)
+    with pytest.raises(RuntimeError, match="0x12001, which can't be one"):
+        partition_table_offset(esp)
 
 
 def test_an_image_is_read_where_its_own_bootloader_records_its_table(run, tmp_path):

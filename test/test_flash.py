@@ -135,6 +135,8 @@ def test_options_reach_esptool(monkeypatch, tmp_path):
                                primary_bootloader_offset=None, recovery_bootloader_offset=None)
     state.esp = _FakeEsp(0x8000, table.to_binary())
     monkeypatch.setattr(state_module, "detect_flash_size", lambda esp: "16MB")
+    import idftool.apps as apps_module
+    monkeypatch.setattr(apps_module, "detect_flash_size", lambda esp: "16MB")
 
     written = {}
     monkeypatch.setattr(nvs_command, "write_flash",
