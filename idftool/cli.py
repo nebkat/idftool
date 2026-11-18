@@ -80,6 +80,8 @@ click.rich_click.COMMAND_GROUPS = {
               help='Connect to every port to identify its board (resets them) [env: IDFTOOL_PROBE]')
 @click.option('-y', '--yes', is_flag=True,
               help="Don't ask which device to use, or before updating a bundle's partition table")
+@click.option('--kill-holders', is_flag=True,
+              help='Kill other processes holding the port before connecting, without asking')
 @click.option('--no-reset', is_flag=True, help='Do not reset the chip after operations')
 @click.option('--partition-table-file', type=INPUT_FILE, default=None,
               help='Path to a partition table CSV or binary file to use instead of reading from the device')
@@ -93,7 +95,7 @@ click.rich_click.COMMAND_GROUPS = {
               help='Recovery bootloader offset (used when loading a table from CSV)')
 @click.pass_context
 def cli(ctx: click.Context, port: Optional[str], mac: Optional[str], usb_serial: Optional[str],
-        baud: int, probe: bool, yes: bool, no_reset: bool, partition_table_file: Optional[str],
+        baud: int, probe: bool, yes: bool, kill_holders: bool, no_reset: bool, partition_table_file: Optional[str],
         partition_table_offset: int, partition_table_size: int,
         primary_bootloader_offset: Optional[int], recovery_bootloader_offset: Optional[int]) -> None:
     """Utility for flashing, provisioning, and interacting with Espressif SOCs running ESP-IDF."""
@@ -109,6 +111,7 @@ def cli(ctx: click.Context, port: Optional[str], mac: Optional[str], usb_serial:
         baud_explicit=ctx.get_parameter_source('baud') is not ParameterSource.DEFAULT,
         no_reset=no_reset,
         assume_yes=yes,
+        kill_holders=kill_holders,
         partition_table_file=partition_table_file,
         partition_table_offset=partition_table_offset,
         partition_table_size=partition_table_size,
