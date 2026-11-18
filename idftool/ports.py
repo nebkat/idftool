@@ -348,6 +348,20 @@ def find_port_for_usb_serial(serial: str) -> str:
     return found[0]
 
 
+def find_only_device() -> str:
+    """The one port on an ESP or USB-serial adapter (see :data:`ESP_ADAPTER_VIDS`), for
+    ``--only-device``; an error if there are none or several."""
+    found = [p.device for p in serial_ports.get_port_list() if p.vid in ESP_ADAPTER_VIDS]
+    if not found:
+        raise click.ClickException("--only-device: no ESP or USB-serial adapter port found")
+    if len(found) > 1:
+        raise click.ClickException(
+            f"--only-device: {len(found)} ports found ({', '.join(found)}); "
+            "use -p, -m or --usb-serial to pick one")
+    click.echo(click.style("Device: ", bold=True) + found[0], err=True)
+    return found[0]
+
+
 def find_port_for_mac(mac: str, baud: int, *, probe: bool = False) -> str:
     """The port of the device with `mac`: from USB serial numbers, else (with `probe`) by
     connecting to the ports whose serial number isn't a MAC."""

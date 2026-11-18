@@ -16,33 +16,17 @@ from esp_idf_defs.otadata import OtaDataParameters
 from esp_idf_defs.partitions import PartitionTable, PartitionDefinition, \
     BOOTLOADER_TYPE, SUBTYPES, PARTITION_TABLE_OFFSET, PARTITION_TABLE_SIZE, PARTITION_TABLE_TYPE
 
-from esp_pylib.serial_ports import get_port_names
-
 from idftool import network
 from idftool.display import print_partition_table
 from idftool.partitions import check_image_file, load_partition_table_file, read_otadata, \
     require_partitions
-from idftool.ports import Identify, find_port_for_mac, find_port_for_usb_serial, print_rerun_hint, \
-    select_device, warn_holders
+from idftool.ports import Identify, find_only_device, find_port_for_mac, find_port_for_usb_serial, \
+    print_rerun_hint, select_device, warn_holders
 
-def get_esp(port: str | None, baud: int, *, kill_holders: bool = False) -> ESPLoader:
-    esp: ESPLoader | None = None
-    if port:
-        network.prepare(port)
-        warn_holders(port, kill=kill_holders)
-        esp = detect_chip(port, baud=baud)
-    else:
-        ports = get_port_names()
-        for port in ports:
-            try:
-                print(f"Serial port {port} (baud={baud})")
-                esp = detect_chip(port, baud=baud)
-                break
-            except RuntimeError:
-                pass
-    if not esp:
-        raise RuntimeError("No ESP found")
-    return esp.run_stub()
+def get_esp(port: str, baud: int, *, kill_holders: bool = False) -> ESPLoader:
+    network.prepare(port)
+    warn_holders(port, kill=kill_holders)
+    return detect_chip(port, baud=baud).run_stub()
 
 
 @dataclass
@@ -64,7 +48,8 @@ class State:
                  recovery_bootloader_offset: Optional[int], assume_yes: bool = False,
                  mac: Optional[str] = None, usb_serial: Optional[str] = None, probe: bool = False,
                  identify: Optional[Identify] = None, baud_explicit: bool = False,
-                 quiet: bool = False, kill_holders: bool = False) -> None:
+                 quiet: bool = False, kill_holders: bool = False,
+                 only_device: bool = False) -> None:
         self.port = port
         self.mac = mac
         self.usb_serial = usb_serial
@@ -78,6 +63,7 @@ class State:
         self.no_reset = no_reset
         self.assume_yes = assume_yes
         self.kill_holders = kill_holders
+        self.only_device = only_device
         self.partition_table_file = partition_table_file
         self.partition_table_offset = partition_table_offset
         self.partition_table_size = partition_table_size
@@ -110,14 +96,19 @@ class State:
         return state
 
     def resolve_port(self, allow_none: bool = False) -> Optional[str]:
-        """The port to connect to: ``-p``, else ``--mac``'s or ``--usb-serial``'s, else ask
-        interactively (unless ``-y``). With `allow_none`, the question offers no device."""
+        """The port to connect to: ``-p``, else ``--mac``'s, ``--usb-serial``'s or
+        ``--only-device``'s, else ask. Never guesses: without a terminal, or with ``-y``, no
+        device given is an error. With `allow_none`, the question offers no device."""
         if self.mac and not self.port:
             return find_port_for_mac(self.mac, self.baud, probe=self.probe)
         if self.usb_serial and not self.port:
             return find_port_for_usb_serial(self.usb_serial)
-        if self.port or self.assume_yes or not sys.stdin.isatty():
+        if self.port:
             return self.port
+        if self.only_device:
+            return find_only_device()
+        if self.assume_yes or not sys.stdin.isatty():
+            raise click.UsageError("No device given: pass -p, -m, --usb-serial or --only-device")
         found = select_device(self.baud, probe=self.probe, identify=self.identify,
                               allow_none=allow_none)
         assert found is not None  # select_device asks whenever stdin is a terminal
@@ -127,7 +118,9 @@ class State:
 
     def connect(self) -> ESPLoader:
         if self.esp is None:
-            self.port = self.resolve_port()
+            port = self.resolve_port()
+            assert port is not None  # only allow_none lets the question return no device
+            self.port = port
             self.esp = get_esp(port=self.port, baud=self.baud, kill_holders=self.kill_holders)
             # Fall back to the connected chip's bootloader offset only when the user didn't set one
             # explicitly, keeping the precedence: explicit CLI > chip default > value present in CSV.

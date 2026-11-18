@@ -52,7 +52,8 @@ Re-run with: idftool -p /dev/cu.usbmodem11401 get-boot
 ```
 
 `-y` skips the picker, as does running without a terminal (in a script or CI).
-`esptool` then picks the port itself.
+A device must then be given, or `--only-device` passed to use the one adapter port
+connected.
 
 ## By MAC address
 
