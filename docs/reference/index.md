@@ -9,7 +9,7 @@ options. The options shared by every command are under
 | **[Discovery](discovery.md)** | |
 | [`devices`](discovery.md#devices) | List serial ports and their USB adapters (alias `ports`) |
 | **[Firmware](firmware.md)** | |
-| [`factory`](firmware.md#factory) | Flash an app to the factory partition |
+| [`factory`](firmware.md#factory) | Flash an app to the factory partition (or ota_0) and boot it |
 | [`ota`](firmware.md#ota) | Push an app to the next OTA slot and switch to it |
 | [`get-boot`](firmware.md#get-boot) | Show the currently-active OTA slot |
 | [`set-boot`](firmware.md#set-boot) | Force the next boot to a specific OTA partition |
