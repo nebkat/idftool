@@ -28,11 +28,11 @@ from idftool.partitions import check_image_file, image_reader, is_erased, load_p
 from idftool.ports import Identify, find_port_for_mac, find_port_for_usb_serial, print_rerun_hint, \
     select_device, warn_holders
 
-def get_esp(port: str | None, baud: int) -> ESPLoader:
+def get_esp(port: str | None, baud: int, *, kill_holders: bool = False) -> ESPLoader:
     esp: ESPLoader | None = None
     if port:
         network.prepare(port)
-        warn_holders(port)
+        warn_holders(port, kill=kill_holders)
         esp = detect_chip(port, baud=baud)
     else:
         ports = get_port_names()
@@ -94,7 +94,7 @@ class State:
                  recovery_bootloader_offset: Optional[int], assume_yes: bool = False,
                  mac: Optional[str] = None, usb_serial: Optional[str] = None, probe: bool = False,
                  identify: Optional[Identify] = None, baud_explicit: bool = False,
-                 quiet: bool = False) -> None:
+                 quiet: bool = False, kill_holders: bool = False) -> None:
         self.port = port
         self.mac = mac
         self.usb_serial = usb_serial
@@ -107,6 +107,7 @@ class State:
         self.baud_explicit = baud_explicit
         self.no_reset = no_reset
         self.assume_yes = assume_yes
+        self.kill_holders = kill_holders
         self.partition_table_file = partition_table_file
         #: ``--partition-table-offset``, or None to have :meth:`table_offset` find it.
         self.explicit_partition_table_offset = partition_table_offset
@@ -158,7 +159,7 @@ class State:
     def connect(self) -> ESPLoader:
         if self.esp is None:
             self.port = self.resolve_port()
-            self.esp = get_esp(port=self.port, baud=self.baud)
+            self.esp = get_esp(port=self.port, baud=self.baud, kill_holders=self.kill_holders)
             # Fall back to the connected chip's bootloader offset only when the user didn't set one
             # explicitly, keeping the precedence: explicit CLI > chip default > value present in CSV.
             if self.primary_bootloader_offset is None:

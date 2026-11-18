@@ -14,6 +14,7 @@ idftool -p /dev/cu.usbmodem1101 --no-reset get-boot
 | `-b`, `--baud N` | Serial baud rate for flashing. Default 115200, the ROM bootloader's rate. See [serial connection](https://docs.espressif.com/projects/esptool/en/latest/esp32/esptool/serial-connection.html). If given, also passed to [`monitor`](monitor.md#monitor) and [`idf.py`](idf-py.md#idfpy). |
 | `--probe`, `--no-probe` | Connect to every port to identify its board. Resets them. Defaults to `IDFTOOL_PROBE` (`1` to probe). |
 | `-y`, `--yes` | Don't ask which device to use. |
+| `--kill-holders` | Kill other processes holding the port before connecting, without asking (macOS/Linux). Without it, a held port is only reported, with an offer to kill at a terminal. |
 | `--no-reset` | Skip the [hard reset](https://docs.espressif.com/projects/esptool/en/latest/esp32/esptool/advanced-options.html#reset-after-operation-after) after a command. Also passed to [`monitor`](monitor.md#monitor). |
 | `--partition-table-file PATH` | Use a CSV or binary partition table from disk instead of reading the device's. |
 | `--partition-table-offset OFFSET` | Where the partition table lives in flash. Default: where the bootloader records it ([esp-idf#19102](https://github.com/espressif/esp-idf/pull/19102)), else `0x8000`. Writing a table elsewhere than the bootloader records needs `--force`; reading from there only warns. |

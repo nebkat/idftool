@@ -905,8 +905,33 @@ def test_warn_holders_only_warns_off_a_terminal(monkeypatch, capsys):
     monkeypatch.setattr(ports.questionary, "confirm", lambda *a, **k: pytest.fail("must not ask"))
     try:
         ports.warn_holders(path)
-        assert f"Warning: {path} is held by " in capsys.readouterr().err
+        err = capsys.readouterr().err
+        assert f"Warning: {path} is held by " in err
+        assert "pass --kill-holders to kill it" in err
         assert holder.poll() is None
+    finally:
+        holder.kill()
+        holder.wait()
+        os.close(master)
+        os.close(slave)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="posix only")
+def test_warn_holders_kills_without_asking_when_told(monkeypatch, capsys):
+    import os
+    import shutil
+
+    import idftool.ports as ports
+
+    if shutil.which("lsof") is None:
+        pytest.skip("needs lsof")
+    master, slave, path, holder = _held_pty()
+    monkeypatch.setattr(ports.sys.stdin, "isatty", lambda: False)
+    monkeypatch.setattr(ports.questionary, "confirm", lambda *a, **k: pytest.fail("must not ask"))
+    try:
+        ports.warn_holders(path, kill=True)
+        assert "--kill-holders" not in capsys.readouterr().err
+        assert holder.wait(timeout=5) is not None
     finally:
         holder.kill()
         holder.wait()

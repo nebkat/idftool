@@ -393,8 +393,8 @@ def print_rerun_hint(port: str, mac: Optional[str] = None,
                    err=True)
 
 
-def kill_holders(port: str) -> None:
-    """Offer to kill the processes holding `port`."""
+def kill_holders(port: str, *, ask: bool = True) -> None:
+    """Kill the processes holding `port`, after asking unless not `ask`."""
     import os
 
     holders = [(pid, name) for pid, name in port_holders(port) if pid != os.getpid()]
@@ -402,11 +402,14 @@ def kill_holders(port: str) -> None:
         click.echo(f"Nothing else is holding {port}.", err=True)
         return
     names = ", ".join(f"{name} (pid {pid})" for pid, name in holders)
-    try:
-        if not questionary.confirm(f"Kill {names}?", default=False).unsafe_ask():
-            return
-    except KeyboardInterrupt:
-        raise click.Abort() from None
+    if ask:
+        try:
+            if not questionary.confirm(f"Kill {names}?", default=False).unsafe_ask():
+                return
+        except KeyboardInterrupt:
+            raise click.Abort() from None
+    else:
+        click.echo(f"Killing {names}…", err=True)
     for pid, name in holders:
         try:
             os.kill(pid, signal.SIGTERM)
@@ -420,9 +423,9 @@ def kill_holders(port: str) -> None:
         time.sleep(0.1)
 
 
-def warn_holders(port: str) -> None:
-    """Before opening a local `port` the user named: say which other processes hold it and,
-    at a terminal, offer to kill them."""
+def warn_holders(port: str, *, kill: bool = False) -> None:
+    """Before opening a local `port` the user named: say which other processes hold it and
+    kill them (`kill`), or at a terminal offer to."""
     from idftool.network import is_network_port
 
     if is_network_port(port):
@@ -430,9 +433,11 @@ def warn_holders(port: str) -> None:
     reason = held_reason(port)
     if not reason:
         return
-    click.echo(click.style(f"Warning: {port} is {reason}", fg="yellow"), err=True)
-    if CAN_KILL and sys.stdin.isatty():
-        kill_holders(port)
+    act = CAN_KILL and (kill or sys.stdin.isatty())
+    hint = "; pass --kill-holders to kill it" if CAN_KILL and not act else ""
+    click.echo(click.style(f"Warning: {port} is {reason}{hint}", fg="yellow"), err=True)
+    if act:
+        kill_holders(port, ask=not kill)
 
 
 def select_device(baud: int, *, identify: Optional[Identify] = None,
