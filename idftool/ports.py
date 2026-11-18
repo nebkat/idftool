@@ -420,6 +420,21 @@ def kill_holders(port: str) -> None:
         time.sleep(0.1)
 
 
+def warn_holders(port: str) -> None:
+    """Before opening a local `port` the user named: say which other processes hold it and,
+    at a terminal, offer to kill them."""
+    from idftool.network import is_network_port
+
+    if is_network_port(port):
+        return
+    reason = held_reason(port)
+    if not reason:
+        return
+    click.echo(click.style(f"Warning: {port} is {reason}", fg="yellow"), err=True)
+    if CAN_KILL and sys.stdin.isatty():
+        kill_holders(port)
+
+
 def select_device(baud: int, *, identify: Optional[Identify] = None,
                   message: str = "Select device", probe: Optional[bool] = None,
                   allow_none: bool = False, default: Optional[str] = None,

@@ -858,6 +858,64 @@ def test_kill_holders(monkeypatch, confirmed):
         os.close(slave)
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="posix only")
+@pytest.mark.parametrize("confirmed", [True, False])
+def test_warn_holders_offers_to_kill_at_a_terminal(monkeypatch, capsys, confirmed):
+    import os
+    import shutil
+
+    import idftool.ports as ports
+
+    if shutil.which("lsof") is None:
+        pytest.skip("needs lsof")
+    master, slave, path, holder = _held_pty()
+    monkeypatch.setattr(ports.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(ports.questionary, "confirm",
+                        lambda *a, **k: type("Q", (), {"unsafe_ask": lambda self: confirmed})())
+    try:
+        ports.warn_holders(path)
+        assert f"Warning: {path} is held by " in capsys.readouterr().err
+        if confirmed:
+            assert holder.wait(timeout=5) is not None
+        else:
+            assert holder.poll() is None
+    finally:
+        holder.kill()
+        holder.wait()
+        os.close(master)
+        os.close(slave)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="posix only")
+def test_warn_holders_only_warns_off_a_terminal(monkeypatch, capsys):
+    import os
+    import shutil
+
+    import idftool.ports as ports
+
+    if shutil.which("lsof") is None:
+        pytest.skip("needs lsof")
+    master, slave, path, holder = _held_pty()
+    monkeypatch.setattr(ports.sys.stdin, "isatty", lambda: False)
+    monkeypatch.setattr(ports.questionary, "confirm", lambda *a, **k: pytest.fail("must not ask"))
+    try:
+        ports.warn_holders(path)
+        assert f"Warning: {path} is held by " in capsys.readouterr().err
+        assert holder.poll() is None
+    finally:
+        holder.kill()
+        holder.wait()
+        os.close(master)
+        os.close(slave)
+
+
+def test_warn_holders_skips_a_network_port(monkeypatch):
+    import idftool.ports as ports
+
+    monkeypatch.setattr(ports, "port_holders", lambda port: pytest.fail("must not look"))
+    ports.warn_holders("rfc2217://localhost:4000")
+
+
 @pytest.mark.parametrize("text", ["9C:13:9E:1B:D4:6C", "9c-13-9e-1b-d4-6c", "9c139e1bd46c"])
 def test_a_mac_is_accepted_in_any_spelling(text):
     from idftool.ports import normalize_mac
