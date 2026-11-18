@@ -75,11 +75,14 @@ click.rich_click.COMMAND_GROUPS = {
 @click.option('-m', '--mac', type=MAC, default=None, help='Use the device with this MAC address')
 @click.option('--usb-serial', default=None,
               help='Use the port with this USB serial number (e.g. an FTDI or CP2102N adapter)')
+@click.option('--only-device', is_flag=True,
+              help='Use the only ESP or USB-serial adapter port; an error if there are several')
 @click.option('-b', '--baud', type=int, default=ESPLoader.ESP_ROM_BAUD, show_default=True, help='Serial port baud rate')
 @click.option('--probe/--no-probe', envvar='IDFTOOL_PROBE', default=False,
               help='Connect to every port to identify its board (resets them) [env: IDFTOOL_PROBE]')
 @click.option('-y', '--yes', is_flag=True,
-              help="Don't ask which device to use, or before updating a bundle's partition table")
+              help="Don't ask which device to use (one must then be given), or before updating a "
+                   "bundle's partition table")
 @click.option('--kill-holders', is_flag=True,
               help='Kill other processes holding the port before connecting, without asking')
 @click.option('--no-reset', is_flag=True, help='Do not reset the chip after operations')
@@ -97,12 +100,14 @@ click.rich_click.COMMAND_GROUPS = {
               help='Recovery bootloader offset (used when loading a table from CSV)')
 @click.pass_context
 def cli(ctx: click.Context, port: Optional[str], mac: Optional[str], usb_serial: Optional[str],
-        baud: int, probe: bool, yes: bool, kill_holders: bool, no_reset: bool, partition_table_file: Optional[str],
+        only_device: bool, baud: int, probe: bool, yes: bool, kill_holders: bool, no_reset: bool,
+        partition_table_file: Optional[str],
         partition_table_offset: Optional[int], partition_table_size: int,
         primary_bootloader_offset: Optional[int], recovery_bootloader_offset: Optional[int]) -> None:
     """Utility for flashing, provisioning, and interacting with Espressif SOCs running ESP-IDF."""
-    if sum(bool(o) for o in (port, mac, usb_serial)) > 1:
-        raise click.UsageError("-p/--port, -m/--mac and --usb-serial are mutually exclusive")
+    if sum(bool(o) for o in (port, mac, usb_serial, only_device)) > 1:
+        raise click.UsageError(
+            "-p/--port, -m/--mac, --usb-serial and --only-device are mutually exclusive")
     ctx.obj = State(
         port=port,
         mac=mac,
@@ -114,6 +119,7 @@ def cli(ctx: click.Context, port: Optional[str], mac: Optional[str], usb_serial:
         no_reset=no_reset,
         assume_yes=yes,
         kill_holders=kill_holders,
+        only_device=only_device,
         partition_table_file=partition_table_file,
         partition_table_offset=partition_table_offset,
         partition_table_size=partition_table_size,

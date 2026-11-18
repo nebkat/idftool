@@ -604,16 +604,40 @@ def test_explicit_port_is_never_second_guessed(monkeypatch):
     assert shown == []
 
 
-def test_unattended_run_is_never_asked(monkeypatch):
-    shown = _picker(monkeypatch, ports=["/dev/a", "/dev/b"])
-    assert _state(monkeypatch, tty=False).resolve_port() is None
+@pytest.mark.parametrize("options", [dict(tty=False), dict(assume_yes=True)])
+def test_no_device_is_never_guessed_without_asking(monkeypatch, options):
+    import click
+
+    shown = _picker(monkeypatch, ports=["/dev/only"])
+    with pytest.raises(click.UsageError, match="--only-device"):
+        _state(monkeypatch, **options).resolve_port()
     assert shown == []
 
 
-def test_yes_skips_the_prompt(monkeypatch):
-    shown = _picker(monkeypatch, ports=["/dev/a", "/dev/b"])
-    assert _state(monkeypatch, assume_yes=True).resolve_port() is None
+def _adapters(monkeypatch, *vids):
+    import idftool.ports as ports
+
+    listed = [type("P", (), {"device": f"/dev/p{i}", "vid": vid})() for i, vid in enumerate(vids)]
+    monkeypatch.setattr(ports.serial_ports, "get_port_list", lambda: listed)
+
+
+@pytest.mark.parametrize("tty", [True, False])
+def test_only_device_takes_the_lone_adapter(monkeypatch, tty):
+    from esp_pylib.constants import ESPRESSIF_VID
+
+    shown = _picker(monkeypatch, ports=["/dev/p0", "/dev/p1"])
+    _adapters(monkeypatch, None, ESPRESSIF_VID)  # p0: not an adapter, e.g. Bluetooth
+    assert _state(monkeypatch, tty=tty, only_device=True).resolve_port() == "/dev/p1"
     assert shown == []
+
+
+@pytest.mark.parametrize("vids, error", [((None,), "no ESP"), ((0x303a, 0x10c4), "2 ports found")])
+def test_only_device_refuses_none_or_several(monkeypatch, vids, error):
+    import click
+
+    _adapters(monkeypatch, *vids)
+    with pytest.raises(click.ClickException, match=error):
+        _state(monkeypatch, only_device=True).resolve_port()
 
 
 @pytest.mark.parametrize("ports", [["/dev/only"], ["/dev/a", "/dev/b"]])
