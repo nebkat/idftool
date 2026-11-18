@@ -26,12 +26,13 @@ from idftool.display import print_partition_table, say
 from idftool.partitions import check_image_file, image_reader, is_erased, load_partition_table_file, \
     read_otadata, require_partitions
 from idftool.ports import Identify, find_port_for_mac, find_port_for_usb_serial, print_rerun_hint, \
-    select_device
+    select_device, warn_holders
 
 def get_esp(port: str | None, baud: int) -> ESPLoader:
     esp: ESPLoader | None = None
     if port:
         network.prepare(port)
+        warn_holders(port)
         esp = detect_chip(port, baud=baud)
     else:
         ports = get_port_names()
