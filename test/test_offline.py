@@ -341,7 +341,8 @@ def test_create_and_print_bundle(run_offline, assets, tmp_path):
 
 
 class _FlakyEsp:
-    """ESPLoader stand-in that serves the partition table and fails every other read."""
+    """ESPLoader stand-in that serves the partition table and an erased bootloader, and fails every
+    other read."""
     FLASH_SECTOR_SIZE = 0x1000
     BOOTLOADER_FLASH_OFFSET = 0x0
     CHIP_NAME = "ESP32-S3"
@@ -354,6 +355,8 @@ class _FlakyEsp:
         from esptool.util import FatalError
         if offset == self.table_offset:
             return self.table_binary
+        if offset + length <= self.table_offset:
+            return b'\xff' * length
         raise FatalError("Failed to read flash block (result was 01050000: Comms error)")
 
 
@@ -367,6 +370,8 @@ def _flaky_state(monkeypatch):
                                primary_bootloader_offset=None, recovery_bootloader_offset=None)
     state.esp = _FlakyEsp(0x8000, table.to_binary())
     monkeypatch.setattr(state_module, "detect_flash_size", lambda esp: "16MB")
+    import idftool.apps as apps_module
+    monkeypatch.setattr(apps_module, "detect_flash_size", lambda esp: "16MB")
     return state
 
 
@@ -599,16 +604,40 @@ def test_explicit_port_is_never_second_guessed(monkeypatch):
     assert shown == []
 
 
-def test_unattended_run_is_never_asked(monkeypatch):
-    shown = _picker(monkeypatch, ports=["/dev/a", "/dev/b"])
-    assert _state(monkeypatch, tty=False).resolve_port() is None
+@pytest.mark.parametrize("options", [dict(tty=False), dict(assume_yes=True)])
+def test_no_device_is_never_guessed_without_asking(monkeypatch, options):
+    import click
+
+    shown = _picker(monkeypatch, ports=["/dev/only"])
+    with pytest.raises(click.UsageError, match="--only-device"):
+        _state(monkeypatch, **options).resolve_port()
     assert shown == []
 
 
-def test_yes_skips_the_prompt(monkeypatch):
-    shown = _picker(monkeypatch, ports=["/dev/a", "/dev/b"])
-    assert _state(monkeypatch, assume_yes=True).resolve_port() is None
+def _adapters(monkeypatch, *vids):
+    import idftool.ports as ports
+
+    listed = [type("P", (), {"device": f"/dev/p{i}", "vid": vid})() for i, vid in enumerate(vids)]
+    monkeypatch.setattr(ports.serial_ports, "get_port_list", lambda: listed)
+
+
+@pytest.mark.parametrize("tty", [True, False])
+def test_only_device_takes_the_lone_adapter(monkeypatch, tty):
+    from esp_pylib.constants import ESPRESSIF_VID
+
+    shown = _picker(monkeypatch, ports=["/dev/p0", "/dev/p1"])
+    _adapters(monkeypatch, None, ESPRESSIF_VID)  # p0: not an adapter, e.g. Bluetooth
+    assert _state(monkeypatch, tty=tty, only_device=True).resolve_port() == "/dev/p1"
     assert shown == []
+
+
+@pytest.mark.parametrize("vids, error", [((None,), "no ESP"), ((0x303a, 0x10c4), "2 ports found")])
+def test_only_device_refuses_none_or_several(monkeypatch, vids, error):
+    import click
+
+    _adapters(monkeypatch, *vids)
+    with pytest.raises(click.ClickException, match=error):
+        _state(monkeypatch, only_device=True).resolve_port()
 
 
 @pytest.mark.parametrize("ports", [["/dev/only"], ["/dev/a", "/dev/b"]])
@@ -856,6 +885,89 @@ def test_kill_holders(monkeypatch, confirmed):
         holder.wait()
         os.close(master)
         os.close(slave)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="posix only")
+@pytest.mark.parametrize("confirmed", [True, False])
+def test_warn_holders_offers_to_kill_at_a_terminal(monkeypatch, capsys, confirmed):
+    import os
+    import shutil
+
+    import idftool.ports as ports
+
+    if shutil.which("lsof") is None:
+        pytest.skip("needs lsof")
+    master, slave, path, holder = _held_pty()
+    monkeypatch.setattr(ports.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(ports.questionary, "confirm",
+                        lambda *a, **k: type("Q", (), {"unsafe_ask": lambda self: confirmed})())
+    try:
+        ports.warn_holders(path)
+        assert f"Warning: {path} is held by " in capsys.readouterr().err
+        if confirmed:
+            assert holder.wait(timeout=5) is not None
+        else:
+            assert holder.poll() is None
+    finally:
+        holder.kill()
+        holder.wait()
+        os.close(master)
+        os.close(slave)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="posix only")
+def test_warn_holders_only_warns_off_a_terminal(monkeypatch, capsys):
+    import os
+    import shutil
+
+    import idftool.ports as ports
+
+    if shutil.which("lsof") is None:
+        pytest.skip("needs lsof")
+    master, slave, path, holder = _held_pty()
+    monkeypatch.setattr(ports.sys.stdin, "isatty", lambda: False)
+    monkeypatch.setattr(ports.questionary, "confirm", lambda *a, **k: pytest.fail("must not ask"))
+    try:
+        ports.warn_holders(path)
+        err = capsys.readouterr().err
+        assert f"Warning: {path} is held by " in err
+        assert "pass --kill-holders to kill it" in err
+        assert holder.poll() is None
+    finally:
+        holder.kill()
+        holder.wait()
+        os.close(master)
+        os.close(slave)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="posix only")
+def test_warn_holders_kills_without_asking_when_told(monkeypatch, capsys):
+    import os
+    import shutil
+
+    import idftool.ports as ports
+
+    if shutil.which("lsof") is None:
+        pytest.skip("needs lsof")
+    master, slave, path, holder = _held_pty()
+    monkeypatch.setattr(ports.sys.stdin, "isatty", lambda: False)
+    monkeypatch.setattr(ports.questionary, "confirm", lambda *a, **k: pytest.fail("must not ask"))
+    try:
+        ports.warn_holders(path, kill=True)
+        assert "--kill-holders" not in capsys.readouterr().err
+        assert holder.wait(timeout=5) is not None
+    finally:
+        holder.kill()
+        holder.wait()
+        os.close(master)
+        os.close(slave)
+
+
+def test_warn_holders_skips_a_network_port(monkeypatch):
+    import idftool.ports as ports
+
+    monkeypatch.setattr(ports, "port_holders", lambda port: pytest.fail("must not look"))
+    ports.warn_holders("rfc2217://localhost:4000")
 
 
 @pytest.mark.parametrize("text", ["9C:13:9E:1B:D4:6C", "9c-13-9e-1b-d4-6c", "9c139e1bd46c"])

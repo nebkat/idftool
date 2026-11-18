@@ -5,9 +5,10 @@ interactive use.
 
 ## No questions
 
-Without a terminal, `idftool` never shows the device list. Give the device with
-`-p` or `-m`; otherwise it tries each port in turn and uses the first ESP that
-answers. `-y` does the same in an interactive shell.
+Without a terminal, `idftool` never shows the device list and never guesses.
+Give the device with `-p`, `-m` or `--usb-serial`, or pass `--only-device` to use
+the one adapter port connected (an error if there are several). Without any of
+these it fails. `-y` does the same in an interactive shell.
 
 ```bash
 idftool -m 7c:2c:67:92:79:c0 write-bundle release.zip

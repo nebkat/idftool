@@ -64,7 +64,7 @@ alias idf.py='idftool idf.py'
 
 ### Firmware flashing
 
-Flash to the default (factory) or next available (OTA) app partition, with no
+Flash to the factory (or ota_0) or next available (OTA) app partition, with no
 offsets to memorise. An OTA flash switches to the new slot the way a real
 update would, and only the sectors that changed are rewritten.
 

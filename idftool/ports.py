@@ -47,6 +47,7 @@ MANUAL = "\0manual"
 QUIT = "\0quit"
 KILL = "\0kill"
 NONE = "\0none"
+BACK = "\0back"
 
 #: Whether `k` can kill a process holding a port.
 CAN_KILL = sys.platform != "win32"
@@ -347,6 +348,20 @@ def find_port_for_usb_serial(serial: str) -> str:
     return found[0]
 
 
+def find_only_device() -> str:
+    """The one port on an ESP or USB-serial adapter (see :data:`ESP_ADAPTER_VIDS`), for
+    ``--only-device``; an error if there are none or several."""
+    found = [p.device for p in serial_ports.get_port_list() if p.vid in ESP_ADAPTER_VIDS]
+    if not found:
+        raise click.ClickException("--only-device: no ESP or USB-serial adapter port found")
+    if len(found) > 1:
+        raise click.ClickException(
+            f"--only-device: {len(found)} ports found ({', '.join(found)}); "
+            "use -p, -m or --usb-serial to pick one")
+    click.echo(click.style("Device: ", bold=True) + found[0], err=True)
+    return found[0]
+
+
 def find_port_for_mac(mac: str, baud: int, *, probe: bool = False) -> str:
     """The port of the device with `mac`: from USB serial numbers, else (with `probe`) by
     connecting to the ports whose serial number isn't a MAC."""
@@ -392,8 +407,8 @@ def print_rerun_hint(port: str, mac: Optional[str] = None,
                    err=True)
 
 
-def kill_holders(port: str) -> None:
-    """Offer to kill the processes holding `port`."""
+def kill_holders(port: str, *, ask: bool = True) -> None:
+    """Kill the processes holding `port`, after asking unless not `ask`."""
     import os
 
     holders = [(pid, name) for pid, name in port_holders(port) if pid != os.getpid()]
@@ -401,11 +416,14 @@ def kill_holders(port: str) -> None:
         click.echo(f"Nothing else is holding {port}.", err=True)
         return
     names = ", ".join(f"{name} (pid {pid})" for pid, name in holders)
-    try:
-        if not questionary.confirm(f"Kill {names}?", default=False).unsafe_ask():
-            return
-    except KeyboardInterrupt:
-        raise click.Abort() from None
+    if ask:
+        try:
+            if not questionary.confirm(f"Kill {names}?", default=False).unsafe_ask():
+                return
+        except KeyboardInterrupt:
+            raise click.Abort() from None
+    else:
+        click.echo(f"Killing {names}…", err=True)
     for pid, name in holders:
         try:
             os.kill(pid, signal.SIGTERM)
@@ -419,27 +437,56 @@ def kill_holders(port: str) -> None:
         time.sleep(0.1)
 
 
+def warn_holders(port: str, *, kill: bool = False) -> None:
+    """Before opening a local `port` the user named: say which other processes hold it and
+    kill them (`kill`), or at a terminal offer to."""
+    from idftool.network import is_network_port
+
+    if is_network_port(port):
+        return
+    reason = held_reason(port)
+    if not reason:
+        return
+    act = CAN_KILL and (kill or sys.stdin.isatty())
+    hint = "; pass --kill-holders to kill it" if CAN_KILL and not act else ""
+    click.echo(click.style(f"Warning: {port} is {reason}{hint}", fg="yellow"), err=True)
+    if act:
+        kill_holders(port, ask=not kill)
+
+
 def select_device(baud: int, *, identify: Optional[Identify] = None,
                   message: str = "Select device", probe: Optional[bool] = None,
-                  allow_none: bool = False) -> Optional[Record]:
+                  allow_none: bool = False, default: Optional[str] = None,
+                  allow_quit: bool = True, allow_back: bool = False,
+                  list_ports: Optional[Callable[[], Sequence["ListPortInfo"]]] = None,
+                  ) -> Optional[Record]:
     """Ask the user to pick a device; returns its :func:`usb_record` or :func:`probe_port`
     record, or ``{"port": None}`` if `allow_none` and they chose no device.
 
     Ports are described from USB alone, so no board is reset. ``p`` connects to the
     highlighted port to identify its board; `probe` does that for every port up front.
-    `probe` defaults to whether `identify` is given, since it needs a connection."""
+    `probe` defaults to whether `identify` is given, since it needs a connection.
+
+    The cursor starts on `default`, a port name, when it is listed. ``q`` and the Quit row
+    abort unless not `allow_quit`; with `allow_back`, ``←`` and a Back row return None, for
+    a caller that has somewhere to go back to. `list_ports` lists the ports offered, every
+    serial port unless given; it is asked again on each refresh."""
     if not sys.stdin.isatty():
         return None
     if probe is None:
         probe = identify is not None
 
     while True:
-        answer, found = _pick(serial_ports.get_port_list(), baud, probe=probe,
-                              identify=identify, message=message, allow_none=allow_none)
+        answer, found = _pick((list_ports or serial_ports.get_port_list)(), baud,
+                              probe=probe, identify=identify, message=message,
+                              allow_none=allow_none,
+                              default=default, allow_quit=allow_quit, allow_back=allow_back)
         if answer is REFRESH:
             continue
         if answer is NONE:
             return {"port": None}
+        if answer is BACK:
+            return None
         if answer is KILL:
             assert found is not None
             kill_holders(found["port"])
@@ -485,7 +532,8 @@ def prompt_for_port(message: str = "Select port") -> Optional[str]:
 
 def _pick(listed: Sequence["ListPortInfo"], baud: Optional[int], *, probe: bool, message: str,
           identify: Optional[Identify] = None, allow_probe: bool = True,
-          allow_none: bool = False) -> tuple[Optional[str], Optional[Record]]:
+          allow_none: bool = False, default: Optional[str] = None, allow_quit: bool = True,
+          allow_back: bool = False) -> tuple[Optional[str], Optional[Record]]:
     """Show the picker once; returns ``(answer, record)``."""
     from questionary.prompts.common import InquirerControl
 
@@ -503,13 +551,20 @@ def _pick(listed: Sequence["ListPortInfo"], baud: Optional[int], *, probe: bool,
     choices.append(questionary.Choice(title=[("class:meta", "✎ Enter a port manually…")],
                                       value=MANUAL))
     choices.append(questionary.Choice(title=[("class:meta", "↻ Refresh")], value=REFRESH))
-    choices.append(questionary.Choice(title=[("class:meta", "✕ Quit")], value=QUIT))
+    if allow_back:
+        choices.append(questionary.Choice(title=[("class:meta", "← Back")], value=BACK))
+    if allow_quit:
+        choices.append(questionary.Choice(title=[("class:meta", "✕ Quit")], value=QUIT))
 
     question = questionary.select(
         message, choices=choices, style=_style(),
+        # questionary matches a default against the Choice, not its value.
+        default=next((c for c in choices if default is not None and c.value == default), None),
         instruction="(↑↓ move · ↵ select"
+                    + (" · ← back" if allow_back else "")
                     + (" · p probe" if allow_probe else "") + " · r refresh"
-                    + (" · k kill" if CAN_KILL else "") + " · q quit)")
+                    + (" · k kill" if CAN_KILL else "")
+                    + (" · q quit" if allow_quit else "") + ")")
     question.application.erase_when_done = True
     control = next(c for c in question.application.layout.find_all_controls()
                    if isinstance(c, InquirerControl))
@@ -521,9 +576,15 @@ def _pick(listed: Sequence["ListPortInfo"], baud: Optional[int], *, probe: bool,
     def _refresh(event: "KeyPressEvent") -> None:
         event.app.exit(result=REFRESH)
 
-    @bindings.add("q", eager=True)
-    def _quit(event: "KeyPressEvent") -> None:
-        event.app.exit(result=QUIT)
+    if allow_quit:
+        @bindings.add("q", eager=True)
+        def _quit(event: "KeyPressEvent") -> None:
+            event.app.exit(result=QUIT)
+
+    if allow_back:
+        @bindings.add("left", eager=True)
+        def _back(event: "KeyPressEvent") -> None:
+            event.app.exit(result=BACK)
 
     to_kill: dict[str, Any] = {}
 
@@ -628,7 +689,7 @@ def _pick(listed: Sequence["ListPortInfo"], baud: Optional[int], *, probe: bool,
 
     if answer is KILL:
         return KILL, {"port": to_kill["port"]}
-    if answer in (REFRESH, MANUAL, QUIT, NONE) or answer is None:
+    if answer in (REFRESH, MANUAL, QUIT, NONE, BACK) or answer is None:
         return answer, None
     chosen = results[answer]
     if chosen["error"]:

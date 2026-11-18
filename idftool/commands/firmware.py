@@ -65,7 +65,7 @@ def flash_factory(esp: ESPLoader, partition_table: PartitionTable, partition: Pa
         esp.erase_region(offset=otadata_partition.offset, size=otadata_partition.size)
 
 
-@cli.command('factory', help='Flash an app to the factory partition')
+@cli.command('factory', help='Flash an app to the factory partition (or ota_0) and boot it')
 @click.argument('app_binary_file')
 @flash_options
 @pass_state

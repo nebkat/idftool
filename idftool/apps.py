@@ -3,12 +3,15 @@ import os.path
 import struct
 from dataclasses import dataclass
 from typing import Callable, ClassVar, Optional
+from weakref import WeakKeyDictionary
 
-from esptool import ESPLoader
+from esptool import ESPLoader, flash_size_bytes
+from esptool.cmds import detect_flash_size
 from esptool.targets import CHIP_DEFS
 
 from esp_idf_defs import AppDescription, ImageHeader, ImageMetadata, ChipId
-from esp_idf_defs.partitions import PartitionTable, PartitionDefinition, APP_TYPE, BOOTLOADER_TYPE
+from esp_idf_defs.partitions import PartitionTable, PartitionDefinition, APP_TYPE, BOOTLOADER_TYPE, \
+    PARTITION_TABLE_OFFSET, PARTITION_TABLE_SIZE
 
 from idftool.display import print_partition_table
 
@@ -28,6 +31,10 @@ class BootloaderDescription:
     version: int
     idf_version: str
     date_time: str
+    #: Where the partition table this bootloader reads is, or 0 if it doesn't record it. The field
+    #: esp-idf#19102 proposes, in the first 4 bytes of ``reserved2``, which bootloaders without it
+    #: leave 0.
+    partition_table_offset: int = 0
 
     @classmethod
     def from_bytes_or_none(cls, data: bytes) -> Optional['BootloaderDescription']:
@@ -38,7 +45,8 @@ class BootloaderDescription:
         def text(raw: bytes) -> str:
             return raw.split(b'\0', 1)[0].decode('utf-8', errors='replace')
 
-        return cls(secure_version, version, text(data[8:40]), text(data[40:64]))
+        return cls(secure_version, version, text(data[8:40]), text(data[40:64]),
+                   struct.unpack_from('<I', data, 64)[0])
 
 
 @dataclass
@@ -146,6 +154,88 @@ def find_bootloader(read: Callable[[int, int], bytes],
         if found is not None and found.offset == offset:
             return found
     return None
+
+#: Where ``esp_bootloader_desc_t`` is in a bootloader image: after the image and first segment headers.
+BOOTLOADER_DESCRIPTION_OFFSET = 0x20
+BOOTLOADER_DESCRIPTION_END = BOOTLOADER_DESCRIPTION_OFFSET + BootloaderDescription.SIZE
+#: Past this, no write can reach a bootloader's description.
+BOOTLOADER_DESCRIPTIONS_END = max(BOOTLOADER_OFFSETS.values()) + BOOTLOADER_DESCRIPTION_END
+
+
+def partition_table_offset_recorded_by(bootloader: bytes, offset: int,
+                                       limit: Optional[int] = None) -> Optional[int]:
+    """Where `bootloader`, an image flashed at `offset`, records its partition table, or None if it
+    records none. Raises if what it records can't be a partition table's offset: one on a sector
+    boundary, past the bootloader, and with the table below `limit`, the flash's or image's end."""
+    if len(bootloader) < BOOTLOADER_DESCRIPTION_END or bootloader[0] != ImageHeader.MAGIC:
+        return None
+    description = BootloaderDescription.from_bytes_or_none(bootloader[BOOTLOADER_DESCRIPTION_OFFSET:])
+    if description is None or description.partition_table_offset == 0:
+        return None
+    recorded = description.partition_table_offset
+    if recorded % 0x1000 or recorded <= offset or (limit is not None and recorded + PARTITION_TABLE_SIZE > limit):
+        raise RuntimeError(f"The bootloader at {offset:#x} records partition table offset {recorded:#x}, "
+                           f"which can't be one")
+    return recorded
+
+
+def bootloader_offset_of(bootloader: bytes) -> Optional[int]:
+    """The offset the chip `bootloader` is built for boots it from, or None if it isn't an image."""
+    if len(bootloader) < 14 or bootloader[0] != ImageHeader.MAGIC:
+        return None
+    return BOOTLOADER_OFFSETS.get(struct.unpack_from('<H', bootloader, 12)[0])
+
+
+def recorded_partition_table_offset(read: Callable[[int, int], bytes], bootloader_offsets: list[int],
+                                    limit: Optional[int] = None) -> Optional[int]:
+    """Where the bootloader at the first of `bootloader_offsets` holding one for a chip that boots
+    from there records its partition table, or None."""
+    for offset in bootloader_offsets:
+        data = read(offset, BOOTLOADER_DESCRIPTION_END)
+        if bootloader_offset_of(data) != offset:
+            continue
+        return partition_table_offset_recorded_by(data, offset, limit)
+    return None
+
+
+#: What each connected device's bootloader records, as last read; forgotten whenever idftool writes
+#: over a bootloader description (:func:`forget_device_partition_table_offset`).
+_device_table_offsets: 'WeakKeyDictionary[ESPLoader, Optional[int]]' = WeakKeyDictionary()
+
+
+def device_partition_table_offset(esp: ESPLoader, bootloader_offset: int,
+                                  flash_size: Callable[[], Optional[int]]) -> Optional[int]:
+    """Where the bootloader at `bootloader_offset` on `esp` records its partition table, or None,
+    read once per connection. `flash_size` is asked only when the bootloader is read."""
+    if esp not in _device_table_offsets:
+        _device_table_offsets[esp] = recorded_partition_table_offset(
+            lambda offset, length: esp.read_flash(offset, length), [bootloader_offset], flash_size())
+    return _device_table_offsets[esp]
+
+
+def partition_table_offset(esp: ESPLoader, bootloader_offset: Optional[int] = None) -> int:
+    """Where the partition table is on the chip `esp` is connected to: where its bootloader, at
+    `bootloader_offset` (the chip's own by default), records it, else ESP-IDF's default, 0x8000.
+
+    For a caller driving its own connection, so a tool needs no rule of its own for where a
+    device's table is. Read once per connection (:func:`forget_device_partition_table_offset`).
+    Raises if the bootloader records an offset that can't be a partition table's."""
+    if bootloader_offset is None:
+        bootloader_offset = esp.BOOTLOADER_FLASH_OFFSET
+    recorded = device_partition_table_offset(esp, bootloader_offset, lambda: device_flash_size(esp))
+    return recorded if recorded is not None else PARTITION_TABLE_OFFSET
+
+
+def device_flash_size(esp: ESPLoader) -> Optional[int]:
+    """The flash size the chip `esp` is connected to reports, in bytes, or None if it reports none."""
+    detected = detect_flash_size(esp)
+    return flash_size_bytes(detected) if detected else None
+
+
+def forget_device_partition_table_offset(esp: ESPLoader) -> None:
+    """Have the next :func:`device_partition_table_offset` read the bootloader again."""
+    _device_table_offsets.pop(esp, None)
+
 
 def load_app_binary(esp: ESPLoader, app_binary_file: str, partition: PartitionDefinition) -> tuple[bytes, ImageMetadata]:
     app_binary_size = os.path.getsize(app_binary_file)
