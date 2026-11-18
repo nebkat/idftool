@@ -53,7 +53,7 @@ with. `idftool` does that for you.
 
     ---
 
-    Flash to the default (factory) or next available (OTA) app partition,
+    Flash to the factory (or ota_0) or next available (OTA) app partition,
     with no offsets to memorise.
 
     [:octicons-arrow-right-24: Flashing firmware](guide/flashing-firmware.md)
