@@ -277,7 +277,7 @@ def test_write_flash_skips_the_files_already_there(monkeypatch, capsys):
     # the comparison that was just done.
     assert forwarded['addr_data'] == [(0x12000, different)]
     assert 'skip_flashed' not in forwarded
-    assert "already in flash" in capsys.readouterr().out
+    assert "already in flash" in capsys.readouterr().out.lower()
 
 
 def test_write_flash_is_not_called_when_everything_matches(monkeypatch):
@@ -457,11 +457,23 @@ def test_the_bail_threshold_relaxes_as_the_scan_proceeds():
     assert threshold(0) > 0.65
 
 
-def test_the_scan_reports_progress_as_it_goes():
-    data = _region(16)
-    seen = []
-    _plan(_FakeFlash(data), data, on_scanned=seen.append)
-    assert seen == [(i + 1) * 0x1000 for i in range(16)]
+def test_the_scan_reports_each_sector_before_the_run_it_closes():
+    """So the map shows a sector compared before the write that sector set off."""
+    from idftool.flash import plan_sector_writes
+
+    data = _region(12)
+    events = []
+    for write in plan_sector_writes(_FakeFlash(_dirty(data, 2, 10)), 0x10000, data,
+                                    on_compared=lambda *seen: events.append(seen)):
+        events.append(write)
+
+    def compared(*sectors):
+        return [(n * 0x1000, 0x1000, n not in (2, 10)) for n in sectors]
+
+    assert events == [
+        *compared(0, 1, 2, 3, 4, 5), (0x2000, 0x1000, 'changed'),
+        *compared(6, 7, 8, 9, 10, 11), (0xa000, 0x1000, 'changed'),
+    ]
 
 
 # --- what reaches esptool --------------------------------------------------------------
@@ -487,7 +499,317 @@ def test_changed_sectors_are_written_as_they_are_found(monkeypatch, capsys):
         [(0x10000 + 5 * 0x1000, data[5 * 0x1000:7 * 0x1000])],
         [(0x10000 + 40 * 0x1000, data[40 * 0x1000:41 * 0x1000])],
     ]
-    assert "wrote 12.00kB of 256.00kB in 2 regions" in capsys.readouterr().out
+    assert "12 kB written (2 regions) · 244 kB unchanged" in capsys.readouterr().out
+
+
+def _write_like_esptool(monkeypatch, on_block=lambda: None):
+    """Stand in for esptool's write_flash, drawing its progress the way esptool 5.6 does:
+    one ``log.progress`` per call, advanced a block at a time. `on_block` runs once as the
+    write starts and again after every block."""
+    import idftool.flash as flash_module
+    from esptool.logger import log
+
+    calls = []
+
+    def write(addr_data, no_progress=False, **kwargs):
+        calls.append(dict(kwargs, addr_data=addr_data, no_progress=no_progress))
+        (_, run), = addr_data
+        on_block()
+        with log.progress(total=len(run), disable=no_progress, unit="B") as task:
+            for _ in range(0, len(run), 0x1000):
+                task.update(advance=0x1000, description="Writing")
+                on_block()
+
+    monkeypatch.setattr(flash_module, "esptool_write_flash", write)
+    return flash_module, calls
+
+
+def _terminal(monkeypatch, width=100, colour=False):
+    """A terminal for the bar to draw on, read back with :func:`_screen`. Every change is
+    drawn, so that what the screen shows is what the bar holds."""
+    import io
+    import idftool.flash as flash_module
+    from rich.console import Console
+
+    monkeypatch.setattr(flash_module.Progress, "INTERVAL", 0)
+    console = Console(file=io.StringIO(), force_terminal=True, width=width,
+                      color_system="256" if colour else None)
+    monkeypatch.setattr(flash_module, "_interactive_console", lambda: console)
+    return console
+
+
+def _screen(console):
+    """The lines a terminal shows after what was printed on `console`: carriage returns,
+    cursor-up and erase-line applied, colours dropped."""
+    lines, row, col = [[]], 0, 0
+    for match in re.finditer(r"\x1b\[([\d;]*)([A-Za-z])|(.)", console.file.getvalue(), re.S):
+        count, command, char = match.groups()
+        if command == "A":
+            row = max(0, row - int(count or 1))
+        elif command == "K":
+            del lines[row][col:]
+        elif command:
+            pass                                    # colours
+        elif char == "\r":
+            col = 0
+        elif char == "\n":
+            row, col = row + 1, 0
+            lines.extend([] for _ in range(row + 1 - len(lines)))
+        else:
+            line = lines[row]
+            line.extend(" " * (col - len(line)))
+            line[col:col + 1] = [char]
+            col += 1
+    return ["".join(line).rstrip() for line in lines if "".join(line).strip()]
+
+
+def test_the_map_shows_what_was_written_and_what_was_left(monkeypatch):
+    console = _terminal(monkeypatch, width=81)
+    flash_module, _ = _write_like_esptool(monkeypatch)
+    data = _region(64)
+
+    flash_module.write_flash(esp=_FakeFlash(_dirty(data, *range(32, 48))),
+                             addr_data=[(0x10000, data)], diff=True)
+
+    top, bottom = _screen(console)
+    bar = top.split()[0]
+    assert len(top) == 80                                   # a column short of the terminal
+    assert set(bar[:len(bar) * 9 // 20]) == {"="} and set(bar[len(bar) * 4 // 5:]) == {"="}
+    assert "#" * (len(bar) // 4 - 2) in bar and set(bar) == {"=", "#"}
+    assert top.endswith("100%     0s")
+    assert bottom.startswith("64 kB written (1 region) · 192 kB unchanged · ")
+
+
+def test_changed_sectors_are_marked_to_write_until_written(monkeypatch):
+    """The scan reaches a run before it is written: the bar moves on regardless, with the run
+    shown waiting, and fills it in as esptool writes it."""
+    console = _terminal(monkeypatch)
+    screens = []
+    flash_module, _ = _write_like_esptool(monkeypatch, lambda: screens.append(_screen(console)))
+    data = _region(64)
+
+    flash_module.write_flash(esp=_FakeFlash(_dirty(data, *range(4, 12))),
+                             addr_data=[(0x10000, data)], diff=True)
+
+    first, last = screens[0], screens[-1]                   # as the write starts, at its end
+    assert "~" in first[0] and "#" not in first[0]
+    assert first[1].startswith("32 kB to write · ")
+    assert "#" in last[0] and last[1].startswith("28 kB written · 4 kB to write · ")
+    written = [int(re.match(r"(\d+) kB written", bottom).group(1))
+               for _, bottom in screens[2:]]
+    assert written == sorted(written) and len(set(written)) >= 6
+
+
+def test_one_changed_sector_shows_however_large_the_region(monkeypatch):
+    from idftool.flash import Progress
+
+    console = _terminal(monkeypatch, width=41)
+    with Progress(1024 * 0x1000) as progress:
+        for n in range(1024):
+            progress.compared(n * 0x1000, 0x1000, n != 500)
+        progress.finish(["done"])
+    bar = _screen(console)[0].split()[0]
+    assert bar.count("~") == 1 and set(bar) == {"=", "~"}
+
+
+def test_a_run_is_not_drawn_written_before_esptool_returns(monkeypatch):
+    """esptool reports a run's last block before it has finished and verified the write."""
+    from idftool.flash import Progress
+
+    _terminal(monkeypatch)
+    with Progress(8 * 0x1000) as progress:
+        progress.to_write(4 * 0x1000, 4 * 0x1000)
+        progress.written(4 * 0x1000, 4 * 0x1000 - 1)        # every block sent
+        assert progress.counts[Progress.WRITTEN] == 3 * 0x1000
+        progress.written(4 * 0x1000, 4 * 0x1000)            # and esptool returned
+        assert progress.counts[Progress.WRITTEN] == 4 * 0x1000
+        progress.finish(["done"])
+
+
+def test_a_run_that_fails_after_its_last_block_is_not_drawn_done(monkeypatch):
+    console = _terminal(monkeypatch)
+    blocks = []
+    changed = range(60, 64)
+
+    def fail_verifying():
+        blocks.append(None)
+        if len(blocks) == 1 + len(changed):     # the start, then every block of the run
+            raise RuntimeError("MD5 of file does not match data in flash!")
+
+    flash_module, _ = _write_like_esptool(monkeypatch, fail_verifying)
+    data = _region(64)
+
+    with pytest.raises(RuntimeError):
+        flash_module.write_flash(esp=_FakeFlash(_dirty(data, *changed)),
+                                 addr_data=[(0x10000, data)], diff=True)
+    top, bottom = _screen(console)
+    assert top.endswith(" 98%     0s") and bottom.startswith("12 kB written · 4 kB to write · ")
+
+
+def test_an_abandoned_scan_that_wrote_its_remainder_is_drawn_done(monkeypatch):
+    console = _terminal(monkeypatch)
+    flash_module, _ = _write_like_esptool(monkeypatch)
+    data, esp = _mostly_changed_after_a_clean_patch()
+
+    flash_module.write_flash(esp=esp, addr_data=[(0x10000, data)], diff=True)
+
+    top, bottom = _screen(console)
+    assert "100%" in top and "too much differs, the rest whole" in bottom
+
+
+def test_an_abandoned_scan_that_wrote_nothing_says_why(monkeypatch):
+    console = _terminal(monkeypatch)
+    flash_module, calls = _write_like_esptool(monkeypatch)
+    data = _region(256)
+
+    flash_module.write_flash(esp=_FakeFlash(bytes(len(data))), addr_data=[(0x10000, data)],
+                             diff=True)
+
+    assert _screen(console)[-1].startswith("too much differs after ")
+    assert [call["addr_data"] for call in calls] == [[(0x10000, data)]]
+
+
+def test_a_bar_that_cannot_draw_does_not_cut_a_run_short(monkeypatch):
+    """A run cut part way leaves the slot half written, so a draw that fails while a run is
+    written stops the write only once the run is finished."""
+    from idftool.flash import Progress
+
+    _terminal(monkeypatch)
+    broken, blocks = [], []
+    draw = Progress._print
+
+    def print_or_break(self, *renderables):
+        if broken:
+            raise BrokenPipeError
+        draw(self, *renderables)
+
+    monkeypatch.setattr(Progress, "_print", print_or_break)
+    monkeypatch.setattr(Progress, "INTERVAL", 0)
+    flash_module, _ = _write_like_esptool(
+        monkeypatch, lambda: (blocks.append(None), broken.append(True)))
+    data = _region(64)
+    changed = range(4, 12)
+
+    with pytest.raises(BrokenPipeError):
+        flash_module.write_flash(esp=_FakeFlash(_dirty(data, *changed)),
+                                 addr_data=[(0x10000, data)], diff=True)
+    assert len(blocks) == 1 + len(changed)     # the start, then every block of the run
+
+
+def test_a_warning_mid_write_is_printed_above_the_bar(monkeypatch):
+    from esp_pylib.logger import EspLog
+    from esptool.logger import log
+
+    console = _terminal(monkeypatch)
+    log.print  # noqa: B018  (makes sure esptool's logger exists)
+    monkeypatch.setattr(type(EspLog.instance), "stdout", property(lambda self: console))
+    warned = []
+
+    def warn_once():
+        if not warned:
+            warned.append(log.warning("flash chip is getting warm"))
+
+    flash_module, _ = _write_like_esptool(monkeypatch, warn_once)
+    data = _region(64)
+
+    flash_module.write_flash(esp=_FakeFlash(_dirty(data, *range(4, 12))),
+                             addr_data=[(0x10000, data)], diff=True)
+
+    screen = _screen(console)
+    assert screen[0].startswith("Comparing against flash")
+    assert screen[1] == "Warning: flash chip is getting warm"
+    assert screen[3].startswith("32 kB written") and len(screen) == 4
+
+
+@pytest.mark.parametrize("width, longest", [(60, 59), (81, 80), (200, 120)])
+def test_no_line_is_wider_than_the_terminal_or_120(monkeypatch, width, longest):
+    console = _terminal(monkeypatch, width=width)
+    flash_module, _ = _write_like_esptool(monkeypatch)
+    data = _region(256)
+
+    flash_module.write_flash(esp=_FakeFlash(_dirty(data, *range(40, 90))),
+                             addr_data=[(0x10000, data)], diff=True)
+
+    top, bottom = _screen(console)
+    assert len(top) == longest and len(bottom) <= longest
+
+
+def test_the_map_is_drawn_in_colour_where_there_is_colour(monkeypatch):
+    console = _terminal(monkeypatch, colour=True)
+    flash_module, _ = _write_like_esptool(monkeypatch)
+    data = _region(64)
+
+    flash_module.write_flash(esp=_FakeFlash(_dirty(data, 5)), addr_data=[(0x10000, data)],
+                             diff=True)
+
+    out = console.file.getvalue()
+    assert "━" in out and "#" not in out
+    assert "\x1b[38;5;42m" in out and "\x1b[38;5;67m" in out     # written, unchanged
+
+
+class _FakeLoader(_FakeFlash):
+    """A _FakeFlash that esptool's own write_flash can write to over the stub's compressed
+    commands. Writes land in `contents`, so esptool's verification reads back what it wrote.
+    `on_block` runs as a write starts, after every block and as it finishes."""
+    FLASH_WRITE_SIZE = 0x1000
+    FLASH_SECTOR_SIZE = 0x1000
+    FLASH_32BIT_ADDR_SUPPORTED = False
+    WRITE_FLASH_ATTEMPTS = 2
+
+    def on_block(self):
+        pass
+
+    def flash_set_parameters(self, size):
+        pass
+
+    def get_flash_encryption_enabled(self):
+        return False
+
+    def get_secure_boot_v1_enabled(self):
+        return False
+
+    def get_encrypted_download_disabled(self):
+        return False
+
+    def flash_id(self, cache=True):
+        """A 4 MB chip: esptool reads the size from the capacity byte, bits 16 to 23."""
+        from esptool.cmds import DETECTED_FLASH_SIZES
+        return next(code for code, size in DETECTED_FLASH_SIZES.items() if size == "4MB") << 16
+
+    def flash_defl_begin(self, size, compsize, offset, encrypted_write=False):
+        import zlib
+        self._at, self._inflate = offset - self.base, zlib.decompressobj()
+        self.on_block()
+
+    def flash_defl_block(self, data, seq, timeout=None):
+        chunk = self._inflate.decompress(data)
+        self.contents[self._at:self._at + len(chunk)] = chunk
+        self._at += len(chunk)
+        self.on_block()
+
+    def flash_defl_finish(self, reboot=False, timeout=None):
+        self.on_block()
+
+
+def test_esptools_own_write_moves_the_bar_and_completes(monkeypatch):
+    """Pins what quiet_esptool hands esptool against esptool's real write loop, where a
+    mismatch would abort a write part way and leave the slot half written."""
+    import random
+    import idftool.flash as flash_module
+
+    console = _terminal(monkeypatch)
+    pick = random.Random(0).choice
+    data = bytes(pick(b"0123456789abcdef") for _ in range(64 * 0x1000))
+    esp = _FakeLoader(_dirty(data, *range(4, 12)))
+    screens = []
+    esp.on_block = lambda: screens.append(_screen(console))
+
+    flash_module.write_flash(esp=esp, addr_data=[(0x10000, data)], diff=True)
+
+    assert bytes(esp.contents) == data
+    written = [int(m.group(1)) for _, bottom in screens
+               if (m := re.match(r"(\d+) kB written", bottom))]
+    assert len(set(written)) > 1 and written == sorted(written)
 
 
 def test_an_abandoned_scan_writes_the_region_whole(monkeypatch, capsys):
@@ -514,13 +836,12 @@ def test_abandoning_after_writing_finishes_the_job(monkeypatch, capsys):
     assert written == [(0x10000, data[:2 * 0x1000]),
                        (0x10000 + 6 * 0x1000, data[6 * 0x1000:])]
     # Every byte of the region is either written here or was checked and matched.
-    assert "too much of it differs" in capsys.readouterr().out
+    assert "too much differs, the rest whole" in capsys.readouterr().out
 
 
 @pytest.mark.parametrize("option", ['no_progress', 'compress', 'force'])
 def test_diff_forwards_the_other_write_options_to_each_run(monkeypatch, option):
-    """Each run is its own write_flash call, so the options have to be passed on — and
-    `no_progress` in particular has to survive idftool setting it as well."""
+    """Each run is its own write_flash call, so the options have to be passed on."""
     flash_module, calls = _record_writes(monkeypatch)
     data = _region(64)
     esp = _FakeFlash(_dirty(data, 5))
@@ -559,58 +880,60 @@ def test_app_commands_diff_by_default():
 
 # --- output -----------------------------------------------------------------------------
 
-def test_progress_is_silent_when_progress_is_not_wanted(capsys):
-    from idftool.flash import Progress
+def test_without_a_terminal_only_the_summary_is_printed(monkeypatch, capsys):
+    flash_module, _ = _write_like_esptool(monkeypatch)
+    data = _region(64)
 
-    with Progress('x', 0x1000, enabled=False) as bar:
-        bar.update(scanned=0x800)
-    assert capsys.readouterr().out == ""
+    flash_module.write_flash(esp=_FakeFlash(_dirty(data, 5)), addr_data=[(0x10000, data)],
+                             diff=True)
+    comparing, summary = capsys.readouterr().out.splitlines()
+    assert comparing == "Comparing against flash at 0x00010000..."
+    assert summary.startswith("4 kB written (1 region) · 252 kB unchanged · ")
+
+
+def test_no_progress_draws_no_bar(monkeypatch, capsys):
+    console = _terminal(monkeypatch)
+    flash_module, _ = _write_like_esptool(monkeypatch)
+    data = _region(64)
+
+    flash_module.write_flash(esp=_FakeFlash(_dirty(data, 5)), addr_data=[(0x10000, data)],
+                             diff=True, no_progress=True)
+    assert console.file.getvalue() == ""
+    assert "4 kB written (1 region)" in capsys.readouterr().out
 
 
 def test_progress_obeys_esptools_verbosity(capsys):
-    """Drawing through esptool's logger is what makes its own settings reach the bar."""
     from esptool.logger import log
-    from idftool.flash import Progress
+    from idftool.flash import _interactive_console
 
     log.set_verbosity('silent')
     try:
-        with Progress('x', 0x1000) as bar:
-            bar.update(scanned=0x800)
-        assert capsys.readouterr().out == ""
+        assert _interactive_console() is None
     finally:
         log.set_verbosity('auto')
 
 
-def test_progress_redraws_only_when_the_percentage_moves(capsys):
-    """A megabyte is 256 sectors; a redraw apiece is wasted on a terminal that overwrites
-    and 256 lines of scroll on one that cannot."""
+def test_progress_redraws_at_most_every_interval(monkeypatch):
+    """A megabyte is 256 sectors, compared faster than a terminal is worth redrawing."""
+    import idftool.flash as flash_module
     from idftool.flash import Progress
 
-    with Progress('x', 1000 * 0x1000) as bar:
-        for sector in range(1, 21):      # 20 updates spanning 0% to 2% of the region
-            bar.update(scanned=sector * 0x1000)
-    assert capsys.readouterr().out.count('%') == 3   # the first, then 1% and 2%
+    console = _terminal(monkeypatch)
+    monkeypatch.setattr(Progress, "INTERVAL", 0.05)
+    monkeypatch.setattr(flash_module.time, "monotonic", lambda: 100.0)
+    with Progress(256 * 0x1000) as progress:
+        for n in range(256):
+            progress.compared(n * 0x1000, 0x1000, True)
+        assert console.file.getvalue().count("%") == 1
+        progress.finish(["done"])
+    assert console.file.getvalue().count("%") == 2          # and the last, whenever it comes
 
 
-def test_progress_sizes_match_esptools_bar():
-    from idftool.flash import Progress
+def test_sizes_read_as_a_person_would_write_them():
+    from idftool.flash import format_size
 
-    assert [Progress.size(n) for n in (512, 0x1000, 0x40000, 0x100000, 0x180000)] == \
-        ["512B", "4.00kB", "256.00kB", "1.00MB", "1.50MB"]
-
-
-def test_progress_uses_esptools_layout_and_stops_short_of_done(capsys):
-    """An abandoned scan must not be drawn as complete on the way out."""
-    from idftool.flash import Progress
-
-    with Progress('x', 4 * 0x1000) as bar:
-        bar.update(scanned=0x1000)
-        bar.update(written=0x1000)
-        bar.update(scanned=0x2000)
-    out = capsys.readouterr().out
-    assert "x (written 4.00kB)" in out
-    assert "8.00kB/16.00kB [" in out
-    assert "100.0%" not in out
+    assert [format_size(n) for n in (512, 0x1000, 0x40000, 0x100000, 0x180000)] == \
+        ["512 B", "4 kB", "256 kB", "1.00 MB", "1.50 MB"]
 
 
 def test_quiet_esptool_keeps_what_matters_and_restores_itself(capsys):
@@ -620,12 +943,14 @@ def test_quiet_esptool_keeps_what_matters_and_restores_itself(capsys):
     before = type(log)
     with quiet_esptool():
         log.print("routine chatter")
-        log.progress_bar(1, 2)
+        with log.progress(total=2, unit="B") as task:     # how esptool draws a write's bar
+            task.update()
         log.warning("something worth knowing")
     assert type(log) is before
 
     out = capsys.readouterr().out
     assert "routine chatter" not in out
+    assert "%" not in out
     assert "something worth knowing" in out
 
 

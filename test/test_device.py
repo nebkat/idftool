@@ -212,7 +212,7 @@ def test_skip_flashed_skips_a_write_that_would_change_nothing(idf, device, asset
     # all. App writes do this by default, so the second call needs no flag.
     idf(f"factory {assets / 'app-v1.bin'} --no-skip-flashed")
     out = idf(f"factory {assets / 'app-v1.bin'}")
-    assert "already in flash" in out and "skipping write" in out
+    assert "already in flash" in out
 
     # --no-skip-flashed --no-diff writes it anyway.
     out = idf(f"factory {assets / 'app-v1.bin'} --no-skip-flashed --no-diff")
@@ -236,7 +236,7 @@ def test_diff_writes_only_the_sectors_that_changed(idf, device, assets):
     # depends on how much these two builds have in common.
     idf(f"factory {assets / 'app-v1.bin'} --no-diff --no-skip-flashed")
     out = idf(f"factory {assets / 'app-v2.bin'}")
-    assert " in 1 region" in out or " regions in " in out or "too much of it differs" in out
+    assert "(1 region)" in out or " regions)" in out or "too much differs" in out
 
     # Whichever path it took, the partition has to hold app-v2 exactly afterwards — which
     # the whole-region comparison is the independent check of.

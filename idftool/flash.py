@@ -26,8 +26,12 @@ from esptool import ESPLoader
 import rich_click as click
 from esptool.cmds import _update_image_flash_params, detect_flash_size, \
     write_flash as esptool_write_flash
-from esp_pylib.logger import EspLog
+from esp_pylib.logger import EspLog, Verbosity
 from esptool.logger import log
+from rich.console import Console
+from rich.control import Control
+from rich.segment import ControlType
+from rich.text import Text
 from esptool.util import get_bytes, pad_to
 
 from idftool.display import say
@@ -265,7 +269,7 @@ def flash_check_unavailable(esp: ESPLoader, options: Mapping[str, Any]) -> Optio
 
 
 def plan_sector_writes(esp: ESPLoader, address: int, data: bytes,
-                       on_scanned: Optional[Callable[[int], None]] = None,
+                       on_compared: Optional[Callable[[int, int, bool], None]] = None,
                        sector_size: int = DIFF_SECTOR_SIZE,
                        coalesce: int = DIFF_COALESCE_SECTORS) -> Iterator[tuple[int, int, str]]:
     """Yield the writes a sector-by-sector comparison calls for, as it finds them.
@@ -277,6 +281,9 @@ def plan_sector_writes(esp: ESPLoader, address: int, data: bytes,
 
     Yielding as it goes, rather than returning a plan, is what lets the caller write each run
     while the scan continues: one pass over the region, and one progress bar.
+
+    `on_compared` is called with ``(offset, size, matches)`` as each sector is compared,
+    before any run that sector closes is yielded.
 
     Scanning is not free (~3.7 s/MB) and pays only if enough of the region matches, which is
     not known up front but is learned while scanning. After `fraction` of the region has been
@@ -301,8 +308,11 @@ def plan_sector_writes(esp: ESPLoader, address: int, data: bytes,
 
     while offset < total:
         size = min(sector_size, total - offset)
-        if esp.flash_md5sum(address + offset, size) != \
-                hashlib.md5(data[offset:offset + size]).hexdigest():
+        matches = esp.flash_md5sum(address + offset, size) == \
+            hashlib.md5(data[offset:offset + size]).hexdigest()
+        if on_compared is not None:
+            on_compared(offset, size, matches)
+        if not matches:
             if run_start is None:
                 run_start = offset
             run_end = offset + size
@@ -313,8 +323,6 @@ def plan_sector_writes(esp: ESPLoader, address: int, data: bytes,
             run_start = None
         offset += size
         sectors += 1
-        if on_scanned is not None:
-            on_scanned(offset)
 
         if minimum <= offset < total and \
                 dirty / sectors >= 1 - DIFF_COST_RATIO * (1 - offset / total):
@@ -326,93 +334,274 @@ def plan_sector_writes(esp: ESPLoader, address: int, data: bytes,
         yield run_start, run_end - run_start, 'changed'
 
 
-class Progress:
-    """One progress bar for a whole operation: esptool's own (``log.progress``).
+def format_size(count: int) -> str:
+    """A byte count for a person, e.g. ``512 B``, ``320 kB``, ``1.54 MB``."""
+    if count < 1024:
+        return f'{count} B'
+    if count < 1024 * 1024:
+        return f'{count / 1024:.0f} kB'
+    return f'{count / 1024 / 1024:.2f} MB'
 
-    The differential path scans and writes in the same pass, so its progress is two numbers
-    that advance independently — bytes compared, and bytes written. The bar tracks the scan
-    (whose total is known from the start); what has been written goes in its description.
 
-    Going through esptool's logger means the bar looks like every other bar esptool draws —
-    same layout, sizes and elapsed time — and obeys its decisions on ANSI, Unicode and
-    verbosity.
+def _clock(seconds: float) -> str:
+    whole = int(seconds)
+    return f'{whole}s' if whole < 60 else f'{whole // 60}:{whole % 60:02d}'
+
+
+def _interactive_console() -> Optional[Console]:
+    """esptool's console for stdout, when a bar can be redrawn in place on it.
+
+    Not when esptool is silent or verbose (verbose output would land in the middle of the
+    bar), not when stdout is not a terminal, and not under a logger of the caller's own that
+    has no console: those get the summary line alone. Taking esptool's console keeps its
+    decisions on colour and terminal detection, ``--no-color`` and ``FORCE_COLOR`` among them.
     """
+    log.print  # noqa: B018  (esptool's `log` is a proxy; this makes sure its logger exists)
+    logger = EspLog.instance
+    if getattr(logger, '_verbosity', None) != Verbosity.NORMAL:
+        return None
+    console = getattr(logger, 'stdout', None)
+    return console if isinstance(console, Console) and console.is_terminal else None
 
-    class _StoppedShort(Exception):
-        """Thrown into ``log.progress`` so a scan that stopped short isn't drawn as done."""
 
-    def __init__(self, description: str, total: int, enabled: bool = True) -> None:
-        self.description, self.total, self.enabled = description, total, enabled and total > 0
-        self.scanned = self.written = 0
-        self._shown: Optional[int] = None
-        self._drawn = 0
-        self._context: Any = None
-        self._task: Any = None
+class Progress:
+    """The differential write's bar: a map of the region, sector by sector.
+
+    The scan and the writes go through the region in the same pass, so a single fill would
+    have to stand still either while the scan crosses changed sectors or while they are
+    written. The map shows both instead: each cell is unchanged, waiting to be written,
+    written, or not compared yet, in its own colour. Under it, the figures in the same colours
+    double as the legend, and become the summary once the region is done. Without colour the
+    cells are ``#`` written, ``~`` to write, ``=`` unchanged and ``.`` not compared yet::
+
+        ==========######~~~~~~~~~~~~~~=========...........................   29%     4s
+        64 kB written · 136 kB to write · 224 kB unchanged · of 1.00 MB
+
+    Drawn only where it can be redrawn in place (:func:`_interactive_console`); anywhere
+    else, only the summary is printed.
+    """
+    UNIT = DIFF_SECTOR_SIZE
+    #: The longest a line gets, however wide the terminal.
+    MAX_WIDTH = 120
+    #: The most often the bar is redrawn, in seconds between draws.
+    INTERVAL = 0.05
+
+    UNSCANNED, UNCHANGED, TO_WRITE, WRITTEN = range(4)
+    STYLES = {UNSCANNED: 'color(237)', UNCHANGED: 'color(67)', TO_WRITE: 'color(214)',
+              WRITTEN: 'color(42)'}
+    GLYPHS = {UNSCANNED: '.', UNCHANGED: '=', TO_WRITE: '~', WRITTEN: '#'}
+
+    #: The bar on screen, if any: what :meth:`paused` clears for a line printed mid-write.
+    live: Optional['Progress'] = None
+
+    def __init__(self, total: int, enabled: bool = True,
+                 console: Optional[Console] = None) -> None:
+        self.total = total
+        self.console = (console or _interactive_console()) if enabled and total > 0 else None
+        self.cells = bytearray((total + self.UNIT - 1) // self.UNIT)
+        self.counts = {state: 0 for state in self.GLYPHS}
+        self.counts[self.UNSCANNED] = total
+        self.scanned = 0
+        self._started = time.monotonic()
+        self._drawn_at: Optional[float] = None
+        self._finished = False
 
     def __enter__(self) -> 'Progress':
-        self._context = log.progress(total=self.total, description=self.description,
-                                     unit='B', disable=not self.enabled)
-        self._task = self._context.__enter__()
+        if self.console is not None:
+            Progress.live = self
         return self
 
     def __exit__(self, *exc: Any) -> None:
-        if self.scanned < self.total:
-            # An abandoned or failed scan never reaches 100%: end the line where it stopped.
-            if self._shown is not None:
-                log.print("")
-            if exc[0] is None:
-                exc = (self._StoppedShort, self._StoppedShort(), None)
-        self._context.__exit__(*exc)
+        if Progress.live is self:
+            Progress.live = None
+        if self.console is not None and not self._finished and self._drawn_at is not None:
+            # Failed part way: leave the map as it stands, figures and all.
+            self._draw(force=True)
+            self._print('\n')
 
-    @staticmethod
-    def size(count: int) -> str:
-        """A byte count as esptool's bar shows it, e.g. ``1.20MB``."""
-        if count < 1024:
-            return f'{count}B'
-        scaled = count / 1024
-        if scaled < 1024:
-            return f'{scaled:.2f}kB'
-        return f'{scaled / 1024:.2f}MB'
+    # --- what the region holds --------------------------------------------------------
 
-    @staticmethod
-    def rate(count: int, seconds: float) -> str:
-        return f'{count / seconds * 8 / 1000:.1f} kbit/s' if seconds > 0 else 'instant'
+    def _mark(self, start: int, end: int, state: int, over: Sequence[int] = ()) -> None:
+        for cell in range(start // self.UNIT, min(-(-end // self.UNIT), len(self.cells))):
+            if over and self.cells[cell] not in over:
+                continue
+            length = min(self.UNIT, self.total - cell * self.UNIT)
+            self.counts[self.cells[cell]] -= length
+            self.counts[state] += length
+            self.cells[cell] = state
+        self._draw()
 
-    def update(self, scanned: Optional[int] = None, written: Optional[int] = None) -> None:
-        """Redraw, but only when the percentage has actually moved.
+    def compared(self, offset: int, size: int, matches: bool) -> None:
+        """A sector has been compared: it is either right already or has to be written."""
+        self.scanned = max(self.scanned, offset + size)
+        self._mark(offset, offset + size, self.UNCHANGED if matches else self.TO_WRITE)
 
-        A megabyte is 256 sectors and a redraw apiece is wasted work on a smart terminal and
-        256 lines of scroll on one that cannot overwrite.
-        """
-        if scanned is not None:
-            self.scanned = min(scanned, self.total)
-        if written is not None:
-            self.written = written
-        if not self.enabled:
+    def to_write(self, offset: int, length: int) -> None:
+        """A run is about to be written: sectors it bridges and any not compared yet are
+        written too, and what is already written stays so."""
+        self._mark(offset, offset + length, self.TO_WRITE,
+                   over=(self.UNSCANNED, self.UNCHANGED))
+
+    def written(self, offset: int, length: int) -> None:
+        """`length` bytes from `offset` are written. Only whole sectors count, so a run that
+        is reported up to its last byte is not drawn done before it is."""
+        end = offset + length
+        if end < self.total:
+            end -= end % self.UNIT
+        self._mark(offset, end, self.WRITTEN)
+
+    @property
+    def done(self) -> int:
+        """Bytes known to be right: unchanged, or written."""
+        return self.counts[self.UNCHANGED] + self.counts[self.WRITTEN]
+
+    # --- drawing ------------------------------------------------------------------------
+
+    def figures(self) -> list[Text]:
+        """What the map shows, in its colours, as the line under it."""
+        shown = [(self.WRITTEN, 'written'), (self.TO_WRITE, 'to write'),
+                 (self.UNCHANGED, 'unchanged')]
+        parts = [self._styled(state, f'{format_size(self.counts[state])} {label}')
+                 for state, label in shown if self.counts[state] or state == self.UNCHANGED]
+        return parts + [Text(f'of {format_size(self.total)}')]
+
+    def finish(self, parts: Sequence[Union[str, Text]], styles: Sequence[int] = ()) -> None:
+        """End with `parts` as the line under the map, styled as the states in `styles`
+        (one each, or fewer), or print them as a line of their own when there is no map."""
+        self._finished = True
+        texts = [self._styled(styles[i], str(part)) if i < len(styles) else Text(str(part))
+                 for i, part in enumerate(parts)]
+        if self.console is None or self._drawn_at is None:
+            say(' · '.join(t.plain for t in texts))
             return
-        percent = 100 * self.scanned // self.total
-        if percent == self._shown:
+        self._draw(force=True, figures=texts)
+        self._print('\n')
+
+    def bar(self, width: int) -> Text:
+        """The map, `width` cells wide. A cell holding anything still to write shows that,
+        then anything written, so even one changed sector stays visible."""
+        bar = Text()
+        per = len(self.cells) / width
+        for column in range(width):
+            start = int(column * per)
+            cells = self.cells[start:max(int((column + 1) * per), start + 1)]
+            if self.TO_WRITE in cells:
+                state = self.TO_WRITE
+            elif self.WRITTEN in cells:
+                state = self.WRITTEN
+            elif 2 * cells.count(self.UNCHANGED) >= len(cells):
+                state = self.UNCHANGED
+            else:
+                state = self.UNSCANNED
+            bar.append_text(self._styled(state, '━' if self._colour else self.GLYPHS[state]))
+        return bar
+
+    @property
+    def _colour(self) -> bool:
+        return self.console is not None and not self.console.no_color and \
+            self.console.color_system is not None
+
+    def _styled(self, state: int, text: str) -> Text:
+        return Text(text, style=self.STYLES[state] if self._colour else '')
+
+    def _width(self) -> int:
+        """The longest line that fits: a column short of the terminal, so that a full line
+        never wraps, and no more than :data:`MAX_WIDTH`."""
+        assert self.console is not None
+        return min(self.console.width - 1, self.MAX_WIDTH)
+
+    def lines(self, figures: Optional[Sequence[Text]] = None) -> tuple[Text, Text]:
+        """The map with its percentage and time, and the figures under it, dropping the
+        last figures rather than wrapping."""
+        width = self._width()
+        elapsed = _clock(time.monotonic() - self._started)
+        tail = f'  {100 * self.done // self.total:3d}%  {elapsed:>5}'
+        top = self.bar(max(10, width - len(tail)))
+        top.append(tail)
+        parts = list(figures if figures is not None else self.figures())
+        while len(parts) > 1 and len(' · '.join(p.plain for p in parts)) > width:
+            parts.pop()
+        return top, Text(' · ').join(parts)
+
+    def _draw(self, force: bool = False, figures: Optional[Sequence[Text]] = None) -> None:
+        if self.console is None:
             return
-        self._shown = percent
-        description = self.description
-        if self.written:
-            description += f' (written {self.size(self.written)})'
-        self._task.update(advance=self.scanned - self._drawn, description=description)
-        self._drawn = self.scanned
+        now = time.monotonic()
+        if not force and self._drawn_at is not None and now - self._drawn_at < self.INTERVAL:
+            return
+        top, bottom = self.lines(figures)
+        up = [Control((ControlType.CURSOR_UP, 1))] if self._drawn_at is not None else []
+        erase = Control((ControlType.ERASE_IN_LINE, 0))
+        self._print(Control(ControlType.CARRIAGE_RETURN), *up, top, erase, '\n', bottom, erase)
+        self._drawn_at = now
+
+    def _print(self, *renderables: Any) -> None:
+        assert self.console is not None
+        self.console.print(*renderables, sep='', end='', soft_wrap=True, highlight=False)
+        self.console.file.flush()
+
+    @classmethod
+    @contextmanager
+    def paused(cls) -> Iterator[None]:
+        """Clear the bar for a line printed while it is up, then draw it again below."""
+        bar = cls.live
+        if bar is None or bar._drawn_at is None:
+            yield
+            return
+        erase = Control((ControlType.ERASE_IN_LINE, 0))
+        bar._print(Control(ControlType.CARRIAGE_RETURN), erase,
+                   Control((ControlType.CURSOR_UP, 1)), erase)
+        bar._drawn_at = None
+        try:
+            yield
+        finally:
+            bar._draw(force=True)
 
 
-def _quiet(original: Any) -> dict[str, Callable[..., None]]:
+#: Called with ``(done, total)`` as esptool works through a write: how far it is, in units
+#: of its own choosing (compressed bytes sent, when compressing).
+OnProgress = Callable[[int, int], None]
+
+
+class _ForwardedProgress:
+    """The task esptool's ``log.progress`` hands back inside :func:`quiet_esptool`: what
+    esptool would draw on a bar of its own goes to `on_progress` instead."""
+
+    def __init__(self, total: int, on_progress: Optional[OnProgress]) -> None:
+        self.total, self.done, self.on_progress = total, 0, on_progress
+
+    def update(self, advance: int = 1, description: Optional[str] = None) -> None:
+        self.done = max(0, min(self.done + advance, self.total))
+        if self.on_progress is not None and self.total > 0:
+            try:
+                self.on_progress(self.done, self.total)
+            except Exception:
+                # Raising here would stop esptool part way through a write and leave the
+                # region half written. Stop drawing instead: a fault that lasts, like a
+                # closed pipe, comes back at the next draw, once esptool has returned.
+                self.on_progress = None
+
+
+def _quiet(original: Any, on_progress: Optional[OnProgress]) -> dict[str, Callable[..., Any]]:
     """What :func:`quiet_esptool` overrides on `original`, the logger's own class: routine
-    narration and progress go, while notes, warnings and errors are kept. They are printed
-    through `original`'s `print`, the one silenced here, so they still reach whichever logger
-    is installed, and this suppresses by kind rather than by matching message text."""
+    narration goes, esptool's own bar goes to `on_progress`, and notes, warnings and errors
+    are kept. They are printed through `original`'s `print`, the one silenced here, so they
+    still reach whichever logger is installed, and this suppresses by kind rather than by
+    matching message text. A line kept while idftool's bar is up is printed above it."""
     def keep(prefix: str, **print_options: Any) -> Callable[..., None]:
         def method(self: Any, *args: object, **kwargs: Any) -> None:
-            original.print(self, prefix + " ".join(str(a) for a in args), **print_options)
+            with Progress.paused():
+                original.print(self, prefix + " ".join(str(a) for a in args), **print_options)
         return method
+
+    @contextmanager
+    def progress(self: Any, total: int, *args: Any, disable: bool = False,
+                 **kwargs: Any) -> Iterator[_ForwardedProgress]:
+        yield _ForwardedProgress(total, None if disable else on_progress)
 
     return {
         "print": lambda self, *args, **kwargs: None,
+        "progress": progress,
         "progress_bar": lambda self, *args, **kwargs: None,
         "stage": lambda self, *args, **kwargs: None,
         "note": keep("Note: "),
@@ -424,21 +613,21 @@ def _quiet(original: Any) -> dict[str, Callable[..., None]]:
 
 
 @contextmanager
-def quiet_esptool() -> Iterator[None]:
+def quiet_esptool(on_progress: Optional[OnProgress] = None) -> Iterator[None]:
     """Silence esptool's routine progress while it writes, keeping notes and warnings.
 
     A differential write calls ``write_flash`` once per run of changed sectors, and each call
     narrates itself — erase range, compressed size, its own progress bar, bytes written,
     verification — which is six lines and a flickering bar per run. idftool draws one bar
     across the whole operation instead (:class:`Progress`), so the per-run narration has to
-    go, but only while esptool is inside a run: the bar itself is drawn between them, through
-    the real logger.
+    go. What esptool's own bar would have shown goes to `on_progress`, so that the one bar can
+    move while a run is written.
     """
     log.print  # noqa: B018  (esptool's `log` is a proxy; this makes sure its logger exists)
     target = EspLog.instance
     original = type(target)
     # A subclass of the logger's own class, so the swap is allowed whatever that class is.
-    target.__class__ = type("_QuietEsptool", (original,), _quiet(original))
+    target.__class__ = type("_QuietEsptool", (original,), _quiet(original, on_progress))
     try:
         yield
     finally:
@@ -495,72 +684,87 @@ def _plan_writes(esp: ESPLoader, addr_data: Sequence[tuple[int, ImageSource]], d
     for entry in addr_data:
         address, source = entry
         data, name = get_bytes(source)
-        described = 'Input bytes' if name is None else f"'{name}'"
         if not data:
             planned.append(entry)
             continue
 
         prepared = bytes_as_written(esp, address, data, flash_freq, flash_mode, flash_size)
+        subject = f"'{name}' " if name is not None else ""
 
         # A region that does not start on a sector boundary cannot be rewritten a sector at
         # a time: the write would erase the sector it starts inside, taking whatever shares
         # it. Rare (partition offsets are sector-aligned), and the whole-region comparison
         # below still applies.
         if diff and address % DIFF_SECTOR_SIZE == 0:
-            if _write_changed_sectors(esp, address, prepared, described, kwargs):
-                continue
+            say(f"Comparing {subject}against flash at {address:#010x}...")
+            if not _write_changed_sectors(esp, address, prepared, kwargs):
+                planned.append(entry)   # differs throughout: esptool writes it whole
+            continue
 
         if len(prepared) > CHECK_FIRST_CHUNK_SIZE:
-            say(f"Comparing {described} against flash at {address:#010x}...")
+            say(f"Comparing {subject}against flash at {address:#010x}...")
         if flash_matches(esp, address, prepared):
-            say(f"{described} at {address:#010x} is already in flash, skipping write")
+            say(f"'{name}' at {address:#010x} is already in flash, skipping write"
+                if name is not None else f"Already in flash at {address:#010x}, skipping write")
         else:
             planned.append(entry)
     return planned
 
 
-def _write_changed_sectors(esp: ESPLoader, address: int, prepared: bytes, described: str,
+def _write_changed_sectors(esp: ESPLoader, address: int, prepared: bytes,
                            kwargs: Mapping[str, Any]) -> bool:
     """Compare `prepared` against flash a sector at a time, writing what differs as it goes.
 
     Returns False when the scan was abandoned before writing anything, leaving the caller to
-    fall back to comparing the region as a whole.
+    have esptool write the region whole.
     """
-    say(f"Comparing {described} against flash at {address:#010x}...")
     written = runs = 0
     elapsed = 0.0
     abandoned = False
 
-    with Progress(described, len(prepared), enabled=not kwargs.get('no_progress')) as progress:
-        for offset, length, reason in plan_sector_writes(
-                esp, address, prepared, on_scanned=lambda n: progress.update(scanned=n)):
+    with Progress(len(prepared), enabled=not kwargs.get('no_progress')) as progress:
+        for offset, length, reason in plan_sector_writes(esp, address, prepared,
+                                                         on_compared=progress.compared):
             if reason == 'remainder':
                 abandoned = True
                 if written == 0:
-                    return False        # nothing written yet: let the caller write it whole
+                    progress.finish([f"too much differs after {format_size(progress.scanned)}, "
+                                     "writing it whole"], [Progress.TO_WRITE])
+                    return False
+            progress.to_write(offset, length)
+
+            def on_block(done: int, total: int, offset: int = offset,
+                         length: int = length) -> None:
+                # esptool counts what it has sent. The run is written only once esptool
+                # returns, having finished and verified it, so its last block stops short.
+                progress.written(offset, min(length * done // total, length - 1))
+
             # `flash_size` stays 'keep': `prepared` has already been through
             # bytes_as_written, and re-detecting the size costs a round trip per run.
-            run = {**kwargs, 'no_progress': True}
             started = time.time()
-            with quiet_esptool():
+            with quiet_esptool(on_block):
                 esptool_write_flash(
                     esp=esp, flash_size='keep',
-                    addr_data=[(address + offset, prepared[offset:offset + length])], **run)
+                    addr_data=[(address + offset, prepared[offset:offset + length])], **kwargs)
             elapsed += time.time() - started
             written += length
             runs += 1
-            progress.update(written=written)
+            progress.written(offset, length)
 
-    # esptool reports what it wrote and how fast after every write; a differential one is
-    # made of many, so the same figures are totalled up and reported once here instead.
-    if written == 0:
-        say(f"{described} at {address:#010x} is already in flash, skipping write")
-    elif abandoned:
-        say(f"{described}: too much of it differs to keep comparing, wrote the remaining "
-            f"{Progress.size(written)} in full in {elapsed:.1f} seconds "
-            f"({Progress.rate(written, elapsed)})")
-    else:
-        say(f"{described}: wrote {Progress.size(written)} of "
-            f"{Progress.size(len(prepared))} in {runs} region{'s' if runs != 1 else ''} "
-            f"in {elapsed:.1f} seconds ({Progress.rate(written, elapsed)})")
+        # esptool reports what it wrote and how fast after every write; a differential one
+        # is made of many, so the same figures are totalled up and reported once here.
+        unchanged = f"{format_size(progress.counts[Progress.UNCHANGED])} unchanged"
+        if written == 0:
+            progress.finish(["already in flash", unchanged],
+                            [Progress.WRITTEN, Progress.UNCHANGED])
+        else:
+            how = "too much differs, the rest whole" if abandoned else \
+                f"{runs} region{'s' if runs != 1 else ''}"
+            progress.finish([f"{format_size(written)} written ({how})", unchanged,
+                             f"{elapsed:.1f} s, {_rate(written, elapsed)}"],
+                            [Progress.WRITTEN, Progress.UNCHANGED])
     return True
+
+
+def _rate(count: int, seconds: float) -> str:
+    return f'{count / seconds * 8 / 1000:.0f} kbit/s' if seconds > 0 else 'instant'
