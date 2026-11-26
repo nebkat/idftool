@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.1">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
     
     
       
@@ -1854,18 +1854,21 @@ remember per command: <code>print-image -f</code>, <code>print-bundle -f</code>,
 no device alternative: the payload in <code>write-table partitions.csv</code>,
 <code>factory app.bin</code>, <code>ota app.bin</code>, and the inputs to <code>create-*</code> and
 <code>create-table</code>.</p>
+<p>A file to read can be an <code>http://</code> or <code>https://</code> URL, downloaded first:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>idftool<span class="w"> </span>factory<span class="w"> </span>https://example.org/app.bin
+</code></pre></div>
 <p>Passing a file where a partition belongs is caught before connecting, so you
 get a usage error instead of a serial timeout:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="gp">$ </span>idftool<span class="w"> </span>print-nvs<span class="w"> </span>nvs.bin
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="go">Error: 'nvs.bin' is a file, not a partition name — use `idftool print-nvs -f nvs.bin`,</span>
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="go">or name the partition to read from the device</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="gp">$ </span>idftool<span class="w"> </span>print-nvs<span class="w"> </span>nvs.bin
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="go">Error: 'nvs.bin' is a file, not a partition name — use `idftool print-nvs -f nvs.bin`,</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="go">or name the partition to read from the device</span>
 </code></pre></div>
 <h2 id="offline-use">Offline use<a class="headerlink" href="#offline-use" title="Permanent link">&para;</a></h2>
 <p>With <code>--partition-table-file</code>, commands that only need the partition layout run
 without a device: <code>list</code>, <code>create-image</code>, <code>create-bundle</code>, <code>create-nvs</code>,
 <code>create-fs</code>.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>idftool<span class="w"> </span>--partition-table-file<span class="w"> </span>partitions.csv<span class="w"> </span>create-bundle<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span>-o<span class="w"> </span>release.zip<span class="w"> </span>ota_0<span class="w"> </span>build/app.bin
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>idftool<span class="w"> </span>--partition-table-file<span class="w"> </span>partitions.csv<span class="w"> </span>create-bundle<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span>-o<span class="w"> </span>release.zip<span class="w"> </span>ota_0<span class="w"> </span>build/app.bin
 </code></pre></div>
 
 
