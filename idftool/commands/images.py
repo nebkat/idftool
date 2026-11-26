@@ -15,7 +15,7 @@ from idftool.apps import find_bootloader, print_partition_table_and_apps
 from idftool.cli import cli, pass_state
 from idftool.display import say
 from idftool.flash import flash_options, option_group, write_flash, write_flash_options
-from idftool.params import BASED_INT
+from idftool.params import BASED_INT, INPUT_FILE, fetch_pairs
 from idftool.partitions import check_image_file, get_partition_address, require_partitions
 from idftool.state import State
 
@@ -62,7 +62,7 @@ def create_image(state: State, output_file: str, output_format: str, flash_parti
 @click.option('-f', '--format', 'output_format', type=click.Choice(['raw', 'uf2', 'hex']),
               default='raw', show_default=True, help='Output format')
 @click.option('--flash-partition-table', is_flag=True, help='Include the partition table in the image')
-@click.argument('files', nargs=-1, required=True, metavar='PARTITION FILENAME ...')
+@click.argument('files', nargs=-1, required=True, callback=fetch_pairs, metavar='PARTITION FILENAME ...')
 @pass_state
 def cmd_create_image(state: State, output_file: str, output_format: str,
                      flash_partition_table: bool, files: tuple[str, ...]) -> None:
@@ -197,7 +197,7 @@ def write_image(state: State, image_file: str, erase: bool = True, **options: An
 
 @cli.command('write-image', aliases=['reflash'],
              short_help='Write a full flash image to the device')
-@click.argument('image_file')
+@click.argument('image_file', type=INPUT_FILE)
 @click.option('--erase/--no-erase', default=True, show_default=True,
               help='Erase the entire flash before writing')
 @flash_options
@@ -240,7 +240,7 @@ def print_image(state: State, image_file: str) -> None:
 
 
 @cli.command('print-image', help='Print partition table and app info from a flash image file')
-@click.option('-f', '--file', 'image_file', required=True, help='Flash image file to read')
+@click.option('-f', '--file', 'image_file', type=INPUT_FILE, required=True, help='Flash image file to read')
 @pass_state
 def cmd_print_image(state: State, image_file: str) -> None:
     return print_image(state, image_file)

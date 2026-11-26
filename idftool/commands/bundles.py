@@ -23,7 +23,7 @@ from idftool.bundle import MANIFEST, ROLE_PREFIX, ROLES, Bundle, BundleCheck, Bu
 from idftool.cli import cli, pass_state
 from idftool.display import say
 from idftool.flash import flash_options, option_group, write_flash, write_flash_options
-from idftool.params import HMAC_KEY
+from idftool.params import HMAC_KEY, INPUT_FILE, fetch_pairs
 from idftool.partitions import get_partition
 from idftool.state import State
 
@@ -87,9 +87,9 @@ def create_bundle(state: State, output_file: str, flash_partition_table: bool, f
 @cli.command('create-bundle', help='Pack partition images into a ZIP bundle')
 @click.option('-o', '--output', 'output_file', required=True, help='Output ZIP filename')
 @click.option('--flash-partition-table', is_flag=True, help='Include the partition table in the bundle')
-@click.option('--manifest', 'manifest_file', default=None,
+@click.option('--manifest', 'manifest_file', type=INPUT_FILE, default=None,
               help='Add this manifest.json, and the files its ops name (relative to it)')
-@click.argument('files', nargs=-1, required=True, metavar='PARTITION FILENAME ...')
+@click.argument('files', nargs=-1, required=True, callback=fetch_pairs, metavar='PARTITION FILENAME ...')
 @pass_state
 def cmd_create_bundle(state: State, output_file: str, flash_partition_table: bool,
                       manifest_file: Optional[str], files: tuple[str, ...]) -> None:
@@ -314,7 +314,7 @@ def write_bundle(state: State, input_file: str, hmac_key: Optional["NvsKeys"] = 
 
 
 @cli.command('write-bundle', help='Flash a bundle ZIP')
-@click.argument('input_file')
+@click.argument('input_file', type=INPUT_FILE)
 @click.option('--hmac-key', type=HMAC_KEY, default=None,
               help="HMAC key of an encrypted NVS partition the manifest's set-nvs edits")
 @flash_options
@@ -377,7 +377,7 @@ def print_bundle(state: State, bundle_file: str) -> None:
 
 
 @cli.command('print-bundle', help='Print what a bundle ZIP holds and what flashing it does')
-@click.option('-f', '--file', 'bundle_file', required=True, help='Bundle ZIP to read')
+@click.option('-f', '--file', 'bundle_file', type=INPUT_FILE, required=True, help='Bundle ZIP to read')
 @pass_state
 def cmd_print_bundle(state: State, bundle_file: str) -> None:
     return print_bundle(state, bundle_file)

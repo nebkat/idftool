@@ -10,6 +10,7 @@ from idftool.apps import check_partition_image
 from idftool.cli import cli, pass_state
 from idftool.display import say
 from idftool.flash import flash_options, option_group, write_flash, write_flash_options
+from idftool.params import fetch_pairs
 from idftool.partitions import get_partition_address, get_partition_slice
 from idftool.state import State
 
@@ -81,7 +82,7 @@ def write_partitions(state: State, files: Iterable[str], **options: Any) -> None
 
 
 @cli.command('write', help='Write one or more files to named partitions')
-@click.argument('files', nargs=-1, required=True, metavar='PARTITION FILENAME ...')
+@click.argument('files', nargs=-1, required=True, callback=fetch_pairs, metavar='PARTITION FILENAME ...')
 @flash_options
 @pass_state
 def cmd_write(state: State, /, files: tuple[str, ...], **options: Any) -> None:

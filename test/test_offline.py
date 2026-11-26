@@ -1194,3 +1194,30 @@ def test_read_otadata_counts_only_ota_slots():
 
     _, otadata = read_otadata(Esp(), table)
     assert (otadata.app_count, otadata.slot, otadata.next_slot) == (2, 0, 1)
+
+
+@pytest.fixture
+def http_samples():
+    """Base URL of a local HTTP server serving test/samples."""
+    import functools
+    import http.server
+    import threading
+
+    handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(SAMPLES))
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    yield f"http://127.0.0.1:{server.server_port}"
+    server.shutdown()
+
+
+def test_input_file_from_url(run_offline, http_samples, tmp_path):
+    out = run_offline(f"print-table -f {http_samples}/partitions.csv")
+    assert "Downloading" in out and "factory" in out
+    binary = tmp_path / "pt.bin"
+    run_offline(f"create-table {http_samples}/partitions.csv {binary}")
+    assert binary.read_bytes()[:2] == b"\xaa\x50"
+
+
+def test_input_file_url_not_found(run_offline, http_samples):
+    out = run_offline(f"print-table -f {http_samples}/missing.csv", expect_error=True)
+    assert "Could not download" in out and "404" in out
