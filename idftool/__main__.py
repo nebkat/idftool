@@ -4,6 +4,7 @@ The CLI itself is assembled elsewhere: :mod:`idftool.cli` defines the command gr
 global options, and :mod:`idftool.commands` registers the commands on it. This module is
 just the entry point.
 """
+import io
 import sys
 
 import rich_click as click
@@ -15,6 +16,13 @@ import idftool.commands  # noqa: F401  (registers every command on `cli`)
 
 
 def _main() -> None:
+    # A pipe or redirected file on Windows gets the ANSI code page (cp1252), which can't encode
+    # `→`, `—` or the U+FFFD `view` prints for erased flash.
+    # TODO: remove once requires-python is >=3.15, where UTF-8 mode is the default (PEP 686).
+    for stream in (sys.stdout, sys.stderr):
+        if (isinstance(stream, io.TextIOWrapper) and not stream.isatty()
+                and stream.encoding.lower().replace('-', '') != 'utf8'):
+            stream.reconfigure(encoding='utf-8', errors='backslashreplace')
     install_excepthook()
     try:
         cli.main(args=sys.argv[1:], standalone_mode=False)
