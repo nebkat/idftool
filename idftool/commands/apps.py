@@ -7,6 +7,7 @@ from esp_idf_defs import ImageMetadata
 
 from idftool.apps import parse_bootloader, print_app_info, print_bootloader
 from idftool.cli import cli
+from idftool.params import INPUT_FILE
 
 
 def app_info(app_binary_file: str) -> None:
@@ -35,6 +36,6 @@ def app_info(app_binary_file: str) -> None:
 
 @cli.command('app-info', aliases=['print-app'],
              help='Print the app description from an application binary')
-@click.option('-f', '--file', 'app_binary_file', required=True, help='Application binary to read')
+@click.option('-f', '--file', 'app_binary_file', type=INPUT_FILE, required=True, help='Application binary to read')
 def cmd_app_info(app_binary_file: str) -> None:
     return app_info(app_binary_file)

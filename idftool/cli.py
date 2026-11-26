@@ -14,7 +14,7 @@ from esptool import ESPLoader
 from esp_idf_defs.partitions import PARTITION_TABLE_SIZE, PARTITION_TABLE_OFFSET
 
 from idftool import plugins
-from idftool.params import BASED_INT, BOOTLOADER_OFFSET, MAC
+from idftool.params import BASED_INT, BOOTLOADER_OFFSET, INPUT_FILE, MAC
 from idftool.state import State
 
 pass_state = click.make_pass_decorator(State)
@@ -81,7 +81,7 @@ click.rich_click.COMMAND_GROUPS = {
 @click.option('-y', '--yes', is_flag=True,
               help="Don't ask which device to use, or before updating a bundle's partition table")
 @click.option('--no-reset', is_flag=True, help='Do not reset the chip after operations')
-@click.option('--partition-table-file', default=None,
+@click.option('--partition-table-file', type=INPUT_FILE, default=None,
               help='Path to a partition table CSV or binary file to use instead of reading from the device')
 @click.option('--partition-table-offset', type=BASED_INT, default=PARTITION_TABLE_OFFSET, show_default=True,
               help='Partition table offset (where to read the table from flash, or place it when loading from CSV)')

@@ -66,7 +66,26 @@ class HmacKeyParamType(click.ParamType):  # type: ignore[type-arg]
         except RuntimeError as e:
             self.fail(str(e), param, ctx)
 
+class InputFileParamType(click.ParamType):  # type: ignore[type-arg]
+    """A file to read, or an http(s) URL downloaded to one (see :func:`idftool.fetch.fetch`)."""
+    name = "file|url"
+
+    def convert(self, value: Any, param: Optional[Parameter], ctx: Optional[Context]) -> str:
+        from idftool.fetch import fetch
+
+        try:
+            return fetch(value)
+        except OSError as e:
+            self.fail(f"Could not download {value}: {e}", param, ctx)
+
+
+def fetch_pairs(ctx: Context, param: Parameter, value: tuple[str, ...]) -> tuple[str, ...]:
+    """Callback for a ``PARTITION FILENAME ...`` argument: download each FILENAME that is a URL."""
+    return tuple(INPUT_FILE.convert(v, param, ctx) if i % 2 else v for i, v in enumerate(value))
+
+
 BASED_INT = BasedIntParamType()
+INPUT_FILE = InputFileParamType()
 HMAC_KEY = HmacKeyParamType()
 BOOTLOADER_OFFSET = BootloaderOffsetParamType()
 MAC = MacParamType()

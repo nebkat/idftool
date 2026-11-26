@@ -19,7 +19,7 @@ from idftool.cli import cli, pass_state, reject_file_as_partition
 from idftool.display import print_rows, say
 from idftool.flash import flash_options, option_group, write_flash, write_flash_options
 from idftool.nvs import fit_nvs_binary, generate_nvs_image, looks_like_nvs_binary
-from idftool.params import BASED_INT, HMAC_KEY
+from idftool.params import BASED_INT, HMAC_KEY, INPUT_FILE
 from idftool.partitions import get_partition
 from idftool.state import Loaded, State
 
@@ -90,7 +90,7 @@ def create_nvs(state: State, csv_file: str, output_file: str, size: Optional[int
 
 
 @cli.command('create-nvs', help='Generate an NVS partition image from a CSV file')
-@click.argument('csv_file')
+@click.argument('csv_file', type=INPUT_FILE)
 @click.option('-o', '--output', 'output_file', required=True, help='Output binary filename (.bin)')
 @click.option('--size', type=BASED_INT, default=None, help='Partition size in bytes (e.g. 0x6000)')
 @click.option('--partition', default=None, help='Partition name to read the size from the partition table')
@@ -123,7 +123,7 @@ def write_nvs(state: State, partition: str, csv_file: str, hmac_key: Optional["N
 
 @cli.command('write-nvs', help='Generate an NVS image from CSV and flash it')
 @click.argument('partition')
-@click.argument('csv_file')
+@click.argument('csv_file', type=INPUT_FILE)
 @hmac_key_option
 @flash_options
 @pass_state
@@ -200,7 +200,7 @@ def print_nvs(state: State, partition: Optional[str], image_file: Optional[str],
 @cli.command('print-nvs', aliases=['list-nvs'],
              help='List the contents of an NVS partition or image')
 @click.argument('partition', required=False)
-@click.option('-f', '--file', 'image_file', default=None,
+@click.option('-f', '--file', 'image_file', type=INPUT_FILE, default=None,
               help='Read the NVS image from this file instead of the device')
 @click.option('--pages', is_flag=True, help='Also show the page map (state, sequence, how full)')
 @hmac_key_option
@@ -225,7 +225,7 @@ def extract_nvs(state: State, image_file: str, csv_file: str,
 
 
 @cli.command('extract-nvs', help='Extract an NVS image file to a CSV file')
-@click.option('-f', '--file', 'image_file', required=True, help='NVS image file to extract')
+@click.option('-f', '--file', 'image_file', type=INPUT_FILE, required=True, help='NVS image file to extract')
 @click.argument('csv_file')
 @hmac_key_option
 @pass_state
@@ -249,7 +249,7 @@ def read_nvs(state: State, partition: str, csv_file: str,
 
 @cli.command('read-nvs', help='Read an NVS partition from the device and extract it to CSV')
 @click.argument('partition')
-@click.argument('csv_file')
+@click.argument('csv_file', type=INPUT_FILE)
 @hmac_key_option
 @pass_state
 def cmd_read_nvs(state: State, /, partition: str, csv_file: str,
@@ -657,7 +657,7 @@ def set_nvs(state: State, args: Iterable[str], image_file: Optional[str], delete
 @click.argument('args', nargs=-1, metavar='[PARTITION] SPEC...')
 @click.option('-f', '--file', 'image_file', default=None,
               help='Edit this NVS image file instead of a partition on the device')
-@click.option('-c', '--csv', 'csv_files', multiple=True, metavar='CSV',
+@click.option('-c', '--csv', 'csv_files', type=INPUT_FILE, multiple=True, metavar='CSV',
               help='Set every key in this CSV (the create-nvs format); repeatable')
 @click.option('-d', '--delete', 'deletes', multiple=True, metavar='KEY',
               help='Delete a key: namespace:key')
@@ -754,7 +754,7 @@ def get_nvs(state: State, args: Iterable[str], image_file: Optional[str], namesp
 
 @cli.command('get-nvs', help='Print the value of one or more keys in an NVS partition or image')
 @click.argument('args', nargs=-1, metavar='[PARTITION] KEY...')
-@click.option('-f', '--file', 'image_file', default=None,
+@click.option('-f', '--file', 'image_file', type=INPUT_FILE, default=None,
               help='Read the NVS image from this file instead of the device')
 @click.option('-n', '--namespace', default=None,
               help='Default namespace for keys that do not name one')

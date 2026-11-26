@@ -10,6 +10,7 @@ from esptool.cmds import detect_flash_size
 from idftool.cli import cli, pass_state
 from idftool.display import print_partition_table, say
 from idftool.flash import write_flash
+from idftool.params import INPUT_FILE
 from idftool.partitions import load_partition_table_file, resolve_partition_table_format, \
     write_partition_table_file
 from idftool.state import State
@@ -28,7 +29,7 @@ def print_table(state: State, table_file: Optional[str]) -> None:
 
 
 @cli.command('print-table', aliases=['list'], help='Print a partition table from a CSV or binary file, or from the device')
-@click.option('-f', '--file', 'table_file', default=None,
+@click.option('-f', '--file', 'table_file', type=INPUT_FILE, default=None,
               help='Partition table file to print instead of reading the device')
 @pass_state
 def cmd_print_table(state: State, table_file: Optional[str]) -> None:
@@ -50,7 +51,7 @@ def create_table(state: State, input_file: str, output_file: str,
 # bin -> csv -> bin is byte-identical — which is why one command covers both directions.
 @cli.command('create-table', aliases=['convert-table'],
              help='Convert a partition table file between CSV and binary')
-@click.argument('input_file')
+@click.argument('input_file', type=INPUT_FILE)
 @click.argument('output_file')
 @click.option('--format', 'output_format', type=click.Choice(['csv', 'bin']), default=None,
               help='Output format (default: inferred from the output extension)')
@@ -116,7 +117,7 @@ def write_table(state: State, table_file: str, force: bool) -> None:
 
 
 @cli.command('write-table', help='Flash a partition table from a CSV or binary file to the device')
-@click.argument('table_file')
+@click.argument('table_file', type=INPUT_FILE)
 @click.option('--force', is_flag=True, help='Flash even if the partition table fails verification')
 @pass_state
 def cmd_write_table(state: State, table_file: str, force: bool) -> None:

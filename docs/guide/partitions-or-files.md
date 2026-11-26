@@ -28,6 +28,12 @@ no device alternative: the payload in `write-table partitions.csv`,
 `factory app.bin`, `ota app.bin`, and the inputs to `create-*` and
 `create-table`.
 
+A file to read can be an `http://` or `https://` URL, downloaded first:
+
+```bash
+idftool factory https://example.org/app.bin
+```
+
 Passing a file where a partition belongs is caught before connecting, so you
 get a usage error instead of a serial timeout:
 

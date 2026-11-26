@@ -34,6 +34,8 @@
         # vendored in idftool/fs/spiffsgen.py.
         "pyfatfs~=1.1",
         "littlefs-python~=0.19",
+        # CA roots for downloading input files given as https URLs.
+        "certifi>=2017.4.17",
     ]
 
 [project.optional-dependencies]

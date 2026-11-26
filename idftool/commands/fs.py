@@ -18,7 +18,7 @@ from esp_idf_defs.partitions import PartitionDefinition
 from idftool.cli import cli, pass_state, reject_file_as_partition
 from idftool.display import print_rows, say
 from idftool.flash import FLASH_OPTION_FLAGS, flash_options, split_options, write_flash, write_flash_options
-from idftool.params import BASED_INT
+from idftool.params import BASED_INT, INPUT_FILE
 from idftool.partitions import get_partition
 from idftool.state import Loaded, State
 
@@ -308,7 +308,7 @@ def extract_fs(state: State, image_file: str, destination: str, fs_type: Optiona
 
 
 @cli.command('extract-fs', help='Extract a filesystem image file to a directory')
-@click.option('-f', '--file', 'image_file', required=True, help='Filesystem image file to extract')
+@click.option('-f', '--file', 'image_file', type=INPUT_FILE, required=True, help='Filesystem image file to extract')
 @click.argument('destination')
 @click.option('-t', '--type', 'fs_type', type=FS_TYPE_CHOICE, default=None,
               help='Filesystem to read  [default: detected from the image]')
@@ -348,7 +348,7 @@ def print_fs(state: State, partition: Optional[str], image_file: Optional[str],
 
 @cli.command('print-fs', aliases=['list-fs'], help='List the contents of a filesystem partition or image')
 @click.argument('partition', required=False)
-@click.option('-f', '--file', 'image_file', default=None,
+@click.option('-f', '--file', 'image_file', type=INPUT_FILE, default=None,
               help='Read the filesystem from this image file instead of the device')
 @click.option('-t', '--type', 'fs_type', type=FS_TYPE_CHOICE, default=None,
               help='Filesystem to read  [default: from the partition subtype, else detected]')

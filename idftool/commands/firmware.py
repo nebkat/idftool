@@ -13,6 +13,7 @@ from idftool.apps import load_app_binary
 from idftool.cli import cli, pass_state
 from idftool.display import say
 from idftool.flash import flash_options, option_group, write_flash, write_flash_options
+from idftool.params import INPUT_FILE
 from idftool.partitions import read_otadata, write_otadata
 from idftool.state import State
 
@@ -66,7 +67,7 @@ def flash_factory(esp: ESPLoader, partition_table: PartitionTable, partition: Pa
 
 
 @cli.command('factory', help='Flash an app to the factory partition')
-@click.argument('app_binary_file')
+@click.argument('app_binary_file', type=INPUT_FILE)
 @flash_options
 @pass_state
 def cmd_factory(state: State, /, app_binary_file: str, **options: Any) -> None:
@@ -118,7 +119,7 @@ def flash_ota(esp: ESPLoader, partition_table: PartitionTable, partition: Partit
 
 
 @cli.command('ota', help='Push an app to the next OTA slot and switch to it')
-@click.argument('app_binary_file')
+@click.argument('app_binary_file', type=INPUT_FILE)
 @flash_options
 @pass_state
 def cmd_ota(state: State, /, app_binary_file: str, **options: Any) -> None:
