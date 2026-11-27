@@ -15,6 +15,7 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 - A local port named with `--port` that another process holds is reported
   before connecting ("Warning: /dev/… is held by idf.py (pid …)"), and at a
   terminal there's an offer to kill the holder, as `k` does in the port list.
+  `--kill-holders` kills it without asking, for scripts.
 - Files to read can be given as an `http://` or `https://` URL, e.g.
   `idftool factory https://example.org/app.bin`.
 
