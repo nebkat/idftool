@@ -12,6 +12,9 @@ this project adheres to [Semantic Versioning](https://semver.org/).
   `allow_back`, which adds a Back row and the left key, returning None; and
   `allow_quit`, which leaves out the Quit row and `q` when false, for a caller
   with a menu to return to.
+- A local port named with `--port` that another process holds is reported
+  before connecting ("Warning: /dev/… is held by idf.py (pid …)"), and at a
+  terminal there's an offer to kill the holder, as `k` does in the port list.
 - Files to read can be given as an `http://` or `https://` URL, e.g.
   `idftool factory https://example.org/app.bin`.
 
