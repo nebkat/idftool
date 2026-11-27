@@ -23,6 +23,9 @@ this project adheres to [Semantic Versioning](https://semver.org/).
   run of changed sectors was written
   ([#26](https://github.com/nebkat/idftool/issues/26)). Without a terminal,
   only the summary is printed.
+- Output piped or redirected on Windows is written as UTF-8. Before, `view`
+  of erased flash and messages with `→` or `—` failed with
+  `UnicodeEncodeError` ([#14](https://github.com/nebkat/idftool/issues/14)).
 
 ## [v1.8.0] — 2026-11-13
 
