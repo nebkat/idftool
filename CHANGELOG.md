@@ -7,6 +7,11 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- `select_device` takes `default`, the port the cursor starts on when it is
+  listed; `list_ports`, asked again on each refresh for the ports offered;
+  `allow_back`, which adds a Back row and the left key, returning None; and
+  `allow_quit`, which leaves out the Quit row and `q` when false, for a caller
+  with a menu to return to.
 - Files to read can be given as an `http://` or `https://` URL, e.g.
   `idftool factory https://example.org/app.bin`.
 
