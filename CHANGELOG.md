@@ -4,6 +4,20 @@ All notable changes to this project are documented here. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- `--flash-size` gives the device's flash size when it can't be found, for the
+  partition table checks and `dump-image`.
+
+### Fixed
+- A flash size esptool can't detect no longer crashes every command that reads
+  the device's partition table. The size now comes from the bootloader's image
+  header when the flash chip isn't recognised. Reading a table that doesn't fit
+  in flash only warns; `write-table` and `write-bundle` still refuse, and also
+  refuse when the size can't be found at all, until `--flash-size` or `--force`
+  is given. `dump-image` asks for `--size` instead of crashing.
+
 ## [v1.9.0] — 2026-11-27
 
 ### Added
