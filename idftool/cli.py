@@ -14,7 +14,7 @@ from esptool import ESPLoader
 from esp_idf_defs.partitions import PARTITION_TABLE_SIZE, PARTITION_TABLE_OFFSET
 
 from idftool import plugins
-from idftool.params import BASED_INT, BOOTLOADER_OFFSET, INPUT_FILE, MAC
+from idftool.params import BASED_INT, BOOTLOADER_OFFSET, FLASH_SIZE, INPUT_FILE, MAC
 from idftool.state import State
 
 pass_state = click.make_pass_decorator(State)
@@ -96,12 +96,16 @@ click.rich_click.COMMAND_GROUPS = {
               help='Primary bootloader offset or chip type e.g. esp32s3 (used when loading a table from CSV)')
 @click.option('--recovery-bootloader-offset', type=BASED_INT, default=None,
               help='Recovery bootloader offset (used when loading a table from CSV)')
+@click.option('--flash-size', type=FLASH_SIZE, default=None,
+              help="The device's flash size, e.g. 16MB, to check partition tables against "
+                   "[default: detected]")
 @click.pass_context
 def cli(ctx: click.Context, port: Optional[str], mac: Optional[str], usb_serial: Optional[str],
         only_device: bool, baud: int, probe: bool, yes: bool, kill_holders: bool, no_reset: bool,
         partition_table_file: Optional[str],
         partition_table_offset: int, partition_table_size: int,
-        primary_bootloader_offset: Optional[int], recovery_bootloader_offset: Optional[int]) -> None:
+        primary_bootloader_offset: Optional[int], recovery_bootloader_offset: Optional[int],
+        flash_size: Optional[int]) -> None:
     """Utility for flashing, provisioning, and interacting with Espressif SOCs running ESP-IDF."""
     if sum(bool(o) for o in (port, mac, usb_serial, only_device)) > 1:
         raise click.UsageError(
@@ -123,6 +127,7 @@ def cli(ctx: click.Context, port: Optional[str], mac: Optional[str], usb_serial:
         partition_table_size=partition_table_size,
         primary_bootloader_offset=primary_bootloader_offset,
         recovery_bootloader_offset=recovery_bootloader_offset,
+        flash_size=flash_size,
     )
 
 

@@ -5,8 +5,7 @@ from typing import Any, Iterable, Optional
 
 import rich_click as click
 
-from esptool import flash_size_bytes
-from esptool.cmds import read_flash, merge_bin, detect_flash_size
+from esptool.cmds import read_flash, merge_bin
 
 from esp_idf_defs import ImageMetadata, ChipId
 from esp_idf_defs.partitions import PartitionDefinition, PartitionTable
@@ -77,12 +76,15 @@ def dump_image(state: State, output_file: Optional[str], size: Optional[int] = N
     to time out. `size` reads only the first N bytes, which is usually all that is worth having.
     """
     esp = state.connect()
-    flash_size: int = flash_size_bytes(detect_flash_size(esp))
+    flash_size, source = state.device_flash_size()
     if size is None:
+        if flash_size is None:
+            raise click.UsageError(f"The flash size is unknown ({source}): pass --size, or "
+                                   f"--flash-size (e.g. --flash-size 16MB)")
         size = flash_size
-    elif size > flash_size:
-        raise click.UsageError(f"--size {size:#x} is larger than the detected flash "
-                               f"({flash_size:#x})")
+    elif flash_size is not None and size > flash_size:
+        raise click.UsageError(f"--size {size:#x} is larger than the flash "
+                               f"({flash_size:#x}, {source})")
 
     if not output_file:
         chip = esp.CHIP_NAME.lower().replace(' ', '-')

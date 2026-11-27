@@ -40,6 +40,22 @@ class BootloaderOffsetParamType(click.ParamType):  # type: ignore[type-arg]
         offset: int = chip.BOOTLOADER_FLASH_OFFSET
         return offset
 
+class FlashSizeParamType(click.ParamType):  # type: ignore[type-arg]
+    """A flash size as esptool spells it (``4MB``, ``512KB``), in bytes."""
+    name = "size"
+
+    def convert(self, value: Any, param: Optional[Parameter], ctx: Optional[Context]) -> int:
+        if isinstance(value, int):
+            return value
+        from esptool.util import FatalError, flash_size_bytes
+        try:
+            size: Optional[int] = flash_size_bytes(value.upper())
+        except (FatalError, ValueError):
+            size = None
+        if not size:
+            self.fail(f"{value!r} is not a flash size (e.g. 4MB, 16MB)", param, ctx)
+        return size
+
 class MacParamType(click.ParamType):  # type: ignore[type-arg]
     """A MAC address in any common spelling, normalised to ``aa:bb:cc:dd:ee:ff``."""
     name = "mac"
@@ -88,4 +104,5 @@ BASED_INT = BasedIntParamType()
 INPUT_FILE = InputFileParamType()
 HMAC_KEY = HmacKeyParamType()
 BOOTLOADER_OFFSET = BootloaderOffsetParamType()
+FLASH_SIZE = FlashSizeParamType()
 MAC = MacParamType()

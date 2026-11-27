@@ -78,8 +78,8 @@ idftool dump-table backup.bin
 
 ## `write-table`
 
-Flash a partition table from a CSV or binary file. The table is verified first;
-`--force` flashes it anyway.
+Flash a partition table from a CSV or binary file. The table is verified first,
+and checked to fit in flash; `--force` flashes it anyway.
 
 ```bash
 idftool write-table partitions.csv

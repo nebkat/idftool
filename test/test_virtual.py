@@ -4,6 +4,7 @@ The flash starts as the committed fixture image (bootloader, partition table, an
 in `factory`), so commands read and write real partition data and the tests check the bytes.
 """
 import hashlib
+import re
 import zipfile
 from types import SimpleNamespace
 
@@ -116,7 +117,7 @@ def esp(monkeypatch):
             f.write(device.region(address, size))
 
     monkeypatch.setattr(state, "detect_chip", lambda port, **_: device)
-    for module in (state, table, images, flash, bundles):
+    for module in (state, flash):
         monkeypatch.setattr(module, "detect_flash_size", lambda esp: "4MB")
     monkeypatch.setattr(flash, "esptool_write_flash", write_flash)
     monkeypatch.setattr(images, "read_flash", read_flash)
@@ -140,7 +141,8 @@ def run(esp, tmp_path, monkeypatch):
             assert result.exit_code == 0, result.output + repr(result.exception)
         else:
             assert result.exit_code != 0, result.output
-            return result.output + str(result.exception)
+            # Under GitHub Actions, rich-click colours errors, highlighting option names.
+            return re.sub(r"\x1b\[[0-9;]*m", "", result.output) + str(result.exception)
         return result.stdout if stdout_only else result.output
 
     return invoke
@@ -169,6 +171,69 @@ def test_write_table_writes_the_partition_table(run, esp):
     esp.erase_region(0x8000, 0x1000)
     run("write-table", CHIP / "partition-table.bin")
     assert esp.region(0x8000, 0xc00) == (CHIP / "partition-table.bin").read_bytes()[:0xc00]
+
+
+
+# --- flash size -----------------------------------------------------------------------------
+
+#: The fixture table with storage grown to end at 8MB, more than the 4MB virtual flash.
+BIG_TABLE = (CHIP / "partitions.csv").read_text().replace(
+    "storage,    data, spiffs,   0xb0000,   0x10000", "storage,    data, spiffs,   0xb0000,   0x750000")
+
+
+@pytest.fixture
+def unrecognised_flash(monkeypatch):
+    """The flash chip's ID isn't one esptool knows, as with some third-party flash."""
+    import idftool.state as state
+    monkeypatch.setattr(state, "detect_flash_size", lambda esp: None)
+
+
+def test_write_table_refuses_a_table_bigger_than_the_flash(run, tmp_path, esp):
+    (tmp_path / "big.csv").write_text(BIG_TABLE)
+    assert "needs 8.0MB of flash, but the flash is 4MB (detected)" in run(
+        "write-table", "big.csv", ok=False)
+    assert not esp.writes
+    assert "continuing due to --force" in run("write-table", "big.csv", "--force")
+
+
+def test_reading_a_table_bigger_than_the_flash_warns(run, tmp_path):
+    (tmp_path / "big.csv").write_text(BIG_TABLE)
+    run("write-table", "big.csv", "--force")
+    assert "Warning: Partition table needs 8.0MB" in run("list")
+
+
+def test_an_unrecognised_flash_falls_back_to_the_bootloader_header(run, tmp_path, esp,
+                                                                     unrecognised_flash):
+    (tmp_path / "big.csv").write_text(BIG_TABLE)
+    assert "the flash is 4MB (from the bootloader header)" in run(
+        "write-table", "big.csv", ok=False)
+
+
+def test_an_unknown_flash_size_blocks_writing_the_table_but_not_reading(run, esp,
+                                                                          unrecognised_flash):
+    esp.erase_region(0, 0x1000)  # no bootloader header to fall back on
+    run("list")
+    assert "--flash-size" in run("write-table", CHIP / "partition-table.bin", ok=False)
+    assert not esp.writes
+    run("--flash-size", "4MB", "write-table", CHIP / "partition-table.bin")
+    assert "not checking" in run("write-table", CHIP / "partition-table.bin", "--force")
+
+
+def test_write_bundle_checks_the_table_fits_before_writing(run, esp, unrecognised_flash):
+    esp.erase_region(0, 0x1000)
+    bundle("b.zip", {"partition_table.csv": MOVED, "storage.bin": b"x"})
+    assert "--flash-size" in run("write-bundle", "b.zip", ok=False)
+    assert not esp.writes
+
+
+def test_dump_image_needs_a_size_when_the_flash_size_is_unknown(run, esp, unrecognised_flash):
+    esp.erase_region(0, 0x1000)
+    assert "pass --size" in run("dump-image", "x.img", ok=False)
+    run("dump-image", "x.img", "--size", 0x1000)
+
+
+def test_flash_size_must_be_a_size(run):
+    assert "is not a flash size" in run("--flash-size", "lots", "list", ok=False)
 
 
 # --- partition I/O --------------------------------------------------------------------------

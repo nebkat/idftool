@@ -4,8 +4,6 @@ from typing import Optional
 
 import rich_click as click
 
-from esptool import flash_size_bytes
-from esptool.cmds import detect_flash_size
 
 from idftool.cli import cli, pass_state
 from idftool.display import print_partition_table, say
@@ -102,7 +100,7 @@ def write_table(state: State, table_file: str, force: bool) -> None:
                 f"Partition table failed verification: {e}. Re-run with --force to flash it anyway.") from e
         say(f"Warning: partition table failed verification: {e} (continuing due to --force)")
 
-    partition_table.verify_size_fits(flash_size_bytes(detect_flash_size(esp)))
+    state.check_table_fits(partition_table, strict=True, force=force)
 
     binary = partition_table.to_binary()
     if not state.quiet:
@@ -118,7 +116,7 @@ def write_table(state: State, table_file: str, force: bool) -> None:
 
 @cli.command('write-table', help='Flash a partition table from a CSV or binary file to the device')
 @click.argument('table_file', type=INPUT_FILE)
-@click.option('--force', is_flag=True, help='Flash even if the partition table fails verification')
+@click.option('--force', is_flag=True, help="Flash even if the partition table fails verification or doesn't fit in flash")
 @pass_state
 def cmd_write_table(state: State, table_file: str, force: bool) -> None:
     return write_table(state, table_file, force)

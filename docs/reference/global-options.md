@@ -22,3 +22,4 @@ idftool -p /dev/cu.usbmodem1101 --no-reset get-boot
 | `--partition-table-size SIZE` | Size of the partition table region. Default `0x1000`. |
 | `--primary-bootloader-offset OFFSET` | Bootloader offset, or a chip name like `esp32s3`. Only needed to address `bootloader` by name offline; taken from the chip otherwise. |
 | `--recovery-bootloader-offset OFFSET` | Recovery bootloader offset. Same scope as above. |
+| `--flash-size SIZE` | The device's flash size, e.g. `16MB`, for when it can't be found from the flash chip or the bootloader. Partition tables are checked against it, and `dump-image` reads that much. |
