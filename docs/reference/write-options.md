@@ -43,7 +43,8 @@ change rewrites only the sectors it touched.
 just wiped. See [`write-image`](images.md#write-image).
 
 `write-table` doesn't take these, and always skips a table that's already in
-flash. Its `--force` already means "flash a table that failed verification".
+flash. Its `--force` already means "flash a table that failed verification or doesn't
+fit in flash".
 
 From Python, the same names work as keyword arguments. See
 [Python library](../library.md#write-options).

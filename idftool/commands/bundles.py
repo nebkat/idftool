@@ -10,9 +10,6 @@ from zipfile import ZipFile
 
 import rich_click as click
 
-from esptool import flash_size_bytes
-from esptool.cmds import detect_flash_size
-
 from esp_idf_defs import ImageMetadata
 from esp_idf_defs.partitions import BOOTLOADER_TYPE, PartitionDefinition, PartitionTable
 
@@ -257,6 +254,12 @@ def write_bundle(state: State, input_file: str, hmac_key: Optional["NvsKeys"] = 
             if not (bundle.table is not None and update_table):
                 check_nvs_key(esp, cast(PartitionDefinition, nvs_target(table, op.partition)), hmac_key)
 
+    if bundle.table is not None and check.differences and update_table:
+        try:
+            state.check_table_fits(table, strict=True, force=force)
+        except RuntimeError as e:
+            raise BundleError(str(e)) from e
+
     write = write_flash_options(options, skip_flashed=True, diff=True)
 
     if bundle.table is not None:
@@ -265,7 +268,6 @@ def write_bundle(state: State, input_file: str, hmac_key: Optional["NvsKeys"] = 
         elif not update_table:
             say("Partition table differs only outside this bundle's partitions; the device's is kept")
         else:
-            table.verify_size_fits(flash_size_bytes(detect_flash_size(esp)))
             say(f"Writing partition table (offset={table_entry.offset:#x}, size={table_entry.size:#x}) from bundle")
             write_flash(esp=esp, addr_data=[(table_entry.offset, table.to_binary())],
                         flash_size='detect', **write)

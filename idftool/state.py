@@ -11,13 +11,15 @@ import rich_click as click
 
 from esptool import ESPLoader, flash_size_bytes
 from esptool.cmds import detect_chip, detect_flash_size
+from esptool.util import FatalError
 
+from esp_idf_defs import ImageHeader
 from esp_idf_defs.otadata import OtaDataParameters
 from esp_idf_defs.partitions import PartitionTable, PartitionDefinition, \
     BOOTLOADER_TYPE, SUBTYPES, PARTITION_TABLE_OFFSET, PARTITION_TABLE_SIZE, PARTITION_TABLE_TYPE
 
 from idftool import network
-from idftool.display import print_partition_table
+from idftool.display import print_partition_table, say
 from idftool.partitions import check_image_file, load_partition_table_file, read_otadata, \
     require_partitions
 from idftool.ports import Identify, find_only_device, find_port_for_mac, find_port_for_usb_serial, \
@@ -49,7 +51,7 @@ class State:
                  mac: Optional[str] = None, usb_serial: Optional[str] = None, probe: bool = False,
                  identify: Optional[Identify] = None, baud_explicit: bool = False,
                  quiet: bool = False, kill_holders: bool = False,
-                 only_device: bool = False) -> None:
+                 only_device: bool = False, flash_size: Optional[int] = None) -> None:
         self.port = port
         self.mac = mac
         self.usb_serial = usb_serial
@@ -69,6 +71,8 @@ class State:
         self.partition_table_size = partition_table_size
         self.primary_bootloader_offset = primary_bootloader_offset
         self.recovery_bootloader_offset = recovery_bootloader_offset
+        #: ``--flash-size``: the device's flash size in bytes, used over any detected one.
+        self.flash_size = flash_size
         self.esp: Optional[ESPLoader] = None
         #: Skip the tables printed on the way (the partition table, a filesystem's listing),
         #: and the device reads only they need.
@@ -168,9 +172,66 @@ class State:
             self._print_partition_table(partition_table)
 
         if esp:
-            partition_table.verify_size_fits(flash_size_bytes(detect_flash_size(esp)))
+            self.check_table_fits(partition_table, strict=False)
 
         return Loaded(esp, partition_table, *self.virtual_entries(partition_table))
+
+    def device_flash_size(self) -> tuple[Optional[int], str]:
+        """The connected device's flash size in bytes and where it came from, or ``None`` and
+        why it is unknown.
+
+        ``--flash-size`` first, then the flash chip's ID, then the size in the bootloader's
+        image header, which is also the size the app sees at runtime.
+        """
+        if self.flash_size is not None:
+            return self.flash_size, "--flash-size"
+        esp = self.connect()
+        if getattr(esp, 'secure_download_mode', False):
+            return None, "secure download mode is enabled"
+        detected = flash_size_bytes(detect_flash_size(esp))
+        if detected:
+            return detected, "detected"
+        if self.primary_bootloader_offset is not None:
+            try:
+                header = esp.read_flash(self.primary_bootloader_offset, 4)
+            except FatalError:
+                header = b""
+            if header[:1] == bytes([ImageHeader.MAGIC]):
+                code = header[3] & 0xF0  # the high nibble; FLASH_SIZES keeps it in place
+                name = next((n for n, c in esp.FLASH_SIZES.items() if c == code), None)
+                if name:
+                    return flash_size_bytes(name), "from the bootloader header"
+        return None, "the flash chip is not recognised"
+
+    def check_table_fits(self, partition_table: PartitionTable, *, strict: bool,
+                         force: bool = False) -> None:
+        """Check `partition_table` fits in the device's flash.
+
+        `strict` is for writing the table: a table that doesn't fit, or a flash size that
+        can't be found, is an error unless `force`. Otherwise (the table is only being read) a
+        table that doesn't fit is a warning, and an unknown size is not checked.
+        """
+        size, source = self.device_flash_size()
+        needs = partition_table.flash_size()
+        mb = 1024 * 1024
+        if size is None:
+            if not strict:
+                return
+            if not force:
+                raise RuntimeError(
+                    f"Can't check the partition table fits in flash: the flash size is unknown "
+                    f"({source}). Pass --flash-size (e.g. --flash-size 16MB), or --force to "
+                    f"skip the check.")
+            say(f"Warning: not checking the partition table fits in flash, the flash size is "
+                f"unknown ({source}; continuing due to --force)")
+            return
+        if needs <= size:
+            return
+        message = (f"Partition table needs {needs / mb:.1f}MB of flash, but the flash is "
+                   f"{size / mb:g}MB ({source})")
+        if strict and not force:
+            raise RuntimeError(f"{message}. Re-run with --force to write it anyway.")
+        say(f"Warning: {message}" + (" (continuing due to --force)" if strict else ""))
 
     def _print_partition_table(self, partition_table: PartitionTable) -> None:
         """Print the table, with each app's description and the active slot read off the device
