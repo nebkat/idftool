@@ -10,6 +10,20 @@ this project adheres to [Semantic Versioning](https://semver.org/).
 - Files to read can be given as an `http://` or `https://` URL, e.g.
   `idftool factory https://example.org/app.bin`.
 
+### Changed
+- A differential write's summary reads "320 kB written (2 regions) · 704 kB
+  unchanged · 1.8 s, 1459 kbit/s", or "already in flash · 1.00 MB unchanged".
+  Data with no file name is no longer called "Input bytes": "Comparing against
+  flash at 0x…".
+
+### Fixed
+- A differential write's progress moves while it writes. It is drawn as a map
+  of the region: unchanged, to write, written and not compared yet, each in its
+  own colour, with the figures under it. Before, the bar stood still while each
+  run of changed sectors was written
+  ([#26](https://github.com/nebkat/idftool/issues/26)). Without a terminal,
+  only the summary is printed.
+
 ## [v1.8.0] — 2026-11-13
 
 ### Added
