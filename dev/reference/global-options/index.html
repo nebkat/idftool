@@ -1788,6 +1788,10 @@
 <td>Use the port with this USB serial number. See <a href="../../guide/choosing-a-device/#by-usb-serial-number">by USB serial number</a>.</td>
 </tr>
 <tr>
+<td><code>--only-device</code></td>
+<td>Use the only ESP or USB-serial adapter port connected. An error if there are none or several.</td>
+</tr>
+<tr>
 <td><code>-b</code>, <code>--baud N</code></td>
 <td>Serial baud rate for flashing. Default 115200, the ROM bootloader's rate. See <a href="https://docs.espressif.com/projects/esptool/en/latest/esp32/esptool/serial-connection.html">serial connection</a>. If given, also passed to <a href="../monitor/#monitor"><code>monitor</code></a> and <a href="../idf-py/#idfpy"><code>idf.py</code></a>.</td>
 </tr>
@@ -1797,7 +1801,11 @@
 </tr>
 <tr>
 <td><code>-y</code>, <code>--yes</code></td>
-<td>Don't ask which device to use.</td>
+<td>Don't ask which device to use. One must then be given with <code>-p</code>, <code>-m</code>, <code>--usb-serial</code> or <code>--only-device</code>.</td>
+</tr>
+<tr>
+<td><code>--kill-holders</code></td>
+<td>Kill other processes holding the port before connecting, without asking (macOS/Linux). Without it, a held port is only reported, with an offer to kill at a terminal.</td>
 </tr>
 <tr>
 <td><code>--no-reset</code></td>

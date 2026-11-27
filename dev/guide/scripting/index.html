@@ -1922,9 +1922,10 @@
 <p><code>idftool</code> works the same in scripts and CI, with a few differences from
 interactive use.</p>
 <h2 id="no-questions">No questions<a class="headerlink" href="#no-questions" title="Permanent link">&para;</a></h2>
-<p>Without a terminal, <code>idftool</code> never shows the device list. Give the device with
-<code>-p</code> or <code>-m</code>; otherwise it tries each port in turn and uses the first ESP that
-answers. <code>-y</code> does the same in an interactive shell.</p>
+<p>Without a terminal, <code>idftool</code> never shows the device list and never guesses.
+Give the device with <code>-p</code>, <code>-m</code> or <code>--usb-serial</code>, or pass <code>--only-device</code> to use
+the one adapter port connected (an error if there are several). Without any of
+these it fails. <code>-y</code> does the same in an interactive shell.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>idftool<span class="w"> </span>-m<span class="w"> </span>7c:2c:67:92:79:c0<span class="w"> </span>write-bundle<span class="w"> </span>release.zip
 </code></pre></div>
 <p>Prefer <code>-m</code> for anything that runs unattended: a port name follows the USB

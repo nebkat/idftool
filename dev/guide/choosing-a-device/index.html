@@ -1984,7 +1984,8 @@ for all of them. Set <code>IDFTOOL_PROBE=1</code> to make that the default, and 
 <a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>         or: idftool -m 7c:2c:67:92:79:c0 get-boot
 </code></pre></div>
 <p><code>-y</code> skips the picker, as does running without a terminal (in a script or CI).
-<code>esptool</code> then picks the port itself.</p>
+A device must then be given, or <code>--only-device</code> passed to use the one adapter port
+connected.</p>
 <h2 id="by-mac-address">By MAC address<a class="headerlink" href="#by-mac-address" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>idftool<span class="w"> </span>-m<span class="w"> </span>9c:13:9e:1b:d4:6c<span class="w"> </span>write-bundle<span class="w"> </span>release.zip
 </code></pre></div>
