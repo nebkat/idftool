@@ -4,6 +4,32 @@ All notable changes to this project are documented here. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- The partition table is read where the bootloader records it: the
+  `partition_table_offset` field esp-idf#19102 proposes for
+  `esp_bootloader_desc_t`. Device commands take it from the device's
+  bootloader, `print-image` and `write-image` from the image's, and
+  `write-bundle` from the bundle's `bootloader.bin` when it carries one.
+  Bootloaders without the field leave it 0, and the table is then at 0x8000
+  as before. A table placed somewhere else than the bootloader records, by
+  `--partition-table-offset` or the table's own `partition_table` row, is
+  refused by `write-table`, `write-image` and `write-bundle` unless `--force`,
+  and read from there with a warning by everything else.
+- `idftool.partition_table_offset(esp)` says where the partition table is on
+  the chip an `ESPLoader` is connected to, by the same rule, for a tool that
+  drives its own connection (esp-dut reads the table there).
+
+### Changed
+- Erased flash where the partition table should be is reported as "No partition
+  table in … at offset 0x…: the flash there is erased", not as an empty table.
+- `State.partition_table_offset` is the offset in use, found as above unless
+  set; `State.explicit_partition_table_offset` is `--partition-table-offset`,
+  or None. `Loaded.partition_table_offset`, `virtual_entries`'
+  `partition_table_offset` and `setup`'s `writing` and `force` are new keyword
+  arguments.
+
 ## [v1.9.0] — 2026-11-27
 
 ### Added
