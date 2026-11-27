@@ -16,10 +16,17 @@ this project adheres to [Semantic Versioning](https://semver.org/).
   before connecting ("Warning: /dev/… is held by idf.py (pid …)"), and at a
   terminal there's an offer to kill the holder, as `k` does in the port list.
   `--kill-holders` kills it without asking, for scripts.
+- `--only-device` uses the one ESP or USB-serial adapter port connected, and
+  fails if there are none or several.
 - Files to read can be given as an `http://` or `https://` URL, e.g.
   `idftool factory https://example.org/app.bin`.
 
 ### Changed
+- No device is picked without asking any more. Without a terminal, or with
+  `-y`, a command that needs a device fails unless `-p`, `-m`, `--usb-serial`
+  or `--only-device` gives one. Before, esptool tried each port, resetting it,
+  and the first ESP to answer was used; `monitor`, `idf.py` and the esptool
+  passthroughs picked a port themselves.
 - A differential write's summary reads "320 kB written (2 regions) · 704 kB
   unchanged · 1.8 s, 1459 kbit/s", or "already in flash · 1.00 MB unchanged".
   Data with no file name is no longer called "Input bytes": "Comparing against
