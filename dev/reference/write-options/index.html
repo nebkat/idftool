@@ -1896,7 +1896,8 @@ writing the whole region.</dd>
 <code>--skip-flashed</code> unless the erase is off: nothing can match a chip that was
 just wiped. See <a href="../images/#write-image"><code>write-image</code></a>.</p>
 <p><code>write-table</code> doesn't take these, and always skips a table that's already in
-flash. Its <code>--force</code> already means "flash a table that failed verification".</p>
+flash. Its <code>--force</code> already means "flash a table that failed verification or doesn't
+fit in flash".</p>
 <p>From Python, the same names work as keyword arguments. See
 <a href="../../library/#write-options">Python library</a>.</p>
 

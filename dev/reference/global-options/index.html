@@ -1831,6 +1831,10 @@
 <td><code>--recovery-bootloader-offset OFFSET</code></td>
 <td>Recovery bootloader offset. Same scope as above.</td>
 </tr>
+<tr>
+<td><code>--flash-size SIZE</code></td>
+<td>The device's flash size, e.g. <code>16MB</code>, for when it can't be found from the flash chip or the bootloader. Partition tables are checked against it, and <code>dump-image</code> reads that much.</td>
+</tr>
 </tbody>
 </table>
 
